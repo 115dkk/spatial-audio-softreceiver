@@ -128,6 +128,66 @@ mod endpoint_tests {
     }
 
     #[test]
+    fn scene_layout_lines_localize_sources_and_lfe() {
+        use ssr_types::{SceneBedChannel, SceneDynamicObject, SceneLayout, SceneSource};
+        for (source, label) in [
+            (SceneSource::Pcm, "PCM"),
+            (SceneSource::Ddp, "E-AC-3"),
+            (SceneSource::DdpJoc, "E-AC-3 JOC"),
+            (SceneSource::Upmix, "upmix"),
+        ] {
+            let mut layout = SceneLayout {
+                source,
+                lfe: true,
+                bed: (0..7)
+                    .map(|index| SceneBedChannel {
+                        index,
+                        speaker: "L".into(),
+                    })
+                    .collect(),
+                dynamic: (7..14)
+                    .map(|index| SceneDynamicObject { index, room: None })
+                    .collect(),
+            };
+            assert_eq!(
+                scene_layout_line(Language::En, 1, Some(&layout)),
+                format!("endpoint 1: {label}, bed 7 channels + LFE, dynamic objects 7")
+            );
+            let korean = scene_layout_line(Language::Ko, 1, Some(&layout));
+            assert!(korean.contains("고정 채널 7개"));
+            assert!(korean.contains("움직이는 소리 7개"));
+            assert!(!korean.contains("객체") && !korean.contains("베드"));
+            layout.lfe = false;
+            assert!(!scene_layout_line(Language::En, 1, Some(&layout)).contains("LFE"));
+        }
+    }
+
+    #[test]
+    fn scene_log_options_enforce_interval_bounds() {
+        for (value, valid) in [
+            ("9", false),
+            ("10", true),
+            ("10000", true),
+            ("10001", false),
+        ] {
+            assert_eq!(
+                Cli::try_parse_from([
+                    "ssr-live",
+                    "play",
+                    "--profile",
+                    "p",
+                    "--scene-log",
+                    "scene.jsonl",
+                    "--scene-log-ms",
+                    value
+                ])
+                .is_ok(),
+                valid
+            );
+        }
+    }
+
+    #[test]
     fn report_request_fields_cover_sources_clocks_and_output_modes() {
         let report = supervisor::SessionReport {
             seconds: 1.0,
@@ -574,6 +634,12 @@ enum Command {
         /// ring trough, clock) as JSON to this file when it stops.
         #[arg(long)]
         report: Option<PathBuf>,
+        /// Write the entrances' scene layouts and active objects to this JSON Lines file
+        #[arg(long, value_name = "PATH")]
+        scene_log: Option<PathBuf>,
+        /// Milliseconds between scene-log lines
+        #[arg(long, value_name = "MS", default_value_t = 200, value_parser = clap::value_parser!(u64).range(10..=10000))]
+        scene_log_ms: u64,
         /// Override a zero-mask PCM order, as CHANNELS=PRESET or CHANNELS=SPEAKER,SPEAKER,...
         #[arg(long = "direct-layout")]
         direct_layouts: Vec<engine::DirectLayoutOverride>,
@@ -643,6 +709,12 @@ fn localized_command(language: Language) -> clap::Command {
                 .mut_arg("repeat", |arg| arg.help(live::play_loop_help(language)))
                 .mut_arg("mute", |arg| arg.help(live::play_mute_help(language)))
                 .mut_arg("report", |arg| arg.help(live::play_report_help(language)))
+                .mut_arg("scene_log", |arg| {
+                    arg.help(ssr_i18n::cli::scene_log_help(language))
+                })
+                .mut_arg("scene_log_ms", |arg| {
+                    arg.help(ssr_i18n::cli::scene_log_ms_help(language))
+                })
                 .mut_arg("direct_layouts", |arg| {
                     arg.help(live::play_direct_layout_help(language))
                 })
@@ -710,6 +782,38 @@ fn localized_command(language: Language) -> clap::Command {
     ssr_i18n::clap_help::localize(command, language)
 }
 
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn scene_layout_line(
+    language: Language,
+    endpoint: usize,
+    layout: Option<&ssr_types::SceneLayout>,
+) -> String {
+    use ssr_i18n::live;
+    use ssr_types::SceneSource;
+    let Some(layout) = layout else {
+        return live::scene_unavailable(language, endpoint);
+    };
+    let source = match layout.source {
+        SceneSource::None => return live::scene_unavailable(language, endpoint),
+        SceneSource::Pcm => live::scene_source_pcm(language),
+        SceneSource::Ddp => live::scene_source_ddp(language),
+        SceneSource::DdpJoc => live::scene_source_ddp_joc(language),
+        SceneSource::Upmix => live::scene_source_upmix(language),
+    };
+    live::scene_layout(
+        language,
+        endpoint,
+        source,
+        layout.bed.len(),
+        if layout.lfe {
+            live::scene_lfe(language)
+        } else {
+            ""
+        },
+        layout.dynamic.len(),
+    )
+}
+
 fn parse_cli(language: Language) -> Result<Cli, clap::Error> {
     let matches = localized_command(language).try_get_matches()?;
     Cli::from_arg_matches(&matches)
@@ -758,6 +862,8 @@ fn main() -> ExitCode {
             repeat,
             mute,
             report,
+            scene_log,
+            scene_log_ms,
             direct_layouts,
         } => platform::play(platform::PlayOptions {
             source,
@@ -776,6 +882,8 @@ fn main() -> ExitCode {
             repeat,
             mute,
             report,
+            scene_log,
+            scene_log_ms,
             direct_layouts,
         }),
         Command::Devices { formats, json } => platform::devices(formats, json),
@@ -849,6 +957,8 @@ mod platform {
         pub repeat: bool,
         pub mute: bool,
         pub report: Option<PathBuf>,
+        pub scene_log: Option<PathBuf>,
+        pub scene_log_ms: u64,
         pub direct_layouts: Vec<engine::DirectLayoutOverride>,
     }
 
@@ -1135,6 +1245,15 @@ mod platform {
         }
 
         let started = Instant::now();
+        let mut scene_log = options
+            .scene_log
+            .as_ref()
+            .map(|path| {
+                supervisor::scene_log::SceneLogWriter::create(path, options.scene_log_ms)
+                    .map_err(|error| format!("{}: {error}", path.display()))
+            })
+            .transpose()?;
+        let mut scene_changes = supervisor::scene_log::SceneChanges::default();
         let mut next_report = Duration::from_secs(1);
         let mut ended_at: Option<Instant> = None;
         let mut reported_underruns = 0;
@@ -1153,8 +1272,27 @@ mod platform {
             for notice in session.poll().map_err(|error| error.to_string())? {
                 print_notice(notice, language);
             }
+            let status = session.status();
+            for endpoint in scene_changes.observe(&status.endpoints) {
+                eprintln!(
+                    "{}",
+                    super::scene_layout_line(
+                        language,
+                        endpoint,
+                        status.endpoints[endpoint].layout.as_ref()
+                    )
+                );
+            }
+            if let Some(writer) = &mut scene_log {
+                writer
+                    .sample(
+                        started.elapsed().as_millis() as u64,
+                        &status.endpoints,
+                        &status.scene,
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
             if started.elapsed() >= next_report {
-                let status = session.status();
                 session.observe(next_report.as_secs());
                 print_status(
                     next_report.as_secs(),
@@ -1166,7 +1304,11 @@ mod platform {
                 );
                 next_report += Duration::from_secs(1);
             }
-            thread::sleep(Duration::from_millis(33));
+            thread::sleep(Duration::from_millis(if scene_log.is_some() {
+                options.scene_log_ms.min(33)
+            } else {
+                33
+            }));
         }
 
         let report = session.stop().map_err(|error| error.to_string())?;
@@ -1834,6 +1976,8 @@ mod platform {
         pub repeat: bool,
         pub mute: bool,
         pub report: Option<PathBuf>,
+        pub scene_log: Option<PathBuf>,
+        pub scene_log_ms: u64,
         pub direct_layouts: Vec<engine::DirectLayoutOverride>,
     }
 

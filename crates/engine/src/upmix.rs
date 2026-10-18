@@ -43,7 +43,10 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
 use render::{PanGeometry, Ramp};
 use ssr_types::app::UpmixBypass;
-use ssr_types::{Direction, Layout, MAX_OBJECTS, Object, Position, SceneBlock, Speaker};
+use ssr_types::{
+    Direction, Layout, MAX_OBJECTS, Object, ObjectRole, Position, SceneBlock, SceneLayoutTable,
+    SceneSource, Speaker,
+};
 use streamring::{Pipeline, Publish, Publisher, RegionMemory, Signal};
 
 use crate::chain::supported_source_rate;
@@ -916,6 +919,17 @@ impl UpmixStage {
         self.upmixing
     }
 
+    fn layout(&self) -> SceneLayoutTable {
+        let mut layout = SceneLayoutTable::EMPTY;
+        layout.source = SceneSource::Upmix;
+        layout.lfe = self.fixed_lfe || self.lfe_seen;
+        layout.objects = self.objects.len() as u8;
+        for (role, &(plane, _)) in layout.roles.iter_mut().zip(&self.objects) {
+            *role = ObjectRole::Bed(self.monitor.outputs[plane]);
+        }
+        layout
+    }
+
     fn route_for(&self, apply: bool, content: Content) -> Route {
         if !content.stereo {
             Route::Bypass(UpmixBypass::NativeSurround)
@@ -1419,6 +1433,11 @@ impl UpmixLanes {
                 .as_deref()
                 .map_or_else(UpmixStatus::not_installed, UpmixStage::status),
         )
+    }
+
+    pub(crate) fn layout(&self, endpoint: u16) -> Option<SceneLayoutTable> {
+        let stage = self.lanes.get(endpoint as usize)?.stage.as_deref()?;
+        stage.upmixing().then(|| stage.layout())
     }
 }
 

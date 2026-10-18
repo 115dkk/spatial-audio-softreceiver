@@ -26,10 +26,54 @@ pub struct RunFigures {
     pub underruns_while_streaming: Option<u64>,
     pub ring_trough_min_ms: Option<f32>,
     pub clock_ppm_max_abs: f64,
+    pub scenes: [SceneFigures; ssr_abi::MAX_ENDPOINTS],
+}
+
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+pub struct SceneFigures {
+    pub sources: Vec<ssr_types::SceneSource>,
+    pub max_bed_channels: usize,
+    pub max_dynamic_objects: usize,
+    pub max_active_objects: usize,
+    pub layout_changes: u64,
+    #[serde(skip)]
+    previous: Option<ssr_types::SceneLayout>,
+}
+
+impl SceneFigures {
+    fn observe(&mut self, layout: Option<&ssr_types::SceneLayout>, active: usize) {
+        self.max_active_objects = self.max_active_objects.max(active);
+        let same = match (&self.previous, layout) {
+            (Some(a), Some(b)) => crate::scene_log::structurally_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        };
+        if !same {
+            self.layout_changes += 1;
+            self.previous = layout.cloned();
+        }
+        if let Some(layout) = layout {
+            if !self.sources.contains(&layout.source) {
+                self.sources.push(layout.source);
+            }
+            self.max_bed_channels = self.max_bed_channels.max(layout.bed.len());
+            self.max_dynamic_objects = self.max_dynamic_objects.max(layout.dynamic.len());
+        }
+    }
 }
 
 impl RunFigures {
     pub(crate) fn observe(&mut self, status: &ssr_types::EngineStatus, seconds: u64) {
+        for (endpoint, figures) in self.scenes.iter_mut().enumerate() {
+            figures.observe(
+                status.endpoints[endpoint].layout.as_ref(),
+                status
+                    .scene
+                    .iter()
+                    .filter(|object| usize::from(object.lane) == endpoint)
+                    .count(),
+            );
+        }
         if seconds < 5 || self.underruns_while_streaming.is_some() {
             return;
         }
@@ -80,6 +124,7 @@ impl SessionReport {
                     "unsupported": status.unsupported.map(|reason| reason.to_string()),
                     "unsupported_reason": status.unsupported.map(ssr_types::UnsupportedReason::name),
                     "chain_errors": chain_errors_json(status.chain_errors),
+                    "scene": self.figures.scenes[endpoint],
                 })
             })
             .collect::<Vec<_>>();
@@ -160,6 +205,49 @@ mod tests {
     use ssr_types::{ChainErrorCounts, ChainErrorKind};
 
     use super::chain_errors_json;
+
+    #[test]
+    fn scene_figures_keep_first_seen_sources_and_ignore_room_motion() {
+        use ssr_types::{EngineStatus, SceneDynamicObject, SceneLayout, SceneObject, SceneSource};
+        let mut figures = super::RunFigures::default();
+        let mut status = EngineStatus::default();
+        status.endpoints[1].layout = Some(SceneLayout {
+            source: SceneSource::DdpJoc,
+            dynamic: vec![SceneDynamicObject {
+                index: 0,
+                room: None,
+            }],
+            ..Default::default()
+        });
+        status.scene = vec![SceneObject {
+            lane: 1,
+            index: 0,
+            x: 0.0,
+            y: 1.0,
+            z: 0.0,
+            level_dbfs: -10.0,
+        }];
+        figures.observe(&status, 0);
+        status.endpoints[1].layout.as_mut().unwrap().dynamic[0].room = Some([0.1, 0.2, 0.3]);
+        figures.observe(&status, 1);
+        assert_eq!(figures.scenes[1].layout_changes, 1);
+        assert_eq!(figures.scenes[1].max_dynamic_objects, 1);
+        assert_eq!(figures.scenes[1].max_active_objects, 1);
+        assert_eq!(figures.scenes[0].max_active_objects, 0);
+        status.endpoints[1].layout.as_mut().unwrap().source = SceneSource::Pcm;
+        figures.observe(&status, 2);
+        status.endpoints[1].layout.as_mut().unwrap().source = SceneSource::DdpJoc;
+        figures.observe(&status, 3);
+        assert_eq!(
+            figures.scenes[1].sources,
+            [SceneSource::DdpJoc, SceneSource::Pcm]
+        );
+        assert_eq!(figures.scenes[1].layout_changes, 3);
+        assert_eq!(
+            serde_json::to_value(&figures.scenes[1]).unwrap()["sources"],
+            serde_json::json!(["ddp_joc", "pcm"])
+        );
+    }
 
     #[test]
     fn chain_error_report_uses_all_stable_snake_case_names() {

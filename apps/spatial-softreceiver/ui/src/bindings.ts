@@ -85,7 +85,7 @@ export type DriverState = { kind: "not_installed" } |
  */
 { kind: "installed"; value: { problem_code: number; service_running: boolean; exclusive_policy: PolicyState } } | { kind: "reboot_required" }
 
-export type EndpointStatus = { format: SourceFormat | null; epoch: number;
+export type EndpointStatus = { format: SourceFormat | null; epoch: number; layout: SceneLayout | null;
 /**
  * Endpoint gain after combining its channel controls. Muting is carried
  * separately so status never needs a `-inf` floating-point sentinel.
@@ -471,7 +471,15 @@ export type SampleType =
  */
 "float"
 
+export type SceneBedChannel = { index: number; speaker: string }
+
+export type SceneDynamicObject = { index: number; room: [number, number, number] | null }
+
+export type SceneLayout = { source: SceneSource; lfe: boolean; bed: SceneBedChannel[]; dynamic: SceneDynamicObject[] }
+
 export type SceneObject = { lane: number; index: number; x: number; y: number; z: number; level_dbfs: number }
+
+export type SceneSource = "none" | "pcm" | "ddp" | "ddp_joc" | "upmix"
 
 export type SecureBoot = "enabled" | "disabled" |
 /**

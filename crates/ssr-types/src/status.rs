@@ -4,7 +4,9 @@
 //! and computes latency percentiles on its caller without blocking the
 //! real-time threads.
 
-use crate::{format::SourceFormat, layout::DirectionView, ports::OutputMode};
+use crate::{
+    format::SourceFormat, layout::DirectionView, ports::OutputMode, scene_layout::SceneLayout,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
@@ -237,6 +239,7 @@ pub enum ClockStatus {
 pub struct EndpointStatus {
     pub format: Option<SourceFormat>,
     pub epoch: u32,
+    pub layout: Option<SceneLayout>,
     /// Endpoint gain after combining its channel controls. Muting is carried
     /// separately so status never needs a `-inf` floating-point sentinel.
     pub volume_db: f32,

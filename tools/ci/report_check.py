@@ -42,6 +42,7 @@ class Expect:
     require_no_fallback: bool = True
     require_endpoints: bool = True
     faults: str = "forbidden"  # forbidden or output_only
+    min_dynamic_objects: int | None = None
 
 
 PRESETS = {
@@ -175,6 +176,16 @@ def problems(report, expect):
                     result.append(f"report endpoint slot {slot} names {endpoint.get('endpoint')}")
                 if not expect.allow_unsupported and endpoint.get("unsupported") is not None:
                     result.append(f"endpoint {slot} has unsupported format: {endpoint['unsupported']}")
+    if expect.min_dynamic_objects is not None:
+        endpoints = report.get("endpoints", [])
+        counts = []
+        for endpoint in endpoints if isinstance(endpoints, list) else []:
+            scene = endpoint.get("scene") if isinstance(endpoint, dict) else None
+            count = scene.get("max_dynamic_objects") if isinstance(scene, dict) else None
+            if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+                counts.append(count)
+        if not any(count >= expect.min_dynamic_objects for count in counts):
+            result.append(f"no endpoint scene.max_dynamic_objects reaches {expect.min_dynamic_objects}")
     if expect.require_driver:
         driver = report.get("driver")
         if not isinstance(driver, dict):
@@ -197,7 +208,10 @@ def main(argv=None):
     # Overrides; by default the presets compare with what the run requested.
     parser.add_argument("--clock", choices=("auto", "trim", "asrc"))
     parser.add_argument("--output-mode", choices=("exclusive", "shared"))
+    parser.add_argument("--min-dynamic-objects", type=int)
     args = parser.parse_args(argv)
+    if args.min_dynamic_objects is not None and args.min_dynamic_objects < 0:
+        parser.error("--min-dynamic-objects must be nonnegative")
     try:
         report = json.loads(Path(args.report).read_text(encoding="utf-8-sig"))
         expect = PRESETS[args.preset]
@@ -205,6 +219,8 @@ def main(argv=None):
             expect = replace(expect, clock=args.clock)
         if args.output_mode is not None:
             expect = replace(expect, output_mode=args.output_mode)
+        if args.min_dynamic_objects is not None:
+            expect = replace(expect, min_dynamic_objects=args.min_dynamic_objects)
         found = problems(report, expect)
     except Exception as error:
         found = [str(error)]

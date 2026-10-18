@@ -32,7 +32,10 @@
 
 use bitstream::{Burst, DataType};
 use eac3::{BedChannel, CorePcmFrame, ObjectPcmFrame, ParsedEmdfPayloadData, StreamType, Vec3};
-use ssr_types::{MAX_OBJECTS, Position, SceneBlock, Speaker, room_to_direction};
+use ssr_types::{
+    MAX_OBJECTS, ObjectRole, Position, SceneBlock, SceneLayoutTable, SceneSource, Speaker,
+    room_to_direction,
+};
 
 use crate::{DecodeConfig, DecodeError, SceneBuffers};
 
@@ -251,6 +254,7 @@ pub struct DdpBack {
     timeline: Timeline,
     epoch: Option<u32>,
     joc_sequence: Option<u16>,
+    layout: SceneLayoutTable,
 }
 
 impl DdpBack {
@@ -260,6 +264,7 @@ impl DdpBack {
             timeline: Timeline::new(),
             epoch: None,
             joc_sequence: None,
+            layout: SceneLayoutTable::EMPTY,
         }
     }
 
@@ -269,6 +274,7 @@ impl DdpBack {
         self.epoch = None;
         self.joc_sequence = None;
         self.buffers.set_layout(0, false);
+        self.layout = SceneLayoutTable::EMPTY;
     }
 
     /// Writes one decoded access unit as scenes. Plain beds emit one scene;
@@ -292,6 +298,10 @@ impl DdpBack {
             self.reset();
         }
         result
+    }
+
+    pub fn layout(&self) -> &SceneLayoutTable {
+        &self.layout
     }
 
     fn check_capacity(&self) -> Result<(), DecodeError> {
@@ -350,7 +360,7 @@ impl DdpBack {
                     {
                         return Err(corrupt());
                     }
-                    write_core(&mut self.buffers, core, offset, samples)?;
+                    write_core(&mut self.buffers, &mut self.layout, core, offset, samples)?;
                 }
                 DecodedKind::Objects(pcm) => {
                     let sequence = pcm.joc.sequence_counter;
@@ -370,6 +380,7 @@ impl DdpBack {
                         ),
                     )?;
                     self.timeline.schedule(pcm, offset)?;
+                    self.layout = self.timeline.layout(pcm)?;
                     write_objects(&mut self.buffers, pcm, offset, samples)?;
                 }
             }
@@ -443,6 +454,10 @@ impl DdpDecoder {
         // checking the groups decoded before it.
         let _upstream = self.front.decode(burst.payload, &mut self.decoded);
         self.back.place(&self.decoded, qpc, epoch, out)
+    }
+
+    pub fn layout(&self) -> &SceneLayoutTable {
+        self.back.layout()
     }
 
     pub fn reset(&mut self) {
@@ -564,6 +579,7 @@ fn check_shape(
 
 fn write_core(
     buffers: &mut SceneBuffers,
+    layout: &mut SceneLayoutTable,
     core: &CorePcmFrame,
     offset: usize,
     samples: usize,
@@ -574,6 +590,10 @@ fn write_core(
         return Err(corrupt());
     }
     buffers.set_layout(core.fullband_channels.len(), core.lfe_channel.is_some());
+    *layout = SceneLayoutTable::EMPTY;
+    layout.source = SceneSource::Ddp;
+    layout.lfe = core.lfe_channel.is_some();
+    layout.objects = core.fullband_channels.len() as u8;
     for (i, (channel, &bed)) in core
         .fullband_channels
         .iter()
@@ -583,7 +603,9 @@ fn write_core(
         if channel.len() != samples {
             return Err(corrupt());
         }
-        let position = bed_position(bed).ok_or_else(corrupt)?;
+        let speaker = bed_speaker(bed).ok_or_else(corrupt)?;
+        let position = speaker.position().ok_or_else(corrupt)?;
+        layout.roles[i] = ObjectRole::Bed(speaker);
         buffers.set_object(i, position, 1.0, 0.0);
         buffers.signal_mut(i, FRAMES)[offset..offset + samples].copy_from_slice(channel);
     }
@@ -638,9 +660,9 @@ fn oamd_position(p: Vec3) -> Option<Position> {
     ))
 }
 
-fn bed_position(bed: BedChannel) -> Option<Position> {
+fn bed_speaker(bed: BedChannel) -> Option<Speaker> {
     use BedChannel::*;
-    let speaker = match bed {
+    Some(match bed {
         FrontLeft => Speaker::L,
         FrontRight => Speaker::R,
         Center => Speaker::C,
@@ -659,8 +681,11 @@ fn bed_position(bed: BedChannel) -> Option<Position> {
         TopRearRight => Speaker::Trr,
         LowFrequencyEffects => Speaker::Lfe,
         LowFrequencyEffects2 => Speaker::Lfe2,
-    };
-    speaker.position()
+    })
+}
+
+fn bed_position(bed: BedChannel) -> Option<Position> {
+    bed_speaker(bed).and_then(Speaker::position)
 }
 
 #[cfg(test)]
@@ -784,6 +809,21 @@ mod tests {
     }
 
     #[test]
+    fn joc_layout_reports_dynamic_count_and_latest_raw_room() {
+        let pcm = synthetic_objects();
+        let mut timeline = Timeline::new();
+        timeline.schedule(&pcm, 0).unwrap();
+        let layout = timeline.layout(&pcm).unwrap();
+        assert_eq!(layout.source, SceneSource::DdpJoc);
+        assert!(layout.lfe);
+        assert_eq!(layout.objects, 1);
+        assert_eq!(layout.bed_count(), 0);
+        assert_eq!(layout.dynamic_count(), 1);
+        assert_eq!(layout.roles[0], ObjectRole::Dynamic);
+        assert_eq!(layout.room[0], Some([0.25, 0.0, 0.5]));
+    }
+
+    #[test]
     fn object_mapping_skips_oamd_beds_and_does_not_duplicate_downmix() {
         let pcm = synthetic_objects();
         let mut timeline = Timeline::new();
@@ -813,6 +853,10 @@ mod tests {
         payload.bed_or_isf_objects = 2;
         let mut timeline = Timeline::new();
         timeline.schedule(&pcm, 0).unwrap();
+        let layout = timeline.layout(&pcm).unwrap();
+        assert_eq!(layout.objects, 1);
+        assert_eq!(layout.roles[0], ObjectRole::Bed(Speaker::Tfl));
+        assert_eq!(layout.dynamic_count(), 0);
         let mut buffers = SceneBuffers::new(FRAMES);
         write_objects(&mut buffers, &pcm, 0, FRAMES).unwrap();
         timeline.emit(&mut buffers, 1, 48_000, 2, &mut |scene| {

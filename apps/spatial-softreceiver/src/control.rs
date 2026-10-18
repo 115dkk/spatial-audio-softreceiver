@@ -305,6 +305,7 @@ where
                 emitter,
                 control,
                 last: None,
+                scene_changes: supervisor::scene_log::SceneChanges::default(),
                 initial_notes,
                 marker,
                 korean: thread_korean,
@@ -324,6 +325,7 @@ struct ControlThread<H: Host, L: Launcher, E: Emitter, S: SettingsStore> {
     control: ControlConfig,
     /// The last snapshot sent, without its engine status.
     last: Option<Snapshot>,
+    scene_changes: supervisor::scene_log::SceneChanges,
     initial_notes: Vec<Note>,
     marker: Option<Marker>,
     korean: Arc<AtomicBool>,
@@ -481,7 +483,26 @@ impl<H: Host, L: Launcher, E: Emitter, S: SettingsStore> ControlThread<H, L, E, 
         if *self.supervisor.phase() == Phase::Running
             && let Some(status) = self.supervisor.engine_status()
         {
+            for endpoint in self.scene_changes.observe(&status.endpoints) {
+                let layout = status.endpoints[endpoint].layout.as_ref();
+                let (source, bed, lfe, dynamic) = layout.map_or(("none", 0, false, 0), |layout| {
+                    let source = match layout.source {
+                        ssr_types::SceneSource::None => "none",
+                        ssr_types::SceneSource::Pcm => "pcm",
+                        ssr_types::SceneSource::Ddp => "ddp",
+                        ssr_types::SceneSource::DdpJoc => "ddp_joc",
+                        ssr_types::SceneSource::Upmix => "upmix",
+                    };
+                    (source, layout.bed.len(), layout.lfe, layout.dynamic.len())
+                });
+                log::line(&format!(
+                    "scene: endpoint {endpoint}: {source}, bed {bed}{}, dynamic {dynamic}",
+                    if lfe { " + LFE" } else { "" }
+                ));
+            }
             self.emitter.meters(&status);
+        } else {
+            self.scene_changes = supervisor::scene_log::SceneChanges::default();
         }
     }
 

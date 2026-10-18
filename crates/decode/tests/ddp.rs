@@ -5,7 +5,7 @@ use decode::{
     DecodeConfig, DecodeError,
     ddp::{DdpBack, DdpDecoded, DdpDecoder, DdpFront},
 };
-use ssr_types::{Position, SceneBlock};
+use ssr_types::{ObjectRole, Position, SceneBlock, SceneSource, Speaker};
 
 const FIXTURE: &[u8] = include_bytes!("fixtures/ddp/tones-5.1.eac3");
 
@@ -77,6 +77,20 @@ fn ddp_six_channel_tones_have_expected_positions_and_timing() {
             })
             .unwrap();
         assert_eq!(emitted, 1);
+        let layout = decoder.layout();
+        assert_eq!(layout.source, SceneSource::Ddp);
+        assert!(layout.lfe);
+        assert_eq!(layout.objects, 5);
+        assert_eq!(
+            &layout.roles[..5],
+            &[
+                ObjectRole::Bed(Speaker::L),
+                ObjectRole::Bed(Speaker::C),
+                ObjectRole::Bed(Speaker::R),
+                ObjectRole::Bed(Speaker::Ls),
+                ObjectRole::Bed(Speaker::Rs),
+            ]
+        );
         count += 1;
     }
     assert_eq!(count, 32);
@@ -286,6 +300,7 @@ fn ddp_front_and_back_match_the_one_piece_decoder() {
     for (index, (one, two)) in whole.iter().zip(&halves).enumerate() {
         assert_eq!(one, two, "access unit {index}");
     }
+    assert_eq!(decoder.layout(), back.layout());
 }
 
 /// Private raw E-AC-3 stream, not an IEC 61937 or media-container file.

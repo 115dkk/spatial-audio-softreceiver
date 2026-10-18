@@ -25,7 +25,7 @@ use ssr_abi::{
 };
 use ssr_types::{
     BitstreamCodec, DirectionId, DirectionView, Feeds, Layout, OutputLayout, SceneBlock,
-    SceneObject, SourceFormat,
+    SceneLayoutTable, SceneObject, SourceFormat,
 };
 
 use crate::MAX_OUTPUT_CHANNELS;
@@ -1521,6 +1521,8 @@ pub struct Chain {
     /// The decode thread's end while no thread owns it: it then runs each job
     /// where the job is submitted.
     inline_worker: Option<DecodeWorker>,
+    layouts: [SceneLayoutTable; MAX_ENDPOINTS],
+    layout_generations: [u64; MAX_ENDPOINTS],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1562,6 +1564,8 @@ impl Chain {
             geometry: None,
             decode_queue,
             inline_worker: Some(worker),
+            layouts: [SceneLayoutTable::EMPTY; MAX_ENDPOINTS],
+            layout_generations: [0; MAX_ENDPOINTS],
         }
     }
 
@@ -1659,6 +1663,7 @@ impl Chain {
         let (mixer, back) = (&mut self.mixer, &mut self.back);
         mixer.lane_stop(endpoint, &mut |scene| back.process(scene, out));
         self.upmix.stopped(endpoint);
+        self.set_layout(endpoint, SceneLayoutTable::EMPTY);
     }
 
     /// Runs a stop that is waiting for the lane's in-flight deliveries now:
@@ -1778,6 +1783,11 @@ impl Chain {
             let (mixer, back) = (&mut self.mixer, &mut self.back);
             mixer.release_decoded(&mut |scene| back.process(scene, out));
         }
+        if placed {
+            for endpoint in 0..MAX_ENDPOINTS as u16 {
+                self.update_decoder_layout(endpoint);
+            }
+        }
     }
 
     fn collect_decoded(&mut self, out: &mut dyn FnMut(ChainEvent<'_>)) {
@@ -1826,6 +1836,42 @@ impl Chain {
     /// Counts mixed blocks; changes whenever [`Chain::scene`] may have.
     pub fn scene_generation(&self) -> u64 {
         self.mixer.scene_generation()
+    }
+
+    pub fn layout_generation(&self, endpoint: u16) -> u64 {
+        self.layout_generations
+            .get(endpoint as usize)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    pub fn layout(&self, endpoint: u16) -> Option<&SceneLayoutTable> {
+        self.layouts
+            .get(endpoint as usize)
+            .filter(|layout| layout.source != ssr_types::SceneSource::None)
+    }
+
+    fn set_layout(&mut self, endpoint: u16, layout: SceneLayoutTable) {
+        let Some(current) = self.layouts.get_mut(endpoint as usize) else {
+            return;
+        };
+        let changed = *current != layout;
+        *current = layout;
+        if changed {
+            self.layout_generations[endpoint as usize] =
+                self.layout_generations[endpoint as usize].wrapping_add(1);
+        }
+    }
+
+    fn update_decoder_layout(&mut self, endpoint: u16) {
+        let Some(front) = self.fronts.get(endpoint as usize) else {
+            return;
+        };
+        let layout = self
+            .upmix
+            .layout(endpoint)
+            .unwrap_or_else(|| *front.decoders.layout());
+        self.set_layout(endpoint, layout);
     }
 
     /// Runs one bed block through the back end, as the mixer would.
@@ -2060,6 +2106,7 @@ impl Chain {
                 // afresh behind the bursts of the old one, whose deliveries are
                 // discarded when they come back.
                 self.reset_front(index, endpoint);
+                self.set_layout(endpoint, SceneLayoutTable::EMPTY);
                 let unsupported = error
                     .as_ref()
                     .map(chain_error_kind)
@@ -2644,6 +2691,7 @@ impl Chain {
                 back.process(scene, out)
             });
         }
+        self.update_decoder_layout(endpoint);
     }
 
     fn push_bitstream(
@@ -2780,6 +2828,7 @@ impl Chain {
                 });
             }
         }
+        self.update_decoder_layout(endpoint);
     }
 }
 

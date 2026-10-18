@@ -6,6 +6,9 @@
 //! decode, render and convolver chain as the live app and writes the binaural
 //! WAV; it links no Windows code, so it runs in Linux CI.
 
+mod scene_inspect;
+mod scene_log;
+
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use engine::{Chain, ChainConfig, ChainEvent, EndpointFilter, OutputKind, load_output_profile};
 use serde::Serialize;
@@ -85,6 +88,12 @@ enum Command {
         /// Write a machine-readable JSON render report to this file.
         #[arg(long)]
         report: Option<PathBuf>,
+        /// Write the entrances' scene layouts and active objects to this JSON Lines file
+        #[arg(long, value_name = "PATH")]
+        scene_log: Option<PathBuf>,
+        /// Milliseconds between scene-log lines
+        #[arg(long, value_name = "MS", default_value_t = 200, value_parser = clap::value_parser!(u64).range(10..=10000))]
+        scene_log_ms: u64,
         /// Override a zero-mask PCM order, as CHANNELS=PRESET or CHANNELS=SPEAKER,SPEAKER,...
         #[arg(long = "direct-layout")]
         direct_layouts: Vec<engine::DirectLayoutOverride>,
@@ -102,6 +111,8 @@ struct EndpointSummary {
     records: u64,
     data_bytes: u64,
     arrival: Option<ArrivalSummary>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    scene: BTreeMap<u32, scene_inspect::SceneSummary>,
 }
 
 #[derive(Debug, Serialize)]
@@ -529,6 +540,14 @@ fn inspect(bytes: &[u8]) -> Result<Summary, String> {
     for (endpoint, arrival) in arrivals {
         summary.endpoints.entry(endpoint).or_default().arrival = Some(arrival.finish());
     }
+    for ((endpoint, epoch), scene) in scene_inspect::inspect(stream, header.qpc_frequency) {
+        summary
+            .endpoints
+            .entry(endpoint)
+            .or_default()
+            .scene
+            .insert(epoch, scene);
+    }
     Ok(summary)
 }
 
@@ -582,6 +601,7 @@ fn write_output_block(
     Ok(())
 }
 
+#[cfg(test)]
 fn render_dump(
     bytes: &[u8],
     profile_path: &Path,
@@ -589,6 +609,27 @@ fn render_dump(
     endpoint: EndpointArg,
     arrival_slack_ms: f64,
     overrides: &[engine::DirectLayoutOverride],
+) -> Result<RenderReport, String> {
+    render_dump_logged(
+        bytes,
+        profile_path,
+        output_path,
+        endpoint,
+        arrival_slack_ms,
+        overrides,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_dump_logged(
+    bytes: &[u8],
+    profile_path: &Path,
+    output_path: &Path,
+    endpoint: EndpointArg,
+    arrival_slack_ms: f64,
+    overrides: &[engine::DirectLayoutOverride],
+    mut scene_log: Option<scene_log::SceneLogWriter>,
 ) -> Result<RenderReport, String> {
     let (header, stream) = split_dump(bytes).map_err(|error| error.to_string())?;
     if !arrival_slack_ms.is_finite() || arrival_slack_ms < 0.0 {
@@ -662,97 +703,125 @@ fn render_dump(
         }
     }
 
-    let mut event_error = None;
-    let mut handle = |event: ChainEvent<'_>| match event {
-        ChainEvent::Block(block) => {
-            if let Err(error) = write_output_block(
-                block,
-                output_path,
-                output_kind,
-                output_channel_mask,
-                &mut writer,
-                &mut output_rate,
-                &mut report,
-                &mut hash,
-            ) {
-                event_error = Some(error);
+    let mut endpoints = [(0, ssr_types::SceneLayoutTable::EMPTY); ssr_abi::MAX_ENDPOINTS];
+    for chunk in reads(&header, stream) {
+        for record in records(chunk.bytes).flatten() {
+            if let Record::FormatChange {
+                endpoint, epoch, ..
+            } = record
+                && let Some(status) = endpoints.get_mut(usize::from(endpoint))
+            {
+                status.0 = epoch;
             }
         }
-        // The chain marks a run of identical errors after its first; the
-        // report keeps one line per run, as it always has.
-        ChainEvent::Error {
-            error,
-            repeat: false,
-            ..
-        } => report.errors.push(error.to_string()),
-        ChainEvent::Error { repeat: true, .. } => {}
-        ChainEvent::Volume {
-            endpoint,
-            gain,
-            muted,
-        } => {
-            report
-                .endpoint_volumes
-                .insert(endpoint, EndpointVolume { gain, muted });
-        }
-        ChainEvent::NeedsPrepared => report.needs_brir += 1,
-        ChainEvent::OutputChannels { .. }
-        | ChainEvent::FormatChanged { .. }
-        | ChainEvent::Overrun { .. } => {}
-    };
-    for chunk in reads(&header, stream) {
+        let mut event_error = None;
+        let mut handle = |event: ChainEvent<'_>| match event {
+            ChainEvent::Block(block) => {
+                if let Err(error) = write_output_block(
+                    block,
+                    output_path,
+                    output_kind,
+                    output_channel_mask,
+                    &mut writer,
+                    &mut output_rate,
+                    &mut report,
+                    &mut hash,
+                ) {
+                    event_error = Some(error);
+                }
+            }
+            // The chain marks a run of identical errors after its first; the
+            // report keeps one line per run, as it always has.
+            ChainEvent::Error {
+                error,
+                repeat: false,
+                ..
+            } => report.errors.push(error.to_string()),
+            ChainEvent::Error { repeat: true, .. } => {}
+            ChainEvent::Volume {
+                endpoint,
+                gain,
+                muted,
+            } => {
+                report
+                    .endpoint_volumes
+                    .insert(endpoint, EndpointVolume { gain, muted });
+            }
+            ChainEvent::NeedsPrepared => report.needs_brir += 1,
+            ChainEvent::OutputChannels { .. }
+            | ChainEvent::FormatChanged { .. }
+            | ChainEvent::Overrun { .. } => {}
+        };
         chain.push_records(chunk.bytes, &mut handle);
         if header.format_version >= 2
             && let Some(end_qpc) = chunk.end_qpc
         {
             chain.idle(end_qpc, &mut handle);
         }
-    }
-    drop(handle);
-    if let Some(error) = event_error {
-        return Err(error);
+        drop(handle);
+        if let Some(error) = event_error {
+            return Err(error);
+        }
+        sample_scene_log(
+            &mut scene_log,
+            &chain,
+            &mut endpoints,
+            report.frames_written,
+        )?;
     }
 
-    let mut finish_error = None;
-    chain.finish(&mut |event| match event {
-        ChainEvent::Block(block) => {
-            if let Err(error) = write_output_block(
-                block,
-                output_path,
-                output_kind,
-                output_channel_mask,
-                &mut writer,
-                &mut output_rate,
-                &mut report,
-                &mut hash,
-            ) {
-                finish_error = Some(error);
+    chain.begin_finish();
+    loop {
+        let mut finish_error = None;
+        let done = chain.finish_step(1, &mut |event| match event {
+            ChainEvent::Block(block) => {
+                if let Err(error) = write_output_block(
+                    block,
+                    output_path,
+                    output_kind,
+                    output_channel_mask,
+                    &mut writer,
+                    &mut output_rate,
+                    &mut report,
+                    &mut hash,
+                ) {
+                    finish_error = Some(error);
+                }
             }
+            // The chain marks a run of identical errors after its first; the
+            // report keeps one line per run, as it always has.
+            ChainEvent::Error {
+                error,
+                repeat: false,
+                ..
+            } => report.errors.push(error.to_string()),
+            ChainEvent::Error { repeat: true, .. } => {}
+            ChainEvent::Volume {
+                endpoint,
+                gain,
+                muted,
+            } => {
+                report
+                    .endpoint_volumes
+                    .insert(endpoint, EndpointVolume { gain, muted });
+            }
+            ChainEvent::NeedsPrepared => report.needs_brir += 1,
+            ChainEvent::OutputChannels { .. }
+            | ChainEvent::FormatChanged { .. }
+            | ChainEvent::Overrun { .. } => {}
+        });
+        if let Some(error) = finish_error {
+            return Err(error);
         }
-        // The chain marks a run of identical errors after its first; the
-        // report keeps one line per run, as it always has.
-        ChainEvent::Error {
-            error,
-            repeat: false,
-            ..
-        } => report.errors.push(error.to_string()),
-        ChainEvent::Error { repeat: true, .. } => {}
-        ChainEvent::Volume {
-            endpoint,
-            gain,
-            muted,
-        } => {
-            report
-                .endpoint_volumes
-                .insert(endpoint, EndpointVolume { gain, muted });
+        sample_scene_log(
+            &mut scene_log,
+            &chain,
+            &mut endpoints,
+            report.frames_written,
+        )?;
+        if done {
+            break;
         }
-        ChainEvent::NeedsPrepared => report.needs_brir += 1,
-        ChainEvent::OutputChannels { .. }
-        | ChainEvent::FormatChanged { .. }
-        | ChainEvent::Overrun { .. } => {}
-    });
-    if let Some(error) = finish_error {
-        return Err(error);
     }
     report.lane_underrun_frames = chain.lane_underrun_frames();
     report.dropped_frames = chain.dropped_frames();
@@ -768,6 +837,27 @@ fn render_dump(
         .map(|byte| format!("{byte:02x}"))
         .collect();
     Ok(report)
+}
+
+fn sample_scene_log(
+    writer: &mut Option<scene_log::SceneLogWriter>,
+    chain: &Chain,
+    endpoints: &mut [(u32, ssr_types::SceneLayoutTable)],
+    frames: u64,
+) -> Result<(), String> {
+    if let Some(writer) = writer {
+        for (endpoint, status) in endpoints.iter_mut().enumerate() {
+            status.1 = chain.layout(endpoint as u16).copied().unwrap_or_default();
+        }
+        writer
+            .sample(
+                frames.saturating_mul(1000) / 48_000,
+                endpoints,
+                chain.scene(),
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 fn localized_command(language: Language) -> clap::Command {
@@ -787,6 +877,12 @@ fn localized_command(language: Language) -> clap::Command {
                 .mut_arg("profile", |arg| arg.help(replay::profile_help(language)))
                 .mut_arg("out", |arg| arg.help(replay::out_help(language)))
                 .mut_arg("report", |arg| arg.help(replay::report_help(language)))
+                .mut_arg("scene_log", |arg| {
+                    arg.help(ssr_i18n::cli::scene_log_help(language))
+                })
+                .mut_arg("scene_log_ms", |arg| {
+                    arg.help(ssr_i18n::cli::scene_log_ms_help(language))
+                })
                 .mut_arg("direct_layouts", |arg| {
                     arg.help(replay::direct_layout_help(language))
                 })
@@ -819,19 +915,29 @@ fn run(cli: Cli, language: Language) -> Result<(), String> {
             profile,
             out,
             report,
+            scene_log,
+            scene_log_ms,
             direct_layouts,
             endpoint,
             arrival_slack_ms,
         } => {
             let bytes =
                 std::fs::read(&dump).map_err(|error| format!("{}: {error}", dump.display()))?;
-            let rendered = render_dump(
+            let scene_log = scene_log
+                .as_ref()
+                .map(|path| {
+                    scene_log::SceneLogWriter::create(path, scene_log_ms)
+                        .map_err(|error| format!("{}: {error}", path.display()))
+                })
+                .transpose()?;
+            let rendered = render_dump_logged(
                 &bytes,
                 &profile,
                 &out,
                 endpoint,
                 arrival_slack_ms,
                 &direct_layouts,
+                scene_log,
             )?;
             if let Some(report_path) = report {
                 let json = serde_json::to_vec_pretty(&rendered).expect("render report serializes");
@@ -894,6 +1000,72 @@ mod tests {
     #[test]
     fn english_help_is_the_derived_help_and_korean_help_is_complete() {
         ssr_i18n::clap_help::verify(Cli::command(), localized_command);
+    }
+
+    #[test]
+    fn inspect_decodes_ddp_bed_and_omits_undecodable_mat() {
+        use ssr_types::{BitstreamCodec, BitstreamFormat};
+        let fixture = include_bytes!("../../../crates/decode/tests/fixtures/ddp/tones-5.1.eac3");
+        let size = (((usize::from(fixture[2] & 7) << 8) | usize::from(fixture[3])) + 1) * 2;
+        let mut burst = Vec::new();
+        bitstream::frame_burst(
+            bitstream::DataType::Eac3,
+            &fixture[..size],
+            24_576,
+            &mut burst,
+        );
+        let format = SourceFormat::Bitstream(BitstreamFormat {
+            codec: BitstreamCodec::Eac3,
+            container_rate: 192_000,
+            container_channels: 2,
+            encoded_rate: 48_000,
+            encoded_channels: 6,
+        });
+        let mut stream = vec![0; 60_000];
+        let mut writer = RecordWriter::new(&mut stream);
+        assert!(writer.format_change(1, 0, &wave_format_bytes(&format)));
+        assert!(writer.data(1, 0, 320_000, &burst));
+        let SourceFormat::Bitstream(mut mat) = format else {
+            unreachable!()
+        };
+        mat.codec = BitstreamCodec::Mat21;
+        writer.set_endpoint(1);
+        assert!(writer.format_change(2, 0, &wave_format_bytes(&SourceFormat::Bitstream(mat))));
+        let length = writer.len();
+        let mut dump = dump_header_bytes(10_000_000);
+        dump.extend_from_slice(&stream[..length]);
+        let summary = serde_json::to_value(inspect(&dump).unwrap()).unwrap();
+        let scene = &summary["endpoints"]["0"]["scene"]["1"];
+        assert_eq!(scene["source"], "ddp");
+        assert_eq!(scene["bed"], serde_json::json!(["L", "C", "R", "Ls", "Rs"]));
+        assert_eq!(scene["lfe"], true);
+        assert!(summary["endpoints"]["1"].get("scene").is_none());
+    }
+
+    #[test]
+    fn render_scene_log_interval_bounds_are_enforced() {
+        for (value, valid) in [
+            ("9", false),
+            ("10", true),
+            ("10000", true),
+            ("10001", false),
+        ] {
+            assert_eq!(
+                Cli::try_parse_from([
+                    "ssr-replay",
+                    "render",
+                    "d",
+                    "--profile",
+                    "p",
+                    "--out",
+                    "o",
+                    "--scene-log-ms",
+                    value
+                ])
+                .is_ok(),
+                valid
+            );
+        }
     }
 
     #[test]

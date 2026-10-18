@@ -454,6 +454,63 @@ fn render_is_deterministic_and_inspect_still_works() {
 }
 
 #[test]
+fn scene_log_uses_output_frame_time_and_inspect_reports_pcm_layout() {
+    let temp = TempDir::new();
+    let dump = temp.0.join("input.dump");
+    let profile = temp.0.join("speakers.toml");
+    let log = temp.0.join("scene.jsonl");
+    write_timed_dump(&dump, 10_000_000, 100_000);
+    write_speaker_profile(&profile, "5.1");
+    let result = Command::new(env!("CARGO_BIN_EXE_ssr-replay"))
+        .arg("render")
+        .arg(&dump)
+        .arg("--profile")
+        .arg(&profile)
+        .arg("--out")
+        .arg(temp.0.join("out.wav"))
+        .arg("--scene-log")
+        .arg(&log)
+        .args(["--scene-log-ms", "10"])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let lines = std::fs::read_to_string(log)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<ssr_types::SceneLogLine>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert!(lines.len() >= 2);
+    assert!(lines.windows(2).all(|pair| pair[0].t_ms < pair[1].t_ms));
+    assert!(lines.iter().all(|line| line.t_ms % 10 == 0));
+    assert!(
+        lines.iter().any(|line| line
+            .endpoints
+            .iter()
+            .any(|endpoint| endpoint.source == ssr_types::SceneSource::Pcm
+                && endpoint.bed_channels == 2))
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_ssr-replay"))
+        .arg("inspect")
+        .arg(dump)
+        .output()
+        .unwrap();
+    assert!(result.status.success());
+    let summary: Value = serde_json::from_slice(&result.stdout).unwrap();
+    let scene = &summary["endpoints"]["0"]["scene"]["1"];
+    assert_eq!(scene["source"], "pcm");
+    assert_eq!(scene["bed"], serde_json::json!(["L", "R"]));
+    assert_eq!(
+        scene["dynamic_objects"],
+        serde_json::json!({"min": 0, "max": 0})
+    );
+    assert_eq!(scene["lfe"], false);
+}
+
+#[test]
 fn speaker_render_writes_extensible_channels_mask_and_report() {
     let temp = TempDir::new();
     let dump = temp.0.join("input.dump");
