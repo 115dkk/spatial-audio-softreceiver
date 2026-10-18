@@ -446,7 +446,7 @@ jobs:
           target/release/examples/cable_capture.exe --endpoint "CABLE Output" --seconds 5 "$ks/probe-captured.wav" &
           capture=$!
           sleep 1
-          target/release/ssr-live.exe ks-probe --output "CABLE Input" --seconds 2 --json "$ks/probe.json" || status=1
+          target/release/ssr-live.exe ks-probe --output "VB-Audio Virtual Cable" --seconds 2 --json "$ks/probe.json" || status=1
           wait $capture || status=1
           python tools/ci/ks_probe_check.py "$ks/probe.json" --interface standard --captured "$ks/probe-captured.wav" || status=1
           fx="$RUNNER_TEMP/fx"
@@ -469,12 +469,14 @@ jobs:
             fi
           done
           # Every run must have given the endpoint back: `devices --json` lists
-          # active render endpoints only.
+          # active render endpoints only. The cable's render endpoint is
+          # "CABLE Input" on some images and "Speakers" on windows-2025; the
+          # device part of the name is the same on both.
           target/release/ssr-live.exe devices --json > "$ks/devices-after.json" || status=1
-          if jq -e 'any(.[]; .name | contains("CABLE Input"))' "$ks/devices-after.json" > /dev/null; then
-            echo "CABLE Input is active again"
+          if jq -e 'any(.[]; .name | contains("VB-Audio Virtual Cable"))' "$ks/devices-after.json" > /dev/null; then
+            echo "the cable's render endpoint is active again"
           else
-            echo "::error::CABLE Input is not active after the kernel-streaming runs"
+            echo "::error::the cable's render endpoint is not active after the kernel-streaming runs"
             status=1
           fi
           exit $status
