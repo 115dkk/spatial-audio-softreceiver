@@ -26,14 +26,6 @@ fn string(value: PWSTR) -> Result<String, HostError> {
     unsafe { CoTaskMemFree(Some(value.0.cast())) };
     result
 }
-fn path(value: String) -> String {
-    // KSPIN_PHYSICALCONNECTION uses an NT symbolic link; CreateFile uses DOS.
-    if let Some(rest) = value.strip_prefix("\\??\\") {
-        format!("\\\\?\\{rest}")
-    } else {
-        value
-    }
-}
 
 pub fn kernel_target(endpoint: &str) -> Result<KsTarget, HostError> {
     if endpoint.is_empty() || endpoint.contains('\0') {
@@ -64,7 +56,7 @@ pub fn kernel_target(endpoint: &str) -> Result<KsTarget, HostError> {
         let pin = unsafe { part.GetLocalId() }.map_err(failure)? & 0xffff;
         // SAFETY: live connector; allocated device path is copied/freed below.
         let filter = string(unsafe { connector.GetDeviceIdConnectedTo() }.map_err(failure)?)?;
-        seeds.push((path(filter), pin));
+        seeds.push((filter_path(&filter), pin));
     }
     let mut control = Control::new().map_err(failure)?;
     let mut visited = HashSet::new();
@@ -76,7 +68,7 @@ pub fn kernel_target(endpoint: &str) -> Result<KsTarget, HostError> {
         if visited.len() > 32 {
             return Err(failure("physical graph exceeds 32 connections"));
         }
-        let handle = Handle::filter(&filter).map_err(failure)?;
+        let handle = Handle::filter(&filter).map_err(|e| failure(format!("{filter}: {e:?}")))?;
         let count: u32 =
             pin_value(&mut control, &handle, 0, KSPROPERTY_PIN_CTYPES).map_err(failure)?;
         if count > 1024 || bridge >= count {
@@ -111,7 +103,7 @@ pub fn kernel_target(endpoint: &str) -> Result<KsTarget, HostError> {
                 &io::pin_property(pin, KSPROPERTY_PIN_PHYSICALCONNECTION),
             ) && let Some((filter, next)) = super::selection::physical(&bytes)
             {
-                seeds.push((path(filter), next));
+                seeds.push((filter_path(&filter), next));
             }
         }
     }
@@ -124,7 +116,7 @@ pub fn kernel_target(endpoint: &str) -> Result<KsTarget, HostError> {
     }
 }
 
-use super::selection::connected_pins;
+use super::selection::{connected_pins, filter_path};
 
 pub(super) fn pin_value<O: Default + io::Pod>(
     control: &mut Control,

@@ -1228,6 +1228,7 @@ tests = [
   "ssr-sys::ks_sample_order_is_float_then_integer_precision",
   "ssr-sys::ks_graph_does_not_select_unrelated_render_branch",
   "ssr-sys::ks_physical_path_requires_terminated_bounded_utf16",
+  "ssr-sys::ks_filter_path_drops_the_topology_prefix_and_the_nt_link_prefix",
   "ssr-sys::ks_audio_range_and_period_respect_requested_shape",
   "ssr-sys::ks_position_unwraps_hardware_not_elapsed_frames",
   "ssr-sys::ks_position_rejects_ambiguous_wrap_and_invalid_bounds",

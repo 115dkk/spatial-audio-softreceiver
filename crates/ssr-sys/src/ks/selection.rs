@@ -32,6 +32,23 @@ pub(super) fn physical(bytes: &[u8]) -> Option<(String, u32)> {
     }
     Some((String::from_utf16(&units[..end]).ok()?, pin))
 }
+/// The path `CreateFile` opens for a KS filter named by the audio stack.
+/// `IConnector::GetDeviceIdConnectedTo` answers a device topology id, the
+/// filter's interface path behind a `{N}.` prefix, and
+/// `KSPIN_PHYSICALCONNECTION` an NT symbolic link (`\??\`).
+pub(super) fn filter_path(value: &str) -> String {
+    let value = match value
+        .strip_prefix('{')
+        .and_then(|rest| rest.split_once("}."))
+    {
+        Some((number, rest)) if number.bytes().all(|b| b.is_ascii_digit()) => rest,
+        _ => value,
+    };
+    match value.strip_prefix("\\??\\") {
+        Some(rest) => format!("\\\\?\\{rest}"),
+        None => value.to_owned(),
+    }
+}
 pub(super) fn connected_pins(bytes: Option<&[u8]>, bridge: u32, count: u32) -> Vec<u32> {
     let Some(bytes) = bytes else {
         return vec![bridge];
@@ -133,6 +150,17 @@ mod tests {
         assert_eq!(physical(&bytes), None);
         bytes[0] = 11;
         assert_eq!(physical(&bytes), None);
+    }
+    #[test]
+    fn ks_filter_path_drops_the_topology_prefix_and_the_nt_link_prefix() {
+        let interface = r"\\?\root#media#0000#{6994ad04-93ef-11d0-a3cc-00a0c9223196}\topologyhdmi1";
+        assert_eq!(filter_path(&format!("{{2}}.{interface}")), interface);
+        assert_eq!(filter_path(interface), interface);
+        assert_eq!(
+            filter_path(r"\??\ROOT#MEDIA#0000#{6994ad04-93ef-11d0-a3cc-00a0c9223196}\WaveHdmi1"),
+            r"\\?\ROOT#MEDIA#0000#{6994ad04-93ef-11d0-a3cc-00a0c9223196}\WaveHdmi1"
+        );
+        assert_eq!(filter_path(r"{x}.\\?\a"), r"{x}.\\?\a");
     }
     #[test]
     fn ks_audio_range_and_period_respect_requested_shape() {
