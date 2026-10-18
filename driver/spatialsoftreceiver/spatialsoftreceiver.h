@@ -21,7 +21,14 @@ constexpr ULONG SsrRingBytes = 8 * 1024 * 1024;
 // here would need a dynamic initializer, and a kernel image has no CRT to
 // run one (LNK4210 in Debug builds).
 constexpr SSR_ENDPOINT_FORMATS SsrCompiledFormats = {SSR_COMPILED_CODECS, SSR_COMPILED_PCM_INIT};
-constexpr SSR_ENDPOINT_FORMATS SsrDefaultFormats = {SSR_DEFAULT_ENABLED_CODECS, SSR_DEFAULT_PCM_INIT};
+constexpr ULONGLONG SsrDefaultCodecs[SSR_MAX_ENDPOINTS] =
+    SSR_DEFAULT_ENABLED_CODECS_BY_ENDPOINT;
+constexpr SSR_ENDPOINT_FORMATS SsrDefaultFormats[SSR_MAX_ENDPOINTS] = {
+    {SsrDefaultCodecs[0], SSR_DEFAULT_PCM_INIT},
+    {SsrDefaultCodecs[1], SSR_DEFAULT_PCM_INIT},
+    {SsrDefaultCodecs[2], SSR_DEFAULT_PCM_INIT},
+    {SsrDefaultCodecs[3], SSR_DEFAULT_PCM_INIT},
+};
 constexpr ULONG SsrWaveHostPin = 0;
 constexpr ULONG SsrWaveBridgePin = 1;
 constexpr ULONG SsrTopologyBridgePin = 0;

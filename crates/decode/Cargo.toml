@@ -15,6 +15,7 @@ ssr-types.workspace = true
 bitstream.workspace = true
 thiserror.workspace = true
 eac3.workspace = true
+truehd.workspace = true
 
 [dev-dependencies]
 ssr-abi.workspace = true

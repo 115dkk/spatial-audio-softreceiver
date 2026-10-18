@@ -132,7 +132,7 @@ class DriverFlowTest(unittest.TestCase):
             values[indexes[name]] = value
         for endpoint in range(3):
             for name, value in {
-                "codecs": 0x6c,
+                "codecs": ssr_abi.DEFAULT_ENABLED_CODECS_BY_ENDPOINT[endpoint],
                 "pcm.rates": 0x3f,
                 "pcm.shapes": 0x1f,
                 "pcm.max_masked_channels": 18,
@@ -144,6 +144,7 @@ class DriverFlowTest(unittest.TestCase):
         self.assertEqual(info["qpc_frequency"], QPC)
         self.assertEqual(info["endpoint_mask"], 7)
         self.assertEqual(info["compiled"]["codecs"], 0x1fe)
+        self.assertEqual(info["endpoints"][2]["codecs"], 0x7c)
         self.assertEqual(info["endpoints"][2]["pcm"]["direct_channels"], 0xffffffff)
         self.assertEqual(info["endpoints"][3]["pcm"]["rates"], 0)
         with self.assertRaises(ValueError): parse_abi_info(raw[:-1])

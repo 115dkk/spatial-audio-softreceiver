@@ -1219,7 +1219,7 @@ fn format_and_needs_brir_events_reach_poll() {
 }
 
 #[test]
-fn format_events_carry_mat_unsupported_reason_and_pcm_support() {
+fn format_events_carry_mat_and_pcm_support() {
     let lockstep = Arc::new(Lockstep::default());
     let state = SinkState::lockstep(0, Arc::clone(&lockstep));
     let capture = RecordsCapture {
@@ -1254,7 +1254,7 @@ fn format_events_carry_mat_unsupported_reason_and_pcm_support() {
                 codec: BitstreamCodec::Mat21,
                 ..
             }),
-            unsupported: Some(ssr_types::UnsupportedReason::Format),
+            unsupported: None,
             ..
         }
     )));

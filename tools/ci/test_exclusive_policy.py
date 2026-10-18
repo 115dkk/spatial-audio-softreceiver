@@ -53,7 +53,8 @@ class ExclusivePolicyContractTests(unittest.TestCase):
             fmt = parse_wave_format(blob[8:])
             self.assertEqual((fmt["channels"], fmt["rate"], fmt["sample"]), (8 if ep == 0 else 2, 48000, "float"))
             mask = next(line.split(",")[4:] for line in parameters.splitlines() if f",CodecMask{ep}," in line)
-            self.assertEqual(bytes.fromhex("".join(mask)), bytes.fromhex("6c00000000000000"))
+            expected = "7c" if ep == 2 else "6c"
+            self.assertEqual(bytes.fromhex("".join(mask)), bytes.fromhex(expected + "00000000000000"))
             for name, value in (("PcmRateMask", "0x3f"), ("PcmShapeMask", "0x1f"),
                                 ("PcmMaxMaskedChannels", "18"), ("PcmDirectChannels", "0xffffffff")):
                 self.assertIn(f"HKR,Parameters,{name}{ep},0x00010001,{value}", parameters)

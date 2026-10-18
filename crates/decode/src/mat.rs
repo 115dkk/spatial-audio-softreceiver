@@ -1,19 +1,17 @@
-//! MAT 2.1 adapter (clean room, ADR 0005).
+//! Placeholder for uncompressed PCM carried in MAT 2.x (clean room, ADR 0005).
 //!
-//! Windows spatial sound packs 11 fixed channels and 20 dynamic objects as
-//! uncompressed PCM, with a position table, into 20 ms MAT 2.1 bursts of
-//! 61,440 bytes. The layout inside the burst is not public, and the only
-//! working implementation (SpatialAudioLab) may not be read, so this adapter is
-//! written from ring dumps observed as a black box. Until dumps exist it
-//! refuses every burst; `features.toml` keeps `decode.mat` planned.
+//! MLP/TrueHD carried in MAT is decoded by `mat_frame` and the TrueHD adapter.
+//! The uncompressed PCM layout remains unknown and will be inferred only from
+//! ring dumps observed as a black box. Until those dumps exist this adapter
+//! refuses that syntax.
 
 use bitstream::Burst;
 use ssr_types::SceneBlock;
 
 use crate::{DecodeConfig, DecodeError};
 
-/// Whether this adapter can decode MAT bursts; flip this when it decodes them.
-pub const AVAILABLE: bool = false;
+/// Whether uncompressed PCM MAT content is supported.
+pub const PCM_AVAILABLE: bool = false;
 
 #[derive(Debug)]
 pub struct MatDecoder {
@@ -33,8 +31,8 @@ impl MatDecoder {
         _out: &mut dyn FnMut(&SceneBlock<'_>),
     ) -> Result<(), DecodeError> {
         Err(DecodeError::Unsupported {
-            codec: "MAT 2.1",
-            detail: "the decoder is built from ring dumps, none recorded yet",
+            codec: "MAT 2.x",
+            detail: "PCM inside MAT is not decoded yet",
         })
     }
 

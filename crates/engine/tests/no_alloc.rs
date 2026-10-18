@@ -348,6 +348,53 @@ fn format_change_and_bitstream_decode_error_do_not_allocate() {
 }
 
 #[test]
+fn truehd_mat_burst_placement_does_not_allocate_on_the_capture_path() {
+    let format = SourceFormat::Bitstream(BitstreamFormat {
+        codec: BitstreamCodec::Mat21,
+        container_rate: 192_000,
+        container_channels: 8,
+        encoded_rate: 48_000,
+        encoded_channels: 6,
+    });
+    let burst = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../decode/tests/fixtures/truehd/tones-5.1-48k.spdif"),
+    )
+    .unwrap();
+    let mut chain = Chain::new(ChainConfig::default());
+    let mut worker = chain.take_decode_worker().unwrap();
+
+    chain.push_record(
+        Record::FormatChange {
+            endpoint: 0,
+            epoch: 1,
+            repeat: false,
+            qpc: 0,
+            format,
+        },
+        &mut |_| {},
+    );
+    assert_no_alloc(|| {
+        chain.push_record(
+            Record::Data {
+                endpoint: 0,
+                epoch: 1,
+                flags: 0,
+                pos: 0,
+                qpc: 200_000,
+                qpc_written: 0,
+                bytes: &burst[..61_440],
+            },
+            &mut |_| {},
+        );
+    });
+    assert_eq!(chain.decode_in_flight(), 1);
+    assert!(worker.run_one());
+    assert_no_alloc(|| chain.idle(200_000, &mut |_| {}));
+    assert_eq!(chain.decode_in_flight(), 0);
+}
+
+#[test]
 fn mixing_two_endpoints_does_not_allocate() {
     let primary_signals = [vec![0.25; MIX_FRAMES]];
     let secondary_signals = [vec![0.5; MIX_FRAMES]];

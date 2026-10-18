@@ -44,7 +44,7 @@ $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$Service"
 $image = (Get-ItemProperty $serviceKey).ImagePath
 if ($image -notmatch 'spatialsoftreceiver\.sys$') { throw "service ImagePath is '$image'" }
 $parameters = Get-ItemProperty "$serviceKey\Parameters"
-$expected = @{ EndpointMask = 0x7; CodecMask0 = 0x6C; CodecMask1 = 0x6C; CodecMask2 = 0x6C; CodecMask3 = 0x6C; WritePacket = 0 }
+$expected = @{ EndpointMask = 0x7; CodecMask0 = 0x6C; CodecMask1 = 0x6C; CodecMask2 = 0x7C; CodecMask3 = 0x6C; WritePacket = 0 }
 foreach ($ep in 0..3) {
     $expected["PcmRateMask$ep"] = 0x3f
     $expected["PcmShapeMask$ep"] = 0x1f

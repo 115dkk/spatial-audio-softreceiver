@@ -5,8 +5,8 @@
 //! | adapter | input | block |
 //! | --- | --- | --- |
 //! | [`pcm::PcmDecoder`] | interleaved PCM bytes | `rate / 100` frames (10 ms), or the complete frames so far on [`Decoders::emit_buffered`] |
-//! | [`mat::MatDecoder`] | MAT bursts | 480 frames (half a 20 ms burst) |
 //! | [`ddp::DdpDecoder`] | E-AC-3 bursts | 1536 frames total, split at OAMD updates/ramps |
+//! | [`truehd::TrueHdDecoder`] | raw TrueHD or MLP in MAT | decoder-reported frames, split at buffer and OAMD boundaries |
 //!
 //! [`Decoders`] holds all of them, created once with every buffer they will
 //! need, and switches between them on a format change without allocating.
@@ -23,8 +23,11 @@
 pub mod ddp;
 pub mod direct;
 pub mod mat;
+pub mod mat_frame;
 pub mod pcm;
 mod scene;
+mod timeline;
+pub mod truehd;
 
 use bitstream::Burst;
 use ssr_types::{SceneBlock, SceneLayoutTable, SourceFormat};
@@ -86,11 +89,31 @@ pub enum DecodeError {
     DecoderBehind,
 }
 
-/// Codecs whose adapter decodes on the decode thread.
+/// Logical codecs whose adapter decodes on the decode thread.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeferredCodec {
     /// E-AC-3 (DD+), with JOC objects when present.
     Ddp,
+    /// TrueHD/MLP, raw or carried inside MAT 2.x.
+    TrueHd,
+}
+
+/// The selected deferred input syntax. This travels with each job so MAT marker
+/// extraction runs on the decode thread rather than the capture thread.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeferredInput {
+    Ddp,
+    TrueHdRaw,
+    TrueHdMat,
+}
+
+impl DeferredInput {
+    pub fn codec(self) -> DeferredCodec {
+        match self {
+            Self::Ddp => DeferredCodec::Ddp,
+            Self::TrueHdRaw | Self::TrueHdMat => DeferredCodec::TrueHd,
+        }
+    }
 }
 
 /// How the engine feeds the selected adapter.
@@ -109,8 +132,9 @@ pub enum Route {
 enum Active {
     None,
     Pcm,
-    Mat,
     Ddp,
+    TrueHdRaw,
+    TrueHdMat,
 }
 
 /// Every adapter, preallocated; one is active at a time. For codecs that
@@ -118,8 +142,8 @@ enum Active {
 #[derive(Debug)]
 pub struct Decoders {
     pcm: pcm::PcmDecoder,
-    mat: mat::MatDecoder,
     ddp: ddp::DdpBack,
+    truehd: truehd::TrueHdBack,
     active: Active,
     epoch: u32,
 }
@@ -128,8 +152,8 @@ impl Decoders {
     pub fn new(config: DecodeConfig) -> Self {
         Self {
             pcm: pcm::PcmDecoder::new(config),
-            mat: mat::MatDecoder::new(config),
             ddp: ddp::DdpBack::new(config),
+            truehd: truehd::TrueHdBack::new(config),
             active: Active::None,
             epoch: 0,
         }
@@ -146,14 +170,8 @@ impl Decoders {
                 (Active::Pcm, Route::Pcm)
             }
             SourceFormat::Bitstream(b) => match b.codec {
-                C::Mat20 | C::Mat21 if mat::AVAILABLE => (Active::Mat, Route::Bitstream),
-                C::Mat20 | C::Mat21 => {
-                    self.active = Active::None;
-                    return Err(DecodeError::Unsupported {
-                        codec: "MAT 2.1",
-                        detail: "the decoder is built from ring dumps, none recorded yet",
-                    });
-                }
+                C::TrueHd => (Active::TrueHdRaw, Route::Bitstream),
+                C::Mat20 | C::Mat21 => (Active::TrueHdMat, Route::Bitstream),
                 C::Eac3 | C::Eac3Joc => (Active::Ddp, Route::Bitstream),
                 other => {
                     self.active = Active::None;
@@ -186,14 +204,16 @@ impl Decoders {
     /// codec that decodes on the decode thread ([`Self::deferred`]) is refused.
     pub fn push_burst(
         &mut self,
-        burst: &Burst<'_>,
-        qpc: u64,
-        out: &mut dyn FnMut(&SceneBlock<'_>),
+        _burst: &Burst<'_>,
+        _qpc: u64,
+        _out: &mut dyn FnMut(&SceneBlock<'_>),
     ) -> Result<(), DecodeError> {
         match self.active {
-            Active::Mat => self.mat.push(burst, qpc, self.epoch, out),
             Active::Ddp => Err(DecodeError::WrongRoute(
                 "an E-AC-3 burst decodes on the decode thread",
+            )),
+            Active::TrueHdRaw | Active::TrueHdMat => Err(DecodeError::WrongRoute(
+                "a TrueHD/MAT burst decodes on the decode thread",
             )),
             Active::None => Err(DecodeError::NoFormat),
             Active::Pcm => Err(DecodeError::WrongRoute("a burst in a PCM epoch")),
@@ -202,10 +222,12 @@ impl Decoders {
 
     /// `Some` while the active adapter decodes on the decode thread. The chain
     /// then copies the burst into a job instead of calling [`Self::push_burst`].
-    pub fn deferred(&self) -> Option<DeferredCodec> {
+    pub fn deferred(&self) -> Option<DeferredInput> {
         match self.active {
-            Active::Ddp => Some(DeferredCodec::Ddp),
-            Active::None | Active::Pcm | Active::Mat => None,
+            Active::Ddp => Some(DeferredInput::Ddp),
+            Active::TrueHdRaw => Some(DeferredInput::TrueHdRaw),
+            Active::TrueHdMat => Some(DeferredInput::TrueHdMat),
+            Active::None | Active::Pcm => None,
         }
     }
 
@@ -214,7 +236,8 @@ impl Decoders {
         match self.active {
             Active::Pcm => self.pcm.layout(),
             Active::Ddp => self.ddp.layout(),
-            Active::None | Active::Mat => &SceneLayoutTable::EMPTY,
+            Active::TrueHdRaw | Active::TrueHdMat => self.truehd.layout(),
+            Active::None => &SceneLayoutTable::EMPTY,
         }
     }
 
@@ -237,6 +260,9 @@ impl Decoders {
             (Active::Ddp, Some(DeferredCodec::Ddp)) => {
                 self.ddp.place(&decoded.ddp, qpc, epoch, out)
             }
+            (Active::TrueHdRaw | Active::TrueHdMat, Some(DeferredCodec::TrueHd)) => {
+                self.truehd.place(&decoded.truehd, qpc, epoch, out)
+            }
             _ => Err(DecodeError::WrongRoute(
                 "a decoded delivery for a codec the active adapter does not decode",
             )),
@@ -257,7 +283,7 @@ impl Decoders {
     pub fn flush(&mut self, out: &mut dyn FnMut(&SceneBlock<'_>)) -> Result<(), DecodeError> {
         match self.active {
             Active::Pcm => self.pcm.flush(out),
-            Active::Mat | Active::Ddp | Active::None => Ok(()),
+            Active::Ddp | Active::TrueHdRaw | Active::TrueHdMat | Active::None => Ok(()),
         }
     }
 
@@ -266,8 +292,8 @@ impl Decoders {
     pub fn reset(&mut self) {
         match self.active {
             Active::Pcm => self.pcm.reset(),
-            Active::Mat => self.mat.reset(),
             Active::Ddp => self.ddp.reset(),
+            Active::TrueHdRaw | Active::TrueHdMat => self.truehd.reset(),
             Active::None => {}
         }
     }
@@ -275,21 +301,32 @@ impl Decoders {
 
 /// One lane's decode-thread halves. Lives on the decode thread and may
 /// allocate.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct FrontDecoders {
     ddp: ddp::DdpFront,
+    truehd: truehd::TrueHdFront,
+    mat_storage: Box<[u8; mat_frame::MAT_CONTENT_BYTES]>,
+}
+
+impl Default for FrontDecoders {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FrontDecoders {
     pub fn new() -> Self {
         Self {
             ddp: ddp::DdpFront::new(),
+            truehd: truehd::TrueHdFront::new(),
+            mat_storage: Box::new([0; mat_frame::MAT_CONTENT_BYTES]),
         }
     }
 
     /// Forgets the cross-frame state of every decode-thread half.
     pub fn reset(&mut self) {
         self.ddp.reset();
+        self.truehd.reset();
     }
 
     /// Decodes one burst payload of `codec` into `into`. On error the codec's
@@ -298,15 +335,33 @@ impl FrontDecoders {
     /// like any delivery: [`Decoders::place_deferred`] returns the error.
     pub fn decode(
         &mut self,
-        codec: DeferredCodec,
+        input: DeferredInput,
         payload: &[u8],
         into: &mut Decoded,
     ) -> Result<(), DecodeError> {
         into.clear();
-        let result = match codec {
-            DeferredCodec::Ddp => self.ddp.decode(payload, &mut into.ddp),
+        let result = match input {
+            DeferredInput::Ddp => self.ddp.decode(payload, &mut into.ddp),
+            DeferredInput::TrueHdRaw => self.truehd.decode(payload, &mut into.truehd),
+            DeferredInput::TrueHdMat => {
+                let burst = Burst {
+                    data_type: bitstream::DataType::Mat,
+                    pc: 22,
+                    payload,
+                    start: 0,
+                };
+                match mat_frame::extract(&burst, &mut self.mat_storage)? {
+                    mat_frame::MatPayload::TrueHd(content) => {
+                        self.truehd.decode(content, &mut into.truehd)
+                    }
+                    mat_frame::MatPayload::Unknown(_) => Err(DecodeError::Unsupported {
+                        codec: "MAT 2.x",
+                        detail: "PCM inside MAT is not decoded yet",
+                    }),
+                }
+            }
         };
-        into.codec = Some(codec);
+        into.codec = Some(input.codec());
         result
     }
 }
@@ -317,6 +372,7 @@ impl FrontDecoders {
 pub struct Decoded {
     codec: Option<DeferredCodec>,
     ddp: ddp::DdpDecoded,
+    truehd: truehd::TrueHdDecoded,
 }
 
 impl Decoded {
@@ -324,6 +380,7 @@ impl Decoded {
         Self {
             codec: None,
             ddp: ddp::DdpDecoded::new(),
+            truehd: truehd::TrueHdDecoded::new(),
         }
     }
 
@@ -331,6 +388,7 @@ impl Decoded {
     pub fn clear(&mut self) {
         self.codec = None;
         self.ddp.clear();
+        self.truehd.clear();
     }
 
     /// The codec that filled this delivery, `None` while it is empty.
@@ -342,6 +400,7 @@ impl Decoded {
     pub fn frames(&self) -> usize {
         match self.codec {
             Some(DeferredCodec::Ddp) => self.ddp.frames(),
+            Some(DeferredCodec::TrueHd) => self.truehd.frames(),
             None => 0,
         }
     }
@@ -351,6 +410,7 @@ impl Decoded {
     pub fn frames_at_mix_rate(&self) -> u64 {
         match self.codec {
             Some(DeferredCodec::Ddp) => self.ddp.frames_at_mix_rate(),
+            Some(DeferredCodec::TrueHd) => self.truehd.frames_at_mix_rate(),
             None => 0,
         }
     }

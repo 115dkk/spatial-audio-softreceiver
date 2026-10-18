@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use brir::PreparedBrir;
 use convolver::{Binauralizer, MonoConvolver};
-use decode::{DecodeConfig, DecodeError, Decoders, DeferredCodec, MAX_SCENE_FRAMES, Route};
+use decode::{DecodeConfig, DecodeError, Decoders, DeferredInput, MAX_SCENE_FRAMES, Route};
 use render::{PanGeometry, Ramp};
 use speakers::{BiquadCoefficients, CrossoverCoefficients, PreparedSpeakers};
 use ssr_abi::{
@@ -1007,10 +1007,11 @@ fn place_decoded(
             scene_rate_error = Some(rate);
         }
     });
-    let error = match (result, scene_rate_error) {
-        (Err(error), _) => ChainError::Decode(error),
-        (Ok(()), Some(rate)) => ChainError::UnsupportedSceneRate(rate),
-        (Ok(()), None) => return Placement::Placed,
+    let error = match (result, scene_rate_error, job.result()) {
+        (Err(error), _, _) => ChainError::Decode(error),
+        (Ok(()), Some(rate), _) => ChainError::UnsupportedSceneRate(rate),
+        (Ok(()), None, Err(error)) => ChainError::Decode(error),
+        (Ok(()), None, Ok(())) => return Placement::Placed,
     };
     decoders.reset();
     Placement::Failed {
@@ -1037,16 +1038,21 @@ fn submit_deferred_burst(
     geometry: Option<&PanGeometry>,
     endpoint: u16,
     epoch: u32,
-    codec: DeferredCodec,
+    input: DeferredInput,
     burst: &bitstream::Burst<'_>,
     qpc: u64,
     before_restart: &mut dyn FnMut(&mut SceneMixer),
 ) -> Option<ChainError> {
-    let (data_type, wrong_route) = match codec {
-        DeferredCodec::Ddp => (
+    let (data_type, wrong_route) = match input {
+        DeferredInput::Ddp => (
             bitstream::DataType::Eac3,
             "a non-E-AC-3 burst in a DD+ epoch",
         ),
+        DeferredInput::TrueHdRaw => (
+            bitstream::DataType::Mat,
+            "a non-TrueHD burst in a raw TrueHD epoch",
+        ),
+        DeferredInput::TrueHdMat => (bitstream::DataType::Mat, "a non-MAT burst in a MAT epoch"),
     };
     let submitted = if burst.data_type == data_type {
         queue.submit_burst(
@@ -1055,7 +1061,7 @@ fn submit_deferred_burst(
             qpc,
             lane.generation,
             lane.clock,
-            codec,
+            input,
             burst.payload,
         )
     } else {
@@ -2761,7 +2767,7 @@ impl Chain {
                         transport_advanced = true;
                     }
                 };
-                let error = if let Some(codec) = decoders.deferred() {
+                let error = if let Some(input) = decoders.deferred() {
                     submit_deferred_burst(
                         decoders,
                         lane,
@@ -2773,7 +2779,7 @@ impl Chain {
                         geometry,
                         endpoint,
                         epoch,
-                        codec,
+                        input,
                         &burst,
                         burst_qpc,
                         &mut advance_first,
@@ -2858,6 +2864,24 @@ mod tests {
                 levels
             },
         }
+    }
+
+    #[test]
+    fn a_restart_clears_only_current_generation_decode_waiting() {
+        let mut lane = DeferredLane {
+            generation: 7,
+            clock: 480,
+            in_flight: 3,
+            current_in_flight: 2,
+            stop_pending: true,
+        };
+
+        lane.restart();
+
+        assert_eq!(lane.generation, 8);
+        assert_eq!(lane.in_flight, 3);
+        assert_eq!(lane.current_in_flight, 0);
+        assert!(lane.stop_pending);
     }
 
     #[test]

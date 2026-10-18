@@ -404,6 +404,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitstream-io"
+version = "4.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7eff00be299a18769011411c9def0d827e8f2d7bf0c3dbf53633147a8867fd1f"
+dependencies = [
+ "no_std_io2",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -999,6 +1008,7 @@ dependencies = [
  "ssr-abi",
  "ssr-types",
  "thiserror 2.0.21",
+ "truehd",
 ]
 
 [[package]]
@@ -2560,6 +2570,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "no_std_io2"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "418abd1b6d34fbf6cae440dc874771b0525a604428704c76e48b29a5e67b8003"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "normpath"
 version = "1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2621,6 +2640,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "oamd"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76c4b9119cf66c5cdbc555ac0dbb9607a92a71e8fd6409c3217f429c05872f93"
+dependencies = [
+ "anyhow",
+ "bitstream-io",
+ "log",
 ]
 
 [[package]]
@@ -4130,6 +4160,7 @@ dependencies = [
  "bitstream",
  "brir",
  "clap",
+ "decode",
  "engine",
  "hound",
  "serde",
@@ -5073,6 +5104,18 @@ dependencies = [
  "serde",
  "thiserror 2.0.21",
  "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "truehd"
+version = "0.7.2"
+source = "git+https://github.com/harletty/truehdd?rev=5c8b880405946e7ff1aee884cf9988415fe2c3a9#5c8b880405946e7ff1aee884cf9988415fe2c3a9"
+dependencies = [
+ "anyhow",
+ "bitstream-io",
+ "log",
+ "oamd",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

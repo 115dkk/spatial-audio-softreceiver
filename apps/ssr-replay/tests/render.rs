@@ -9,7 +9,7 @@ use brir::{AnglePreset, BrirSource, DirectionFile, LfePolicy, Profile};
 use engine::{Chain, ChainConfig, ChainEvent, OutputProfile, Prepared};
 use serde_json::Value;
 use ssr_abi::{RecordWriter, dump_header, dump_header_bytes, reads, wave_format_bytes};
-use ssr_types::{PcmFormat, SampleType, SourceFormat};
+use ssr_types::{BitstreamCodec, BitstreamFormat, PcmFormat, SampleType, SourceFormat};
 
 struct TempDir(PathBuf);
 
@@ -94,6 +94,42 @@ fn write_timed_dump(path: &Path, qpc_frequency: u64, second_qpc: u64) {
     }
     let length = writer.len();
     let mut dump = dump_header_bytes(qpc_frequency);
+    dump.extend_from_slice(&records[..length]);
+    std::fs::write(path, dump).unwrap();
+}
+
+fn write_truehd_dump(path: &Path, codec: BitstreamCodec) {
+    let format = SourceFormat::Bitstream(BitstreamFormat {
+        codec,
+        container_rate: 192_000,
+        container_channels: 8,
+        encoded_rate: 48_000,
+        encoded_channels: 6,
+    });
+    let periods = if codec == BitstreamCodec::TrueHd {
+        let raw = include_bytes!("../../../crates/decode/tests/fixtures/truehd/tones-5.1-48k.thd");
+        let mut period = Vec::new();
+        bitstream::frame_burst(bitstream::DataType::Mat, raw, 61_440, &mut period);
+        vec![period]
+    } else {
+        include_bytes!("../../../crates/decode/tests/fixtures/truehd/tones-5.1-48k.spdif")
+            .chunks(61_440)
+            .map(<[u8]>::to_vec)
+            .collect()
+    };
+    let mut records = vec![0; 200_000];
+    let mut writer = RecordWriter::new(&mut records);
+    assert!(writer.format_change(1, 0, &wave_format_bytes(&format)));
+    for (index, period) in periods.iter().enumerate() {
+        assert!(writer.data(
+            1,
+            (index * period.len()) as u64,
+            (index as u64 + 1) * 200_000,
+            period,
+        ));
+    }
+    let length = writer.len();
+    let mut dump = dump_header_bytes(10_000_000);
     dump.extend_from_slice(&records[..length]);
     std::fs::write(path, dump).unwrap();
 }
@@ -392,6 +428,57 @@ directions = [
 "#,
     )
     .unwrap();
+}
+
+#[test]
+fn render_raw_truehd_and_mat_fixtures_through_the_production_chain() {
+    for (codec, label) in [
+        (BitstreamCodec::TrueHd, "truehd-raw"),
+        (BitstreamCodec::Mat21, "truehd-mat"),
+    ] {
+        let temp = TempDir::new();
+        write_ir(&temp.0.join("FL.wav"));
+        write_ir(&temp.0.join("FR.wav"));
+        let dump = temp.0.join(format!("{label}.dump"));
+        let profile = temp.0.join("profile.toml");
+        let output = temp.0.join(format!("{label}.wav"));
+        let report = temp.0.join(format!("{label}.json"));
+        write_truehd_dump(&dump, codec);
+        write_profile(&profile);
+
+        let result = Command::new(env!("CARGO_BIN_EXE_ssr-replay"))
+            .arg("render")
+            .arg(&dump)
+            .args(["--profile"])
+            .arg(&profile)
+            .args(["--out"])
+            .arg(&output)
+            .args(["--report"])
+            .arg(&report)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{label}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let report: Value = serde_json::from_slice(&std::fs::read(report).unwrap()).unwrap();
+        assert!(report["blocks"].as_u64().unwrap() > 0, "{label}");
+        assert_eq!(
+            report["dropped_frames"],
+            match codec {
+                BitstreamCodec::TrueHd => 1_248,
+                BitstreamCodec::Mat21 => 0,
+                _ => unreachable!(),
+            },
+            "{label}"
+        );
+        assert!(report["errors"].as_array().unwrap().is_empty(), "{label}");
+        assert!(
+            wav_samples(&output).iter().any(|sample| *sample != 0.0),
+            "{label}"
+        );
+    }
 }
 
 #[test]

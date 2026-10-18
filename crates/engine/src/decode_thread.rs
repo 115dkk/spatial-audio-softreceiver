@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::Thread;
 use std::time::Duration;
 
-use decode::{DecodeError, Decoded, DeferredCodec, FrontDecoders};
+use decode::{DecodeError, Decoded, DeferredInput, FrontDecoders};
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use ssr_abi::MAX_ENDPOINTS;
 
@@ -43,7 +43,7 @@ const PARK_TIMEOUT: Duration = Duration::from_secs(1);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum JobKind {
     Reset,
-    Burst(DeferredCodec),
+    Burst(DeferredInput),
 }
 
 /// One unit of decode-thread work, allocated once and reused.
@@ -154,7 +154,7 @@ impl DecodeQueue {
         qpc: u64,
         generation: u32,
         submitted_clock: u64,
-        codec: DeferredCodec,
+        input: DeferredInput,
         payload: &[u8],
     ) -> Result<(), DecodeError> {
         if usize::from(endpoint) >= MAX_ENDPOINTS {
@@ -179,7 +179,7 @@ impl DecodeQueue {
         job.qpc = qpc;
         job.generation = generation;
         job.submitted_clock = submitted_clock;
-        job.kind = JobKind::Burst(codec);
+        job.kind = JobKind::Burst(input);
         job.result = Ok(());
         job.payload.clear();
         job.payload.extend_from_slice(payload);
@@ -327,7 +327,7 @@ impl DecodeWorker {
                 front.reset();
                 Ok(())
             }
-            (JobKind::Burst(codec), Some(front)) => {
+            (JobKind::Burst(input), Some(front)) => {
                 let (payload, decoded) = (&job_ref.payload, &mut job_ref.decoded);
                 // A panic in the upstream decoder must not end this thread:
                 // every later burst of every lane would then wait in a full
@@ -336,14 +336,20 @@ impl DecodeWorker {
                 // corrupt. Not covered by a test: the pinned upstream has no
                 // known panicking input (the decode crate's fuzz target feeds
                 // it arbitrary payloads) and there is no seam to inject one.
-                match catch_unwind(AssertUnwindSafe(|| front.decode(codec, payload, decoded))) {
-                    Ok(result) => result,
+                match catch_unwind(AssertUnwindSafe(|| front.decode(input, payload, decoded))) {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(error)) => {
+                        front.reset();
+                        Err(error)
+                    }
                     Err(_) => {
                         *front = FrontDecoders::new();
                         job_ref.decoded.clear();
                         Err(DecodeError::Corrupt {
-                            codec: match codec {
-                                DeferredCodec::Ddp => "E-AC-3",
+                            codec: match input {
+                                DeferredInput::Ddp => "E-AC-3",
+                                DeferredInput::TrueHdRaw => "TrueHD",
+                                DeferredInput::TrueHdMat => "TrueHD in MAT 2.x",
                             },
                             detail: "the decoder panicked on this access unit",
                         })
@@ -412,7 +418,7 @@ mod tests {
             qpc,
             3,
             1_000 + qpc,
-            DeferredCodec::Ddp,
+            DeferredInput::Ddp,
             &[0; 7],
         )
     }

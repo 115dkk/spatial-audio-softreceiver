@@ -13,6 +13,9 @@ pub enum SceneSource {
     #[serde(rename = "ddp_joc")]
     DdpJoc,
     Upmix,
+    TrueHd,
+    #[serde(rename = "truehd_objects")]
+    TrueHdObjects,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -29,7 +32,7 @@ pub struct SceneLayoutTable {
     pub lfe: bool,
     pub objects: u8,
     pub roles: [ObjectRole; MAX_OBJECTS],
-    /// Raw DD+ OAMD room coordinates in the ETSI TS 103 420 convention:
+    /// Raw OAMD room coordinates in the ETSI TS 103 420 convention:
     /// x=0 left/1 right, y=0 front/1 back, z=-1 below/0 ear/1 ceiling,
     /// before this repository converts axes and maps the room cube to a direction.
     pub room: [Option<[f32; 3]>; MAX_OBJECTS],

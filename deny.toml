@@ -69,4 +69,7 @@ allow-wildcard-paths = true
 unknown-registry = "deny"
 unknown-git = "deny"
 # Git sources are added one by one with the commit pinned in Cargo.toml.
-allow-git = ["https://github.com/harletty/harletty-bridge"]
+allow-git = [
+    "https://github.com/harletty/harletty-bridge",
+    "https://github.com/harletty/truehdd",
+]

@@ -3,7 +3,7 @@
 이 문서는 릴리스의 `spatial-softreceiver-driver-test-<버전>-x64.zip`에 `README.md`로 들어갑니다. 시험서명 모드를 켠 Windows PC에서, GitHub 호스트 러너로는 할 수 없는 드라이버 시험을 하는 방법을 적습니다. 시험하는 분이 AI 도우미와 함께 따라 할 수 있도록 명령, 합격 기준, 남길 파일을 단계마다 적습니다.
 
 GitHub 러너가 PR마다 이미 하는 드라이버 시험(여기서 되풀이할 필요가 없는 것):
-- 설치와 적재, 엔드포인트 마스크 `0x7`의 세 렌더 엔드포인트, 기본 형식 규칙(코덱 마스크 `0x6c`와 PCM 규칙: 표본율 `0x3f`, 표본 모양 `0x1f`, 마스크 채널 상한 18, 직접 출력 채널 `0xffffffff`)
+- 설치와 적재, 엔드포인트 마스크 `0x7`의 세 렌더 엔드포인트, 기본 형식 규칙(코덱 마스크는 엔드포인트 0과 1이 `0x6c`, 패스스루 엔드포인트 2가 TrueHD를 더한 `0x7c`. PCM 규칙: 표본율 `0x3f`, 표본 모양 `0x1f`, 마스크 채널 상한 18, 직접 출력 채널 `0xffffffff`)
 - 엔드포인트마다 톤을 재생해 링으로 읽어 오기(공유 모드 기본값은 엔드포인트 0이 float32 7.1/48 kHz, 엔드포인트 1과 2가 float32 stereo/48 kHz. `collect.ps1`의 DeviceFormat 관찰값은 정보이고 합격 조건이 아님)
 - 세 엔드포인트의 톤을 동시에 `ssr-live --source driver`로 받아 가상 케이블에서 듣기
 - 독점 정책(0/1은 독점 거절, 2는 독점 허용)과 볼륨·음소거 기록
@@ -371,7 +371,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\volume_check.ps1 -Summary 
 
 재생기가 압축 오디오를 그대로(독점 모드로) 보낼 때 드라이버가 그 형식을 받아들이는지 봅니다. MPC-HC와 LAV Filters를 예로 듭니다.
 
-기본 `CodecMask2=0x6c`에서는 DD+/MAT를 받지만 AC-3·TrueHD·DTS 계열은 꺼져 있습니다. PCM은 별도 규칙(`PcmRateMask2=0x3f`, `PcmShapeMask2=0x1f`, `PcmMaxMaskedChannels2=18`, `PcmDirectChannels2=0xffffffff`)으로 44.1~192 kHz의 여섯 표본율, 다섯 표본 모양, Windows 18개 스피커 비트의 배치 및 마스크 0의 1~32채널 직접 출력을 받습니다. 옛 `FormatMask2`는 읽지 않습니다. 기본으로 꺼진 코덱(AC-3, TrueHD, DTS 계열)의 협상은 지원 디코더에 맞춰 별도로 켠 시험 구성에서만 확인하며, 기본 구성에서 그 코덱이 거절되는 것은 드라이버 결함으로 보지 않습니다. 아래 재생과 함께 0으로 시스템 소리, 1로 공유 음악을 보내 둘이 끊기지 않는지도 확인합니다. PCM 형식의 범위는 4-1단계에서 봅니다.
+기본 `CodecMask2=0x7c`에서는 DD+, MAT, TrueHD를 받지만 AC-3와 DTS 계열은 꺼져 있습니다. PCM은 별도 규칙(`PcmRateMask2=0x3f`, `PcmShapeMask2=0x1f`, `PcmMaxMaskedChannels2=18`, `PcmDirectChannels2=0xffffffff`)으로 44.1~192 kHz의 여섯 표본율, 다섯 표본 모양, Windows 18개 스피커 비트의 배치 및 마스크 0의 1~32채널 직접 출력을 받습니다. 옛 `FormatMask2`는 읽지 않습니다. 기본으로 꺼진 코덱(AC-3, DTS 계열)의 협상은 지원 디코더에 맞춰 별도로 켠 시험 구성에서만 확인하며, 기본 구성에서 그 코덱이 거절되는 것은 드라이버 결함으로 보지 않습니다. 아래 재생과 함께 0으로 시스템 소리, 1로 공유 음악을 보내 둘이 끊기지 않는지도 확인합니다. PCM 형식의 범위는 4-1단계에서 봅니다.
 
 1. LAV Audio Decoder 설정에서 비트스트리밍(AC-3, E-AC-3, TrueHD, DTS, DTS-HD)을 켭니다.
 2. 오디오 렌더러를 MPC Audio Renderer로 하고, 독점 모드로 **`Spatial SoftReceiver PASS`** 출력을 고릅니다. `Spatial SoftReceiver`와 `Spatial SoftReceiver Music`은 독점을 거절합니다.
