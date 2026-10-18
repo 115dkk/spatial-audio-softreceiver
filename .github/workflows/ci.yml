@@ -428,8 +428,9 @@ jobs:
       # while ssr-live writes its KS pin directly, and must be enabled again
       # afterwards. VB-CABLE is WaveCyclic, so this is the standard-streaming
       # transport; driver.yml runs the WaveRT transport against our own
-      # endpoint. ks-probe plays a 1 kHz tone at -12 dBFS that cable_capture
-      # records at the far end; the loopback renders the fixtures through the
+      # endpoint. ks-probe plays a 1 kHz tone at -12 dBFS for 3 s that
+      # cable_capture records at the far end (it wants at least 2 s of signal
+      # per ear, so a 2 s probe minus its start latency fell short); the loopback renders the fixtures through the
       # whole engine and compares the far end with the offline render, and its
       # report must say kernel_streaming without a fallback to WASAPI.
       - name: Kernel streaming (VB-CABLE's render pin with its endpoint disabled)
@@ -443,10 +444,10 @@ jobs:
           mkdir -p "$ks"
           target/release/ssr-live.exe devices --kernel || status=1
           cargo build --locked --release -p ssr-sys --example cable_capture || exit 1
-          target/release/examples/cable_capture.exe --endpoint "CABLE Output" --seconds 5 "$ks/probe-captured.wav" &
+          target/release/examples/cable_capture.exe --endpoint "CABLE Output" --seconds 6 "$ks/probe-captured.wav" &
           capture=$!
           sleep 1
-          target/release/ssr-live.exe ks-probe --output "VB-Audio Virtual Cable" --seconds 2 --json "$ks/probe.json" || status=1
+          target/release/ssr-live.exe ks-probe --output "VB-Audio Virtual Cable" --seconds 3 --json "$ks/probe.json" || status=1
           wait $capture || status=1
           python tools/ci/ks_probe_check.py "$ks/probe.json" --interface standard --captured "$ks/probe-captured.wav" || status=1
           fx="$RUNNER_TEMP/fx"
