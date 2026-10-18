@@ -21,7 +21,7 @@ ADR 0028은 Spatial SoftReceiver가 도는 동안 DAC의 렌더 엔드포인트�
 ### 열기와 스트리밍
 
 - 핀은 `KsCreatePin`으로 만들고, 표본 형식은 float32, int32, 32비트 컨테이너의 24비트, 패킹한 24비트, int16 순으로 시도합니다. 엔진은 float를 주고 싱크가 바꿉니다.
-- WaveRT 핀은 알림 이벤트(`KSPROPERTY_RTAUDIO_BUFFER_WITH_NOTIFICATION`)로, 없으면 1 ms 폴링으로 돕니다. 위치는 위치 레지스터를, 없으면 `KSPROPERTY_AUDIO_POSITION`을 읽습니다. 표준 스트리밍 핀(WaveCyclic)은 패킷 둘을 번갈아 씁니다.
+- WaveRT 핀은 알림 이벤트(`KSPROPERTY_RTAUDIO_BUFFER_WITH_NOTIFICATION`)로, 없으면 1 ms 폴링으로 돕니다. 링은 주기 넷입니다. 대기가 시스템 타이머 해상도(따로 올리지 않으면 15.6 ms)만큼 늦게 깨어날 수 있어, 주기 둘(앞선 몫 10 ms)로는 러너에서 1초에 여러 번 따라잡혔습니다(2026-10-18 CI). 앞선 몫이 30 ms면 한 번 늦게 깨어나도 남습니다. 위치는 위치 레지스터를, 없으면 `KSPROPERTY_AUDIO_POSITION`을 읽습니다. 표준 스트리밍 핀(WaveCyclic)은 패킷 둘을 번갈아 씁니다.
 - 재생 시각과 `played_frames`는 WASAPI 싱크와 같은 규약입니다. 그래서 주기 감시(`sys.output_cadence_guard`)도 그대로 돕니다. 하드웨어 위치가 없는 표준 스트리밍 장치에서는 `played_frames`가 없으므로 주기 감시도 쉽니다.
 - WaveRT에서 우리 쓰기가 하드웨어 위치에 따라잡히면, 장치를 잃은 것이 아니라 우리가 늦은 것이므로 쓰기 위치를 다시 맞추고 언더런으로 셉니다. 2초 동안 진전이 없거나 위치를 읽지 못하면 장치를 잃은 것으로 보고 런타임이 다시 엽니다(ADR 0019와 같은 재연결).
 

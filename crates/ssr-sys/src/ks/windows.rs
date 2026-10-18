@@ -83,6 +83,13 @@ enum Transport {
     },
 }
 
+/// Periods in a WaveRT ring. The writer refills a period once it is at most
+/// `WAVERT_PERIODS - 1` periods ahead, and a wait can oversleep by the system
+/// timer's resolution (15.6 ms unless a process raised it), which our virtual
+/// driver's position timer shares. Two 10 ms periods left 10 ms of slack and
+/// the writer resynced several times a second; three periods of slack cover it.
+const WAVERT_PERIODS: usize = 4;
+
 fn open_error(error: WIN32_ERROR) -> OutputError {
     OutputError::Io(format!("KS Win32 error {}", error.0))
 }
@@ -261,7 +268,7 @@ impl KsOpener {
                 }
                 let pin = Handle(raw);
                 let transport = if interface_id == KSINTERFACE_STANDARD_LOOPED_STREAMING.0 as u32 {
-                    match wave_rt(&mut control, &pin, frames * block * 2, block) {
+                    match wave_rt(&mut control, &pin, frames * block * WAVERT_PERIODS, block) {
                         Ok(transport) => transport,
                         Err(e) => {
                             last = failure(Reason::BufferAlloc, e);
@@ -281,7 +288,7 @@ impl KsOpener {
                 };
                 let period_frames = match &transport {
                     Transport::WaveRt { buffer, .. } => {
-                        buffer.ActualBufferSize as usize / block / 2
+                        buffer.ActualBufferSize as usize / block / WAVERT_PERIODS
                     }
                     _ => frames,
                 };
@@ -456,7 +463,7 @@ fn wave_rt(
     }
     let size = buffer.ActualBufferSize as usize;
     if buffer.BufferAddress.is_null()
-        || size < block * 2
+        || size < block * WAVERT_PERIODS
         || size > 16 * 1024 * 1024
         || !size.is_multiple_of(block * 2)
         || (buffer.BufferAddress as usize).checked_add(size).is_none()

@@ -2025,6 +2025,7 @@ mod platform {
                     })
                     .map_err(|e| e.to_string())?;
                 }
+                report["late_resyncs"] = sink.late_resyncs().into();
                 drop(sink);
                 restore.restore()
             }));
