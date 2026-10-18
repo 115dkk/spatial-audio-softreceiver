@@ -52,8 +52,8 @@ use ssr_types::{
     BitstreamCodec, BitstreamFormat, CaptureError, CaptureSource, ChainErrorCounts, ChainErrorKind,
     ClockStatus, DirectionId, DirectionView, ENGINE_ENDPOINTS, EndpointStatus, EngineFault,
     EngineStatus, LatencyStats, OutputError, OutputFormat, OutputLayout, OutputMode, OutputOpener,
-    OutputSink, PcmFormat, SampleType, SceneObject, SourceFormat, UnderrunSnapshot,
-    UnsupportedReason,
+    OutputSink, PcmFormat, SampleType, SceneLayoutTable, SceneObject, SourceFormat,
+    UnderrunSnapshot, UnsupportedReason,
 };
 
 use crate::Chain;
@@ -1010,6 +1010,7 @@ struct Shared {
     /// `Prepared` sets the capture thread has installed from the change queue.
     prepared_installed: AtomicU64,
     scene: SceneShared,
+    layouts: [LayoutShared; ENGINE_ENDPOINTS],
 }
 
 /// One published scene entry as five words: lane and object index, then the
@@ -1041,6 +1042,171 @@ struct SceneShared {
     buffers: [SceneBuffer; 2],
     /// The mixer generation last published; the capture thread's alone.
     published_generation: AtomicU64,
+}
+
+#[derive(Debug)]
+struct LayoutBuffer {
+    source: AtomicU32,
+    lfe_objects: AtomicU32,
+    roles: [AtomicU32; ssr_types::MAX_OBJECTS],
+    room: [[AtomicU32; 4]; ssr_types::MAX_OBJECTS],
+}
+
+impl LayoutBuffer {
+    fn new() -> Self {
+        Self {
+            source: AtomicU32::new(0),
+            lfe_objects: AtomicU32::new(0),
+            roles: std::array::from_fn(|_| AtomicU32::new(0)),
+            room: std::array::from_fn(|_| std::array::from_fn(|_| AtomicU32::new(0))),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct LayoutShared {
+    sequence: AtomicU64,
+    buffers: [LayoutBuffer; 2],
+    published_generation: AtomicU64,
+}
+
+impl LayoutShared {
+    fn new() -> Self {
+        Self {
+            sequence: AtomicU64::new(0),
+            buffers: [LayoutBuffer::new(), LayoutBuffer::new()],
+            published_generation: AtomicU64::new(0),
+        }
+    }
+
+    fn publish(&self, layout: SceneLayoutTable) {
+        let next = self.sequence.load(Ordering::Relaxed).wrapping_add(1);
+        let buffer = &self.buffers[(next & 1) as usize];
+        std::sync::atomic::fence(Ordering::Release);
+        buffer.source.store(layout.source as u32, Ordering::Relaxed);
+        buffer.lfe_objects.store(
+            u32::from(layout.lfe) | u32::from(layout.objects) << 8,
+            Ordering::Relaxed,
+        );
+        for (index, role) in layout.roles.iter().enumerate() {
+            let encoded = match role {
+                ssr_types::ObjectRole::Unused => 0,
+                ssr_types::ObjectRole::Dynamic => 1,
+                ssr_types::ObjectRole::Bed(speaker) => 2 | speaker_code(*speaker) << 8,
+            };
+            buffer.roles[index].store(encoded, Ordering::Relaxed);
+            if let Some(room) = layout.room[index] {
+                buffer.room[index][0].store(1, Ordering::Relaxed);
+                for (slot, value) in buffer.room[index][1..].iter().zip(room) {
+                    slot.store(value.to_bits(), Ordering::Relaxed);
+                }
+            } else {
+                buffer.room[index][0].store(0, Ordering::Relaxed);
+            }
+        }
+        self.sequence.store(next, Ordering::Release);
+    }
+
+    fn read(&self) -> SceneLayoutTable {
+        loop {
+            let sequence = self.sequence.load(Ordering::Acquire);
+            let buffer = &self.buffers[(sequence & 1) as usize];
+            let mut layout = SceneLayoutTable::EMPTY;
+            layout.source = match buffer.source.load(Ordering::Relaxed) {
+                1 => ssr_types::SceneSource::Pcm,
+                2 => ssr_types::SceneSource::Ddp,
+                3 => ssr_types::SceneSource::DdpJoc,
+                4 => ssr_types::SceneSource::Upmix,
+                _ => ssr_types::SceneSource::None,
+            };
+            let shape = buffer.lfe_objects.load(Ordering::Relaxed);
+            layout.lfe = shape & 1 != 0;
+            layout.objects = (shape >> 8) as u8;
+            for index in 0..usize::from(layout.objects).min(ssr_types::MAX_OBJECTS) {
+                let role = buffer.roles[index].load(Ordering::Relaxed);
+                layout.roles[index] = match role & 0xff {
+                    1 => ssr_types::ObjectRole::Dynamic,
+                    2 => speaker_from_code(role >> 8)
+                        .map_or(ssr_types::ObjectRole::Unused, ssr_types::ObjectRole::Bed),
+                    _ => ssr_types::ObjectRole::Unused,
+                };
+                if buffer.room[index][0].load(Ordering::Relaxed) != 0 {
+                    layout.room[index] = Some([
+                        f32::from_bits(buffer.room[index][1].load(Ordering::Relaxed)),
+                        f32::from_bits(buffer.room[index][2].load(Ordering::Relaxed)),
+                        f32::from_bits(buffer.room[index][3].load(Ordering::Relaxed)),
+                    ]);
+                }
+            }
+            std::sync::atomic::fence(Ordering::Acquire);
+            if self.sequence.load(Ordering::Relaxed) == sequence {
+                return layout;
+            }
+        }
+    }
+}
+
+fn speaker_code(speaker: ssr_types::Speaker) -> u32 {
+    use ssr_types::Speaker::*;
+    match speaker {
+        L => 1,
+        R => 2,
+        C => 3,
+        Ls => 4,
+        Rs => 5,
+        Lrs => 6,
+        Rrs => 7,
+        Cs => 8,
+        Lw => 9,
+        Rw => 10,
+        Lc => 11,
+        Rc => 12,
+        Lss => 13,
+        Rss => 14,
+        Tfl => 15,
+        Tfr => 16,
+        Tsl => 17,
+        Tsr => 18,
+        Trl => 19,
+        Trr => 20,
+        Tc => 21,
+        Tfc => 22,
+        Trc => 23,
+        Lfe => 24,
+        Lfe2 => 25,
+    }
+}
+
+fn speaker_from_code(code: u32) -> Option<ssr_types::Speaker> {
+    use ssr_types::Speaker::*;
+    Some(match code {
+        1 => L,
+        2 => R,
+        3 => C,
+        4 => Ls,
+        5 => Rs,
+        6 => Lrs,
+        7 => Rrs,
+        8 => Cs,
+        9 => Lw,
+        10 => Rw,
+        11 => Lc,
+        12 => Rc,
+        13 => Lss,
+        14 => Rss,
+        15 => Tfl,
+        16 => Tfr,
+        17 => Tsl,
+        18 => Tsr,
+        19 => Trl,
+        20 => Trr,
+        21 => Tc,
+        22 => Tfc,
+        23 => Trc,
+        24 => Lfe,
+        25 => Lfe2,
+        _ => return None,
+    })
 }
 
 impl SceneShared {
@@ -1162,10 +1328,13 @@ impl Shared {
             output_error: std::array::from_fn(|_| AtomicU32::new(0)),
             prepared_installed: AtomicU64::new(0),
             scene: SceneShared::new(),
+            layouts: std::array::from_fn(|_| LayoutShared::new()),
         }
     }
 
-    /// Publishes the chain's scene when it mixed a block since the last call.
+    /// Publishes the chain's scene and layout tables when their generations change.
+    /// A layout generation includes room-coordinate updates; structural consumers
+    /// compare the published status while diagnostics retain the latest OAMD room.
     fn publish_scene(&self, chain: &Chain) {
         let generation = chain.scene_generation();
         if self.scene.published_generation.load(Ordering::Relaxed) != generation {
@@ -1173,6 +1342,20 @@ impl Shared {
             self.scene
                 .published_generation
                 .store(generation, Ordering::Relaxed);
+        }
+        for (endpoint, shared) in self.layouts.iter().enumerate() {
+            let generation = chain.layout_generation(endpoint as u16);
+            if shared.published_generation.load(Ordering::Relaxed) != generation {
+                shared.publish(
+                    chain
+                        .layout(endpoint as u16)
+                        .copied()
+                        .unwrap_or(SceneLayoutTable::EMPTY),
+                );
+                shared
+                    .published_generation
+                    .store(generation, Ordering::Relaxed);
+            }
         }
     }
 
@@ -1334,6 +1517,7 @@ impl Shared {
     fn read_endpoint(&self, endpoint: usize) -> EndpointStatus {
         let status = &self.endpoints[endpoint];
         let (format, epoch, unsupported, volume_db, muted) = status.read();
+        let layout = self.layouts[endpoint].read();
         EndpointStatus {
             format,
             epoch,
@@ -1341,6 +1525,7 @@ impl Shared {
             muted,
             unsupported,
             chain_errors: status.read_chain_errors(),
+            layout: (layout.source != ssr_types::SceneSource::None).then(|| layout.to_status()),
         }
     }
 

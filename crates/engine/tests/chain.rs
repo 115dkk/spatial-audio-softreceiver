@@ -17,7 +17,8 @@ use ssr_abi::{
     RECORD_KIND_VOLUME, Record, RecordHeader, RecordWriter, wave_format_bytes,
 };
 use ssr_types::{
-    BitstreamCodec, BitstreamFormat, Direction, Layout, PcmFormat, SampleType, SourceFormat,
+    BitstreamCodec, BitstreamFormat, Direction, Layout, ObjectRole, PcmFormat, SampleType,
+    SceneSource, SourceFormat, Speaker,
 };
 
 struct TempDir(PathBuf);
@@ -231,6 +232,80 @@ fn delayed_prepared(label: &str, ir_frames: usize, delayed_tap: usize) -> Box<Pr
     )
     .unwrap();
     Box::new(Prepared::new(Arc::new(prepared), 480).unwrap())
+}
+
+#[test]
+fn layout_generation_changes_for_structure_and_clears_after_stop() {
+    let mut chain = Chain::new(ChainConfig::default());
+    assert_eq!(chain.layout_generation(ENDPOINT_PRIMARY), 0);
+    assert_eq!(chain.layout(ENDPOINT_PRIMARY), None);
+    chain.push_record(
+        Record::FormatChange {
+            endpoint: ENDPOINT_PRIMARY,
+            epoch: 1,
+            repeat: false,
+            qpc: 0,
+            format: stereo_pcm_format(),
+        },
+        &mut |_| {},
+    );
+    assert_eq!(chain.layout_generation(ENDPOINT_PRIMARY), 0);
+    let samples = pcm_bytes(0.25, MIX_FRAMES);
+    chain.push_record(
+        Record::Data {
+            endpoint: ENDPOINT_PRIMARY,
+            epoch: 1,
+            flags: 0,
+            pos: 0,
+            qpc: MIX_FRAMES as u64,
+            qpc_written: 0,
+            bytes: &samples,
+        },
+        &mut |_| {},
+    );
+    assert_eq!(chain.layout_generation(ENDPOINT_PRIMARY), 1);
+    let layout = chain.layout(ENDPOINT_PRIMARY).unwrap();
+    assert_eq!(layout.source, SceneSource::Pcm);
+    assert_eq!(layout.objects, 2);
+    assert_eq!(
+        &layout.roles[..2],
+        &[ObjectRole::Bed(Speaker::L), ObjectRole::Bed(Speaker::R)]
+    );
+    chain.push_record(
+        Record::FormatChange {
+            endpoint: ENDPOINT_PRIMARY,
+            epoch: 1,
+            repeat: true,
+            qpc: 0,
+            format: stereo_pcm_format(),
+        },
+        &mut |_| {},
+    );
+    assert_eq!(chain.layout_generation(ENDPOINT_PRIMARY), 1);
+    chain.push_record(
+        Record::Data {
+            endpoint: ENDPOINT_PRIMARY,
+            epoch: 1,
+            flags: 0,
+            pos: 0,
+            qpc: (MIX_FRAMES * 2) as u64,
+            qpc_written: 0,
+            bytes: &samples,
+        },
+        &mut |_| {},
+    );
+    assert_eq!(chain.layout_generation(ENDPOINT_PRIMARY), 1);
+    chain.push_record(
+        Record::StreamStop {
+            endpoint: ENDPOINT_PRIMARY,
+            epoch: 1,
+            repeat: false,
+            qpc: 0,
+        },
+        &mut |_| {},
+    );
+    assert_eq!(chain.layout(ENDPOINT_PRIMARY), None);
+    assert_eq!(chain.layout_generation(ENDPOINT_PRIMARY), 2);
 }
 
 #[test]

@@ -887,6 +887,26 @@ pub mod cli {
         }
     }
 
+    #[doc = "입구마다의 소리 배치와 지금 재생 중인 소리를 이 JSON Lines 파일에 기록합니다."]
+    pub fn scene_log_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "입구마다의 소리 배치와 지금 재생 중인 소리를 이 JSON Lines 파일에 기록합니다."
+            }
+            Language::En => {
+                "Write the entrances' scene layouts and active objects to this JSON Lines file"
+            }
+        }
+    }
+
+    #[doc = "장면 기록 줄 사이의 간격(ms)입니다."]
+    pub fn scene_log_ms_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "장면 기록 줄 사이의 간격(ms)입니다.",
+            Language::En => "Milliseconds between scene-log lines",
+        }
+    }
+
     #[doc = "사용법:"]
     pub fn usage_heading(language: Language) -> &'static str {
         match language {
@@ -1711,6 +1731,73 @@ pub mod live {
             Language::En => format!(
                 "recording the {source} ring to {path} for {seconds} s; start the source now"
             ),
+        }
+    }
+
+    #[doc = "엔드포인트 {endpoint}: {source}, 고정 채널 {bed}개{lfe}, 움직이는 소리 {dynamic}개"]
+    pub fn scene_layout(
+        language: Language,
+        endpoint: impl core::fmt::Display,
+        source: impl core::fmt::Display,
+        bed: impl core::fmt::Display,
+        lfe: impl core::fmt::Display,
+        dynamic: impl core::fmt::Display,
+    ) -> String {
+        match language {
+            Language::Ko => format!(
+                "엔드포인트 {endpoint}: {source}, 고정 채널 {bed}개{lfe}, 움직이는 소리 {dynamic}개"
+            ),
+            Language::En => format!(
+                "endpoint {endpoint}: {source}, bed {bed} channels{lfe}, dynamic objects {dynamic}"
+            ),
+        }
+    }
+
+    #[doc = " + LFE"]
+    pub fn scene_lfe(language: Language) -> &'static str {
+        match language {
+            Language::Ko => " + LFE",
+            Language::En => " + LFE",
+        }
+    }
+
+    #[doc = "E-AC-3"]
+    pub fn scene_source_ddp(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "E-AC-3",
+            Language::En => "E-AC-3",
+        }
+    }
+
+    #[doc = "E-AC-3 JOC"]
+    pub fn scene_source_ddp_joc(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "E-AC-3 JOC",
+            Language::En => "E-AC-3 JOC",
+        }
+    }
+
+    #[doc = "PCM"]
+    pub fn scene_source_pcm(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "PCM",
+            Language::En => "PCM",
+        }
+    }
+
+    #[doc = "업믹스"]
+    pub fn scene_source_upmix(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "업믹스",
+            Language::En => "upmix",
+        }
+    }
+
+    #[doc = "엔드포인트 {endpoint}: 소리 배치 정보 없음"]
+    pub fn scene_unavailable(language: Language, endpoint: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("엔드포인트 {endpoint}: 소리 배치 정보 없음"),
+            Language::En => format!("endpoint {endpoint}: scene layout unavailable"),
         }
     }
 

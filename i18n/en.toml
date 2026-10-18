@@ -81,6 +81,8 @@ role_communications = "communications"
 
 # Shared command-line headings and generated option descriptions.
 [cli]
+scene_log_help = "Write the entrances' scene layouts and active objects to this JSON Lines file"
+scene_log_ms_help = "Milliseconds between scene-log lines"
 usage_heading = "Usage:"
 commands_heading = "Commands:"
 arguments_heading = "Arguments:"
@@ -98,6 +100,13 @@ parse_error = "Could not read the command line. See --help for usage."
 
 # ssr-live help and human-readable output. JSON contracts remain unlocalized.
 [live]
+scene_layout = "endpoint {endpoint}: {source}, bed {bed} channels{lfe}, dynamic objects {dynamic}"
+scene_unavailable = "endpoint {endpoint}: scene layout unavailable"
+scene_lfe = " + LFE"
+scene_source_pcm = "PCM"
+scene_source_ddp = "E-AC-3"
+scene_source_ddp_joc = "E-AC-3 JOC"
+scene_source_upmix = "upmix"
 about = "Spatial SoftReceiver live tool for the SAL development PC"
 record_about = "Record a capture ring (the Spatial SoftReceiver driver or SAL) to a dump file (run as administrator)"
 play_about = "Play a capture ring through a BRIR profile (run as administrator)"

@@ -1,9 +1,11 @@
 //! Bounded OAMD update queue and room-coordinate ramps. No push-time allocation.
 
 use eac3::{OamdElementKind, OamdObjectBlock, OamdPayload, ObjectAnchor, ObjectPcmFrame, Vec3};
-use ssr_types::{MAX_OBJECTS, Position};
+use ssr_types::{MAX_OBJECTS, ObjectRole, Position, SceneLayoutTable, SceneSource};
 
-use super::{EMPTY_META, FRAMES, ObjectMeta, bed_position, corrupt, oamd_position, unsupported};
+use super::{
+    EMPTY_META, FRAMES, ObjectMeta, bed_position, bed_speaker, corrupt, oamd_position, unsupported,
+};
 use crate::{DecodeError, SceneBuffers};
 
 // A frame has at most eight updates. This also covers six short syncframes
@@ -250,6 +252,64 @@ impl Timeline {
                 slot.spread = spread;
             }
         }
+    }
+
+    /// Structural JOC layout and latest raw OAMD room targets known after the
+    /// scheduled updates. This inspects the bounded timeline without consuming it.
+    pub(super) fn layout(&self, pcm: &ObjectPcmFrame) -> Result<SceneLayoutTable, DecodeError> {
+        let mut layout = SceneLayoutTable::EMPTY;
+        layout.source = SceneSource::DdpJoc;
+        layout.lfe = pcm.core.lfe_channel.is_some();
+        layout.objects = pcm.object_channels.len() as u8;
+        let Some((payload, _)) = pcm.oamd_payloads.last() else {
+            layout.roles[..pcm.object_channels.len()].fill(ObjectRole::Dynamic);
+            return Ok(layout);
+        };
+        let mapping = object_mapping(payload, pcm.object_channels.len())?;
+        let mut output = 0;
+        for &bed in payload.bed_assignment.iter().flatten() {
+            if let Some(speaker) = bed_speaker(bed).filter(|speaker| speaker.position().is_some()) {
+                layout.roles[output] = ObjectRole::Bed(speaker);
+                output += 1;
+            }
+        }
+        for role in &mut layout.roles[output..pcm.object_channels.len()] {
+            *role = ObjectRole::Dynamic;
+        }
+        for index in output..pcm.object_channels.len() {
+            let meta = self.metadata[index];
+            let mut room = (meta.known && meta.is_room).then_some(meta.room);
+            for event in &self.events {
+                let update = event.updates[index];
+                if event.reset || update.speaker.is_some() {
+                    room = None;
+                } else if let Some(next) = update.room {
+                    room = if update.differential {
+                        room.map(|old| Vec3 {
+                            x: (old.x + next.x).clamp(0.0, 1.0),
+                            y: (old.y + next.y).clamp(0.0, 1.0),
+                            z: (old.z + next.z).clamp(-1.0, 1.0),
+                        })
+                    } else {
+                        Some(Vec3 {
+                            x: next.x.clamp(0.0, 1.0),
+                            y: next.y.clamp(0.0, 1.0),
+                            z: next.z.clamp(-1.0, 1.0),
+                        })
+                    };
+                }
+            }
+            layout.room[index] = room.map(|room| [room.x, room.y, room.z]);
+        }
+        debug_assert_eq!(
+            mapping
+                .speakers
+                .iter()
+                .filter(|speaker| speaker.is_some())
+                .count(),
+            output
+        );
+        Ok(layout)
     }
 
     pub(super) fn emit(

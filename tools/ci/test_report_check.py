@@ -41,6 +41,23 @@ class ReportCheckTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(problems(self.good(name), PRESETS[name]), [])
 
+    def test_min_dynamic_objects_accepts_any_qualifying_endpoint(self):
+        value = self.good("listen")
+        value["endpoints"][2]["scene"] = {"max_dynamic_objects": 7}
+        self.assertEqual(problems(value, replace(PRESETS["listen"], min_dynamic_objects=7)), [])
+
+    def test_min_dynamic_objects_rejects_insufficient_or_missing_scene(self):
+        value = self.good("listen")
+        expect = replace(PRESETS["listen"], min_dynamic_objects=7)
+        for scene in (None, {}, {"max_dynamic_objects": 6}, {"max_dynamic_objects": "7"}):
+            value["endpoints"][2]["scene"] = scene
+            with self.subTest(scene=scene):
+                self.assertIn("no endpoint scene.max_dynamic_objects reaches 7", problems(value, expect))
+
+    def test_scene_is_optional_without_dynamic_objects_requirement(self):
+        self.assertEqual(problems(self.good("listen"), PRESETS["listen"]), [])
+        self.assertTrue(problems(self.good("listen"), replace(PRESETS["listen"], min_dynamic_objects=0)))
+
     def test_every_zero_counter_is_named(self):
         for name, expect in PRESETS.items():
             for key in expect.zero_counters:

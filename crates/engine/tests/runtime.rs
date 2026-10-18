@@ -3603,6 +3603,7 @@ fn status_reports_current_directions_and_latest_scene() {
     let status = loop {
         let status = engine.status();
         if status.scene.len() == 2
+            && status.endpoints[0].layout.is_some()
             && (status.scene[0].level_dbfs - level(0.5)).abs() < 0.01
             && (status.scene[1].level_dbfs - level(0.25)).abs() < 0.01
         {
@@ -3615,6 +3616,17 @@ fn status_reports_current_directions_and_latest_scene() {
         );
         std::thread::yield_now();
     };
+    let layout = status.endpoints[0].layout.as_ref().unwrap();
+    assert_eq!(layout.source, ssr_types::SceneSource::Pcm);
+    assert_eq!(
+        layout
+            .bed
+            .iter()
+            .map(|channel| channel.speaker.as_str())
+            .collect::<Vec<_>>(),
+        ["L", "R"]
+    );
+    assert!(!layout.lfe && layout.dynamic.is_empty());
     let [left, right] = [status.scene[0], status.scene[1]];
     assert_eq!((left.lane, left.index), (0, 0));
     assert_eq!((right.lane, right.index), (0, 1));

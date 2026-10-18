@@ -17,6 +17,7 @@ pub mod machine;
 pub mod recorder;
 pub mod report;
 pub mod restore_point;
+pub mod scene_log;
 pub mod session;
 pub mod text;
 pub mod upmix;

@@ -35,6 +35,10 @@ import type {
   ProfileKind,
   ProfileView,
   SampleType,
+  SceneBedChannel,
+  SceneDynamicObject,
+  SceneLayout,
+  SceneSource,
   SceneObject,
   SecureBoot,
   SetupStep,
@@ -261,9 +265,30 @@ const sourceFormat = tagged<SourceFormat>({
   bitstream: carrying('bitstream', bitstreamFormat),
 });
 
+export const SCENE_SOURCES: Record<SceneSource, true> = {
+  none: true,
+  pcm: true,
+  ddp: true,
+  ddp_joc: true,
+  upmix: true,
+};
+
+const room: Guard<[number, number, number]> = (value, path) => {
+  if (!Array.isArray(value) || value.length !== 3) throw new ShapeError(path, 'three numbers');
+  return [number(value[0], `${path}[0]`), number(value[1], `${path}[1]`), number(value[2], `${path}[2]`)];
+};
+
+const sceneLayout = object<SceneLayout>({
+  source: oneOf(SCENE_SOURCES),
+  lfe: boolean,
+  bed: array(object<SceneBedChannel>({ index: number, speaker: string })),
+  dynamic: array(object<SceneDynamicObject>({ index: number, room: nullable(room) })),
+});
+
 const endpointStatus = object<EndpointStatus>({
   format: nullable(sourceFormat),
   epoch: number,
+  layout: nullable(sceneLayout),
   volume_db: number,
   muted: boolean,
   unsupported: nullable(unsupportedReason),

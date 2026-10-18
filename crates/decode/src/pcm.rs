@@ -1,7 +1,9 @@
 //! PCM adapter: interleaved samples to one object per channel at the standard
 //! position of its channel-mask bit; LFE goes to the scene's LFE signal.
 
-use ssr_types::{PcmFormat, Position, SampleType, SceneBlock, Speaker};
+use ssr_types::{
+    ObjectRole, PcmFormat, Position, SampleType, SceneBlock, SceneLayoutTable, SceneSource, Speaker,
+};
 
 use crate::{DecodeConfig, DecodeError, SceneBuffers};
 
@@ -48,6 +50,7 @@ pub struct PcmDecoder {
     /// QPC of the record that held the first byte of the frame in `frame`.
     frame_qpc: u64,
     epoch: Option<u32>,
+    layout: SceneLayoutTable,
 }
 
 impl PcmDecoder {
@@ -63,6 +66,7 @@ impl PcmDecoder {
             source_qpc: 0,
             frame_qpc: 0,
             epoch: None,
+            layout: SceneLayoutTable::EMPTY,
         }
     }
 
@@ -75,6 +79,7 @@ impl PcmDecoder {
     pub fn configure(&mut self, format: PcmFormat) -> Result<(), DecodeError> {
         self.reset();
         self.format = None;
+        self.layout = SceneLayoutTable::EMPTY;
         let invalid = |detail| DecodeError::Unsupported {
             codec: "PCM",
             detail,
@@ -112,6 +117,7 @@ impl PcmDecoder {
                         .position()
                         .ok_or_else(|| invalid("direct layout speaker has no position"))?;
                     self.buffers.set_object(objects, position, 1.0, 0.0);
+                    self.layout.roles[objects] = ObjectRole::Bed(speaker);
                     objects += 1;
                     Some(objects - 1)
                 };
@@ -129,15 +135,21 @@ impl PcmDecoder {
                     has_lfe = true;
                     None
                 } else {
+                    let speaker = Speaker::from_wave_bit(bit)
+                        .ok_or_else(|| invalid("channel mask has a speaker without a position"))?;
                     let position = speaker_position(bit)
                         .ok_or_else(|| invalid("channel mask has a speaker without a position"))?;
                     self.buffers.set_object(objects, position, 1.0, 0.0);
+                    self.layout.roles[objects] = ObjectRole::Bed(speaker);
                     objects += 1;
                     Some(objects - 1)
                 };
             }
         }
         self.buffers.set_layout(objects, has_lfe);
+        self.layout.source = SceneSource::Pcm;
+        self.layout.lfe = has_lfe;
+        self.layout.objects = objects as u8;
         self.format = Some(format);
         Ok(())
     }
@@ -236,6 +248,10 @@ impl PcmDecoder {
         self.source_qpc = 0;
         self.frame_qpc = 0;
         Ok(())
+    }
+
+    pub fn layout(&self) -> &SceneLayoutTable {
+        &self.layout
     }
 
     pub fn reset(&mut self) {

@@ -6,6 +6,37 @@
 # Marking a feature implemented without a verification test is a CI failure by
 # design. Statuses: planned, partial, implemented.
 
+[[feature]]
+id = "diag.scene_layout"
+kind = "tool"
+milestone = "M2"
+status = "implemented"
+tests = [
+  "supervisor::scene_figures_keep_first_seen_sources_and_ignore_room_motion",
+  "supervisor::scene_changes_ignore_room_and_epoch_but_include_removal",
+  "supervisor::scene_log_intervals_and_changes_share_one_line",
+  "ssr-live::scene_layout_lines_localize_sources_and_lfe",
+  "ssr-live::scene_log_options_enforce_interval_bounds",
+  "ssr-replay::scene_log_uses_output_frame_time_and_inspect_reports_pcm_layout",
+  "ssr-replay::inspect_decodes_ddp_bed_and_omits_undecodable_mat",
+  "ssr-replay::render_scene_log_interval_bounds_are_enforced",
+  "ssr-replay::dynamic_measurements_preserve_rooms_and_rendered_angle_ranges",
+  "ssr-replay::replay_scene_log_keeps_intervals_ignores_motion_and_coalesces_change",
+  "ssr-types::log_keeps_silent_declarations_and_adds_active_undeclared_objects",
+  "ssr-types::structural_comparison_ignores_room_only_changes",
+  "ssr-types::status_preserves_scene_indices_and_speaker_names",
+  "decode::joc_layout_reports_dynamic_count_and_latest_raw_room",
+  "decode::ddp_front_and_back_match_the_one_piece_decoder",
+  "decode::five_one_mask_layout_matches_emitted_object_indices",
+  "decode::seven_one_mask_routes_in_bit_order_and_separates_lfe",
+  "decode::direct_pcm_routes_sixteen_channels_and_lfe_in_ffmpeg_native_order",
+  "engine::layout_generation_changes_for_structure_and_clears_after_stop",
+  "engine::layout_status_never_mixes_two_publications",
+  "engine::status_reports_current_directions_and_latest_scene",
+  "engine::ddp_capture_section_does_not_allocate",
+]
+note = "Inspect samples scene metadata at record boundaries; OAMD update counts and unobserved intra-record positions are not inferred."
+
 # ---- Policy (M0) ----
 
 [[feature]]

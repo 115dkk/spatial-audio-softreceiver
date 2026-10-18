@@ -6,7 +6,7 @@ use decode::{
     pcm::{PcmDecoder, default_mask, speaker_position},
 };
 use proptest::prelude::*;
-use ssr_types::{PcmFormat, Position, SampleType, SceneBlock, Speaker};
+use ssr_types::{ObjectRole, PcmFormat, Position, SampleType, SceneBlock, SceneSource, Speaker};
 
 fn format(bits: u16, valid: u16, sample_type: SampleType, channels: u16) -> PcmFormat {
     PcmFormat {
@@ -311,6 +311,31 @@ fn speaker_bits_cover_standard_positions_only() {
 }
 
 #[test]
+fn five_one_mask_layout_matches_emitted_object_indices() {
+    let mut decoder = PcmDecoder::new(DecodeConfig::default());
+    decoder
+        .configure(PcmFormat {
+            channel_mask: 0x3f,
+            ..format(16, 16, SampleType::Int, 6)
+        })
+        .unwrap();
+    let layout = decoder.layout();
+    assert_eq!(layout.source, SceneSource::Pcm);
+    assert!(layout.lfe);
+    assert_eq!(layout.objects, 5);
+    assert_eq!(
+        &layout.roles[..5],
+        &[
+            ObjectRole::Bed(Speaker::L),
+            ObjectRole::Bed(Speaker::R),
+            ObjectRole::Bed(Speaker::C),
+            ObjectRole::Bed(Speaker::Lrs),
+            ObjectRole::Bed(Speaker::Rrs),
+        ]
+    );
+}
+
+#[test]
 fn seven_one_mask_routes_in_bit_order_and_separates_lfe() {
     let mut decoder = PcmDecoder::new(DecodeConfig::default());
     let f = PcmFormat {
@@ -318,6 +343,22 @@ fn seven_one_mask_routes_in_bit_order_and_separates_lfe() {
         ..format(16, 16, SampleType::Int, 8)
     };
     decoder.configure(f).unwrap();
+    let layout = decoder.layout();
+    assert_eq!(layout.source, SceneSource::Pcm);
+    assert!(layout.lfe);
+    assert_eq!(layout.objects, 7);
+    assert_eq!(
+        &layout.roles[..7],
+        &[
+            ObjectRole::Bed(Speaker::L),
+            ObjectRole::Bed(Speaker::R),
+            ObjectRole::Bed(Speaker::C),
+            ObjectRole::Bed(Speaker::Lrs),
+            ObjectRole::Bed(Speaker::Rrs),
+            ObjectRole::Bed(Speaker::Lss),
+            ObjectRole::Bed(Speaker::Rss),
+        ]
+    );
     let input: Vec<u8> = (0..480)
         .flat_map(|_| (1_i16..=8).flat_map(|i| (i * 1024).to_le_bytes()))
         .collect();
@@ -419,6 +460,18 @@ fn direct_pcm_routes_sixteen_channels_and_lfe_in_ffmpeg_native_order() {
     let mut decoder = PcmDecoder::new(DecodeConfig::default());
     let f = format(16, 16, SampleType::Int, 16);
     decoder.configure(f).unwrap();
+    let expected: Vec<ObjectRole> = preset("9.1.6")
+        .unwrap()
+        .speakers()
+        .iter()
+        .copied()
+        .filter(|speaker| *speaker != Speaker::Lfe)
+        .map(ObjectRole::Bed)
+        .collect();
+    assert_eq!(decoder.layout().source, SceneSource::Pcm);
+    assert!(decoder.layout().lfe);
+    assert_eq!(decoder.layout().objects, 15);
+    assert_eq!(&decoder.layout().roles[..15], expected);
     let input: Vec<u8> = (0..480)
         .flat_map(|_| (1_i16..=16).flat_map(|value| (value * 1024).to_le_bytes()))
         .collect();

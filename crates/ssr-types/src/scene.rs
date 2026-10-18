@@ -42,6 +42,14 @@ impl Position {
         let norm = (self.x * self.x + self.y * self.y + self.z * self.z).sqrt();
         (norm > f32::EPSILON).then(|| [self.x / norm, self.y / norm, self.z / norm])
     }
+
+    /// Azimuth and elevation in degrees, inverse to [`Self::from_angles`].
+    /// Front is 0 azimuth, left is positive, and up is positive. The zero
+    /// vector has no angles.
+    pub fn angles(self) -> Option<(f32, f32)> {
+        let [x, y, z] = self.direction()?;
+        Some(((-x).atan2(y).to_degrees(), z.asin().to_degrees()))
+    }
 }
 
 /// Most objects one [`SceneBlock`] carries: MAT 2.1 has 11 fixed channels and
@@ -126,10 +134,26 @@ mod tests {
     #[test]
     fn the_centre_has_no_direction() {
         assert_eq!(Position::default().direction(), None);
+        assert_eq!(Position::default().angles(), None);
         assert!(close(
             Position::new(0.0, 0.5, 0.0).direction().unwrap(),
             [0.0, 1.0, 0.0]
         ));
+    }
+
+    #[test]
+    fn angles_round_trip_with_from_angles() {
+        for azimuth in [-180.0, -90.0, -30.0, 0.0, 30.0, 90.0, 180.0] {
+            for elevation in [-90.0, -45.0, 0.0, 45.0, 90.0] {
+                let position = Position::from_angles(azimuth, elevation);
+                let (actual_azimuth, actual_elevation) = position.angles().unwrap();
+                assert!((actual_elevation - elevation).abs() < 1e-4);
+                if elevation.abs() < 90.0 {
+                    let delta = (actual_azimuth - azimuth + 180.0).rem_euclid(360.0) - 180.0;
+                    assert!(delta.abs() < 1e-4, "{actual_azimuth} != {azimuth}");
+                }
+            }
+        }
     }
 
     #[test]

@@ -3247,6 +3247,40 @@ fn test_tone_is_bounded_faded_directional_and_retriggerable() {
 }
 
 #[test]
+fn layout_status_never_mixes_two_publications() {
+    let shared = Arc::new(LayoutShared::new());
+    let writer = Arc::clone(&shared);
+    let mut first = SceneLayoutTable::EMPTY;
+    first.source = ssr_types::SceneSource::Pcm;
+    first.objects = 2;
+    first.roles[0] = ssr_types::ObjectRole::Bed(ssr_types::Speaker::L);
+    first.roles[1] = ssr_types::ObjectRole::Bed(ssr_types::Speaker::R);
+    let mut second = SceneLayoutTable::EMPTY;
+    second.source = ssr_types::SceneSource::DdpJoc;
+    second.lfe = true;
+    second.objects = 1;
+    second.roles[0] = ssr_types::ObjectRole::Dynamic;
+    second.room[0] = Some([0.25, 0.75, -0.5]);
+    let done = Arc::new(AtomicBool::new(false));
+    let writer_done = Arc::clone(&done);
+    let handle = std::thread::spawn(move || {
+        while !writer_done.load(Ordering::Acquire) {
+            writer.publish(first);
+            writer.publish(second);
+        }
+    });
+    for _ in 0..20_000 {
+        let layout = shared.read();
+        assert!(
+            layout == SceneLayoutTable::EMPTY || layout == first || layout == second,
+            "torn layout: {layout:?}"
+        );
+    }
+    done.store(true, Ordering::Release);
+    handle.join().unwrap();
+}
+
+#[test]
 fn scene_status_never_mixes_two_publications() {
     let shared = Arc::new(Shared::new());
     let writer = Arc::clone(&shared);

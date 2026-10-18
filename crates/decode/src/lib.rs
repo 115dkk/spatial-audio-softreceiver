@@ -27,7 +27,7 @@ pub mod pcm;
 mod scene;
 
 use bitstream::Burst;
-use ssr_types::{SceneBlock, SourceFormat};
+use ssr_types::{SceneBlock, SceneLayoutTable, SourceFormat};
 
 pub use scene::SceneBuffers;
 
@@ -206,6 +206,15 @@ impl Decoders {
         match self.active {
             Active::Ddp => Some(DeferredCodec::Ddp),
             Active::None | Active::Pcm | Active::Mat => None,
+        }
+    }
+
+    /// The active adapter's fixed layout table. MAT and no selection are empty.
+    pub fn layout(&self) -> &SceneLayoutTable {
+        match self.active {
+            Active::Pcm => self.pcm.layout(),
+            Active::Ddp => self.ddp.layout(),
+            Active::None | Active::Mat => &SceneLayoutTable::EMPTY,
         }
     }
 

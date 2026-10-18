@@ -305,6 +305,7 @@
           }
         },
         "epoch": 3,
+        "layout": null,
         "volume_db": -6.0,
         "muted": false,
         "unsupported": null,
@@ -336,6 +337,7 @@
           }
         },
         "epoch": 1,
+        "layout": null,
         "volume_db": 0.0,
         "muted": false,
         "unsupported": null,
@@ -367,6 +369,7 @@
           }
         },
         "epoch": 2,
+        "layout": null,
         "volume_db": 0.0,
         "muted": true,
         "unsupported": "direct_layout",
@@ -388,6 +391,7 @@
       {
         "format": null,
         "epoch": 0,
+        "layout": null,
         "volume_db": 0.0,
         "muted": false,
         "unsupported": null,

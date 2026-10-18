@@ -18,6 +18,7 @@ pub mod layout;
 pub mod ports;
 pub mod position;
 pub mod scene;
+pub mod scene_layout;
 pub mod status;
 
 pub use feeds::Feeds;
@@ -54,6 +55,10 @@ pub fn channel_layout_preset(name: &str) -> Option<&'static [Speaker]> {
     })
 }
 pub use scene::{MAX_OBJECTS, Object, Position, SceneBlock};
+pub use scene_layout::{
+    ObjectRole, SceneBedChannel, SceneDynamicObject, SceneLayout, SceneLayoutTable,
+    SceneLogEndpoint, SceneLogLine, SceneLogObject, SceneSource,
+};
 pub use status::{
     ChainErrorCounts, ChainErrorKind, ClockStatus, ENGINE_ENDPOINTS, EndpointStatus, EngineFault,
     EngineStatus, LatencyStats, SceneObject, UnderrunSnapshot, UnsupportedReason,

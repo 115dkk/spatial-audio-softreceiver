@@ -201,6 +201,37 @@ py .\report_check.py --preset sal play-music-shared.json
 - `lane_underrun_frames` 0. 1초 줄의 `입력 공백`이 늘면 그 초의 줄들을 결과에 붙여 주십시오
 - 들리는 문제 없음
 
+### M2-2-1. 움직이는 소리의 수와 위치 (DD+ JOC)
+
+Apple Music의 Dolby Atmos 곡이 DD+ JOC로 올 때, 스트림이 소리를 몇 개 보내고 각 소리를 어디에 렌더하는지 기록으로 확인합니다. M2-2의 음악 명령에 `--scene-log`를 더합니다.
+
+```powershell
+.\ssr-live.exe play --source sal --profile profile.toml --output "<DAC 이름 일부>" --target-ms 40 --report play-music.json --scene-log scene-music.jsonl
+```
+
+입구의 소리 배치가 바뀔 때마다 화면에 한 줄이 나옵니다. 영어 Windows에서는 `endpoint 1: E-AC-3 JOC, bed 7 channels + LFE, dynamic objects 7`, 한국어 Windows에서는 `엔드포인트 1: E-AC-3 JOC, 고정 채널 7개 + LFE, 움직이는 소리 7개` 같은 모양입니다. 위치만 바뀔 때는 찍지 않습니다.
+
+`scene-music.jsonl`에는 200 ms마다 한 줄씩(`--scene-log-ms`로 바꿈), 그리고 배치가 바뀐 순간에 한 줄이 더 들어갑니다. 줄마다 입구별로 고정 채널(`role: "bed"`, `speaker`)과 움직이는 소리(`role: "dynamic"`)가 소리가 없는 순간에도 모두 들어 있습니다. 움직이는 소리의 값은 아래와 같습니다.
+
+| 키 | 뜻 |
+| --- | --- |
+| `room` | 스트림이 보낸 방 좌표 그대로. ETSI TS 103 420 규약으로 x는 0이 왼쪽이고 1이 오른쪽, y는 0이 앞이고 1이 뒤, z는 −1이 바닥 아래, 0이 귀 높이, 1이 천장입니다 |
+| `azimuth_deg`, `elevation_deg` | 실제로 렌더한 방향. 0°가 정면이고 왼쪽과 위가 양수입니다 |
+| `level_dbfs` | 그 순간의 레벨. 소리가 없으면 `null` |
+
+보고서(`play-music.json`)의 엔드포인트마다 `scene`에 본 출처(`sources`), 고정 채널·움직이는 소리·소리 나는 것의 최댓값(`max_bed_channels`, `max_dynamic_objects`, `max_active_objects`), 배치가 바뀐 횟수(`layout_changes`)가 남습니다. 검사합니다.
+
+```powershell
+py .\report_check.py --preset sal --min-dynamic-objects 1 play-music.json
+```
+
+덤프만으로도 같은 것을 볼 수 있습니다. `.\ssr-replay.exe inspect sal-music-joc.ssrdump`의 에포크마다 `scene`에 고정 채널 이름, 움직이는 소리 수의 최솟값과 최댓값, 소리마다 처음과 마지막 방 좌표(`first_room`, `last_room`), 렌더 방향의 범위가 나옵니다. 소리는 담기지 않으므로, 덤프를 보내기 어려우면 이 부분만 붙여 주셔도 됩니다. 녹화를 렌더하며 같은 기록을 만들 수도 있습니다(`.\ssr-replay.exe render sal-music-joc.ssrdump --profile profile.toml --out music.wav --scene-log scene-replay.jsonl`).
+
+**합격 기준**
+- Atmos 곡에서 출처가 `E-AC-3 JOC`이고, 검사기가 문제를 적지 않고 `pass`를 출력
+- 같은 곡을 구축기(Omniphony)로 재생할 때 그 화면에 보이는 객체 수와 `dynamic_objects`가 같음(확인할 수 있을 때)
+- 위치가 뚜렷하게 바뀌는 대목(머리 위를 지나가는 소리 등)에서 그 시각(`t_ms`)의 `azimuth_deg`, `elevation_deg`가 들은 방향과 맞음. 맞지 않으면 그 `t_ms`, 그 소리의 `index`, 들은 방향을 적어 주십시오
+
 ### M2-3. 지연을 구축기와 비교 (M2의 끝나는 조건)
 
 구축기는 체인 전체의 지연을 숫자로 잰 적이 없습니다(ADR 0015). 그래서 다음 셋을 함께 받습니다.
@@ -499,6 +530,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\volume_check.ps1 -Summary 
    ```
 
    검사기가 적은 문제와 종료 코드가 합격 판정입니다. 문제를 한 줄도 적지 않고 `pass`를 출력하며 종료 코드가 0이어야 합니다.
+
+Apple Music의 Dolby Atmos 곡이 **Spatial SoftReceiver Music**에 DD+ JOC로 들어오면, 재생 명령에 `--scene-log driver-scene.jsonl`을 더해 움직이는 소리의 수와 위치를 남깁니다. 읽는 법과 합격 기준은 M2-2-1과 같고, 검사는 `py .\report_check.py --preset listen --min-dynamic-objects 1 driver-listen.json`입니다.
 
 `--endpoints`를 생략하면 드라이버가 노출한 엔드포인트를 모두 처리합니다. 한 엔드포인트만 진단하려면 `--endpoints 0`, `--endpoints 1` 또는 `--endpoints 2`를 쓰고, 임의 부분집합은 쉼표로 묶습니다(예: `--endpoints 0,2`).
 

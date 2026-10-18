@@ -81,6 +81,8 @@ role_communications = "통신"
 
 # 명령줄 도구가 함께 쓰는 도움말 머리말과 자동 옵션 설명입니다.
 [cli]
+scene_log_help = "입구마다의 소리 배치와 지금 재생 중인 소리를 이 JSON Lines 파일에 기록합니다."
+scene_log_ms_help = "장면 기록 줄 사이의 간격(ms)입니다."
 usage_heading = "사용법:"
 commands_heading = "명령:"
 arguments_heading = "인수:"
@@ -98,6 +100,13 @@ parse_error = "명령줄을 읽지 못했습니다. --help로 사용법을 보�
 
 # ssr-live 도움말과 사람이 읽는 출력입니다. JSON 계약은 번역하지 않습니다.
 [live]
+scene_layout = "엔드포인트 {endpoint}: {source}, 고정 채널 {bed}개{lfe}, 움직이는 소리 {dynamic}개"
+scene_unavailable = "엔드포인트 {endpoint}: 소리 배치 정보 없음"
+scene_lfe = " + LFE"
+scene_source_pcm = "PCM"
+scene_source_ddp = "E-AC-3"
+scene_source_ddp_joc = "E-AC-3 JOC"
+scene_source_upmix = "업믹스"
 about = "SAL 개발 PC에서 쓰는 공간 소프트리시버 실시간 도구"
 record_about = "캡처 링(공간 소프트리시버 드라이버 또는 SAL)을 덤프 파일에 기록합니다(관리자 권한 필요)."
 play_about = "캡처 링을 BRIR 프로필로 재생합니다(관리자 권한 필요)."

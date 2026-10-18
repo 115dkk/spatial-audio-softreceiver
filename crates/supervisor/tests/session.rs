@@ -132,6 +132,7 @@ fn dump_session_report_keeps_the_live_cli_key_contract() {
             "unsupported",
             "unsupported_reason",
             "chain_errors",
+            "scene",
         ]
         .into_iter()
         .map(str::to_owned)
