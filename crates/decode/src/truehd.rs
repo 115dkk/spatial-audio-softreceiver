@@ -18,10 +18,14 @@ const CHANNELS: usize = 16;
 const PCM_SCALE: f32 = 1.0 / 8_388_608.0;
 
 /// Allocating extraction, parsing and PCM decoding. Never call on a realtime thread.
+///
+/// The upstream parser and decoder are about 45 KB each, so they live on the
+/// heap: moving them by value through debug builds overflowed the 1 MB main
+/// stack of Windows tools such as `ssr-replay`.
 pub struct TrueHdFront {
     extractor: Extractor,
-    parser: Parser,
-    decoder: Decoder,
+    parser: Box<Parser>,
+    decoder: Box<Decoder>,
     access_unit: AccessUnit,
     pcm: DecodedAccessUnit,
     input: Vec<u8>,
@@ -40,15 +44,19 @@ impl Default for TrueHdFront {
     }
 }
 
+fn configure(parser: &mut Parser) {
+    // Presentation 3 resolves to the highest available independent presentation.
+    parser.set_required_presentations(&[false, false, false, true]);
+}
+
 impl TrueHdFront {
     pub fn new() -> Self {
-        let mut parser = Parser::default();
-        // Presentation 3 resolves to the highest available independent presentation.
-        parser.set_required_presentations(&[false, false, false, true]);
+        let mut parser = Box::<Parser>::default();
+        configure(&mut parser);
         Self {
             extractor: Extractor::default(),
             parser,
-            decoder: Decoder::default(),
+            decoder: Box::default(),
             access_unit: AccessUnit::default(),
             pcm: DecodedAccessUnit::default(),
             input: Vec::new(),
@@ -56,8 +64,16 @@ impl TrueHdFront {
         }
     }
 
+    /// Back to the state of [`TrueHdFront::new`], reusing the heap storage.
     pub fn reset(&mut self) {
-        *self = Self::new();
+        self.extractor = Extractor::default();
+        *self.parser = Parser::default();
+        configure(&mut self.parser);
+        *self.decoder = Decoder::default();
+        self.access_unit = AccessUnit::default();
+        self.pcm = DecodedAccessUnit::default();
+        self.input.clear();
+        self.synchronized = false;
     }
 
     /// Appends arbitrary contiguous bytes; incomplete frames stay in the front.
