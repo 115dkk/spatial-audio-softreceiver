@@ -4,10 +4,10 @@
 //!
 //! ABI facts (not a Microsoft compatibility guarantee), independently implemented
 //! after inspecting these EarTrumpet declarations (no implementation copied):
-//! https://raw.githubusercontent.com/File-New-Project/EarTrumpet/master/EarTrumpet/Interop/MMDeviceAPI/IAudioPolicyConfigFactoryVariantFor21H2.cs
-//! https://raw.githubusercontent.com/File-New-Project/EarTrumpet/master/EarTrumpet/Interop/MMDeviceAPI/IAudioPolicyConfigFactoryVariantForDownlevel.cs
-//! https://raw.githubusercontent.com/File-New-Project/EarTrumpet/master/EarTrumpet/Interop/Helpers/AudioPolicyConfigFactoryImplFor21H2.cs
-//! https://raw.githubusercontent.com/File-New-Project/EarTrumpet/master/EarTrumpet/Interop/Helpers/AudioPolicyConfigFactoryImplForDownlevel.cs
+//! <https://raw.githubusercontent.com/File-New-Project/EarTrumpet/master/EarTrumpet/Interop/MMDeviceAPI/IAudioPolicyConfigFactoryVariantFor21H2.cs>
+//! <https://raw.githubusercontent.com/File-New-Project/EarTrumpet/master/EarTrumpet/Interop/MMDeviceAPI/IAudioPolicyConfigFactoryVariantForDownlevel.cs>
+//! <https://raw.githubusercontent.com/File-New-Project/EarTrumpet/master/EarTrumpet/Interop/Helpers/AudioPolicyConfigFactoryImplFor21H2.cs>
+//! <https://raw.githubusercontent.com/File-New-Project/EarTrumpet/master/EarTrumpet/Interop/Helpers/AudioPolicyConfigFactoryImplForDownlevel.cs>
 //! Both interfaces have IInspectable (slots 0..5), 19 unused methods (6..24),
 //! SetPersistedDefaultAudioEndpoint (25), GetPersistedDefaultAudioEndpoint (26),
 //! then ClearAllPersistedApplicationDefaultEndpoints (27, deliberately absent).
@@ -21,10 +21,10 @@
 //! not filter on sharing mode, but those documents do not guarantee enumeration
 //! of every exclusive player. That behavior remains unverified on Windows.
 //! This notification-free polling is best effort (ASIO/KS also bypass WASAPI).
-//! https://learn.microsoft.com/en-us/windows/win32/coreaudio/audio-sessions
-//! https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nf-audioclient-iaudioclient-initialize
-//! https://learn.microsoft.com/en-us/windows/win32/api/audiopolicy/nf-audiopolicy-iaudiosessionmanager2-getsessionenumerator
-//! https://learn.microsoft.com/en-us/windows/win32/api/audiopolicy/nn-audiopolicy-iaudiosessioncontrol2
+//! <https://learn.microsoft.com/en-us/windows/win32/coreaudio/audio-sessions>
+//! <https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nf-audioclient-iaudioclient-initialize>
+//! <https://learn.microsoft.com/en-us/windows/win32/api/audiopolicy/nf-audiopolicy-iaudiosessionmanager2-getsessionenumerator>
+//! <https://learn.microsoft.com/en-us/windows/win32/api/audiopolicy/nn-audiopolicy-iaudiosessioncontrol2>
 
 use std::collections::BTreeMap;
 use std::ffi::c_void;

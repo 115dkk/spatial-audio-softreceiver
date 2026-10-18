@@ -1,7 +1,7 @@
 //! The private audio-policy API uses a device-interface path, not an IMMDevice id.
 //!
 //! Format verified against EarTrumpet's interoperability declarations (ABI facts only):
-//! https://raw.githubusercontent.com/File-New-Project/EarTrumpet/master/EarTrumpet/DataModel/WindowsAudio/Internal/AudioPolicyConfigService.cs
+//! <https://raw.githubusercontent.com/File-New-Project/EarTrumpet/master/EarTrumpet/DataModel/WindowsAudio/Internal/AudioPolicyConfigService.cs>
 //! Render: `\\?\SWD#MMDEVAPI#` + IMMDevice id + `#{e6327cad-dcec-4949-ae8a-991e976a79d2}`.
 
 use ssr_types::{DeviceId, HostError};
