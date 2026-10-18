@@ -23,6 +23,10 @@ describe('fixtures match bindings.ts', () => {
     expect(new Set(kinds)).toEqual(
       new Set([
         'set_language',
+        'set_output_path',
+        'set_routing_enabled',
+        'set_app_rule',
+        'remove_app_rule',
         'begin_setup',
         'install_driver',
         'recheck',

@@ -19,8 +19,11 @@
 //!
 //! The SAL device opens only from an administrator prompt.
 
+mod app_routing;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod host_json;
+#[cfg_attr(not(windows), allow(dead_code))]
+mod ks_lifecycle;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -60,6 +63,7 @@ fn request_fields(
     from_dump: bool,
     clock: Clock,
     shared: bool,
+    kernel_streaming: bool,
     direct_layouts: Vec<supervisor::DirectLayoutField>,
 ) -> supervisor::RequestFields {
     supervisor::RequestFields {
@@ -78,7 +82,14 @@ fn request_fields(
             Clock::Trim => "trim",
         }
         .to_owned(),
-        output_mode_requested: if shared { "shared" } else { "exclusive" }.to_owned(),
+        output_mode_requested: if kernel_streaming {
+            "kernel_streaming"
+        } else if shared {
+            "shared"
+        } else {
+            "exclusive"
+        }
+        .to_owned(),
         direct_layouts,
     }
 }
@@ -118,9 +129,81 @@ fn parse_endpoints(value: Option<&str>) -> Result<engine::EndpointFilter, String
     Ok(engine::EndpointFilter::Mask(mask))
 }
 
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn select_endpoint(endpoints: &[(&str, &str, bool)], name: Option<&str>) -> Result<usize, String> {
+    if let Some(name) = name {
+        if let Some(index) = endpoints.iter().position(|e| e.0 == name) {
+            return Ok(index);
+        }
+        let matches = endpoints
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.1.to_lowercase().contains(&name.to_lowercase()))
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [index] => Ok(*index),
+            [] => Err(
+                ssr_i18n::supervisor::chosen_output_missing(ssr_i18n::cli_language()).to_owned(),
+            ),
+            _ => Err(ssr_i18n::live::output_not_unique(
+                ssr_i18n::cli_language(),
+                name,
+            )),
+        }
+    } else {
+        endpoints.iter().position(|e| e.2).ok_or_else(|| {
+            ssr_i18n::supervisor::chosen_output_missing(ssr_i18n::cli_language()).to_owned()
+        })
+    }
+}
+
 #[cfg(test)]
 mod endpoint_tests {
     use super::*;
+
+    #[test]
+    fn ks_selection_is_exact_or_unambiguous() {
+        let endpoints = [("a", "DAC speakers", false), ("b", "DAC headphones", true)];
+        assert_eq!(select_endpoint(&endpoints, Some("a")), Ok(0));
+        assert_eq!(select_endpoint(&endpoints, Some("HEADPHONES")), Ok(1));
+        assert_eq!(select_endpoint(&endpoints, None), Ok(1));
+        assert!(select_endpoint(&endpoints, Some("DAC")).is_err());
+        assert!(select_endpoint(&endpoints, Some("missing")).is_err());
+    }
+
+    #[test]
+    fn ks_cli_parsing_and_conflicts() {
+        let cli = Cli::try_parse_from(["ssr-live", "ks-probe", "--output", "DAC"]).unwrap();
+        assert!(matches!(cli.command, Command::KsProbe { seconds: 2.0, .. }));
+        for seconds in ["0", "-1", "NaN", "inf"] {
+            assert!(
+                Cli::try_parse_from([
+                    "ssr-live",
+                    "ks-probe",
+                    "--output",
+                    "DAC",
+                    "--seconds",
+                    seconds
+                ])
+                .is_err()
+            );
+        }
+        for conflict in ["--shared", "--allow-shared-fallback"] {
+            assert!(
+                Cli::try_parse_from([
+                    "ssr-live",
+                    "play",
+                    "--profile",
+                    "p.toml",
+                    "--kernel-streaming",
+                    conflict
+                ])
+                .is_err()
+            );
+        }
+        assert!(Cli::try_parse_from(["ssr-live", "devices", "--kernel", "--json"]).is_ok());
+    }
 
     #[test]
     fn english_help_is_the_derived_help_and_korean_help_is_complete() {
@@ -217,12 +300,17 @@ mod endpoint_tests {
                 (Clock::Asrc, "asrc"),
                 (Clock::Trim, "trim"),
             ] {
-                for (shared, mode) in [(false, "exclusive"), (true, "shared")] {
+                for (shared, kernel_streaming, mode) in [
+                    (false, false, "exclusive"),
+                    (true, false, "shared"),
+                    (false, true, "kernel_streaming"),
+                ] {
                     let fields = report.to_json(&request_fields(
                         source,
                         from_dump,
                         clock,
                         shared,
+                        kernel_streaming,
                         Vec::new(),
                     ));
                     assert_eq!(fields["source"], expected);
@@ -233,6 +321,48 @@ mod endpoint_tests {
                     assert_eq!(fields["direct_layouts"], serde_json::json!([]));
                 }
             }
+        }
+    }
+
+    #[test]
+    fn report_distinguishes_ks_success_and_exclusive_fallback() {
+        for (mode, fallback, expected) in [
+            (
+                ssr_types::OutputMode::KernelStreaming,
+                false,
+                "kernel_streaming",
+            ),
+            (ssr_types::OutputMode::Exclusive, true, "exclusive"),
+        ] {
+            let report = supervisor::SessionReport {
+                seconds: 1.0,
+                engine: engine::StopReport {
+                    final_status: ssr_types::EngineStatus {
+                        output_mode: mode,
+                        output_ks_fallback: fallback,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                figures: supervisor::RunFigures::default(),
+                output_kind: engine::OutputKind::Speakers,
+                output_channels: 2,
+                output_channel_mask: 3,
+                recorder_lost_bytes: 0,
+                driver: None,
+                driver_stats_error: None,
+            };
+            let json = report.to_json(&request_fields(
+                CaptureKind::Driver,
+                false,
+                Clock::Auto,
+                false,
+                true,
+                Vec::new(),
+            ));
+            assert_eq!(json["output_mode"], expected);
+            assert_eq!(json["ks_fallback"], fallback);
+            assert_eq!(json["output_mode_requested"], "kernel_streaming");
         }
     }
 
@@ -338,6 +468,17 @@ enum SetupKind {
 
 #[derive(Subcommand, Debug)]
 enum HostCommand {
+    /// Print audio sessions and each app's persisted render endpoint.
+    Apps,
+    /// Set or clear an app's persisted render endpoint without changing communications.
+    SetApp {
+        /// The process id of the app to route.
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        pid: u32,
+        /// Our endpoint number (0, 1 or 2), or none to clear this app's override.
+        #[arg(long, value_parser = ["0", "1", "2", "none"])]
+        endpoint: String,
+    },
     /// Print the platform, the driver state, every render endpoint (ours with
     /// its endpoint number) and the default device of each role.
     Show {
@@ -527,6 +668,30 @@ mod host_tests {
     }
 
     #[test]
+    fn app_routing_commands_validate_pid_and_endpoint() {
+        assert!(matches!(parse(&["apps"]).unwrap(), HostCommand::Apps));
+        for endpoint in ["0", "1", "2", "none"] {
+            let HostCommand::SetApp {
+                pid,
+                endpoint: parsed,
+            } = parse(&["set-app", "--pid", "42", "--endpoint", endpoint]).unwrap()
+            else {
+                panic!("expected set-app")
+            };
+            assert_eq!(pid, 42);
+            assert_eq!(parsed, endpoint);
+        }
+        for args in [
+            vec!["set-app", "--pid", "0", "--endpoint", "1"],
+            vec!["set-app", "--pid", "42", "--endpoint", "3"],
+            vec!["set-app", "--pid", "42"],
+            vec!["set-app", "--endpoint", "none"],
+        ] {
+            assert!(parse(&args).is_err());
+        }
+    }
+
+    #[test]
     fn setup_task_needs_the_mask_for_set_formats_only() {
         assert_eq!(
             setup_task(SetupKind::SetFormats, Some(5)),
@@ -595,6 +760,9 @@ enum Command {
         /// Part of the output device's name; the default device when omitted.
         #[arg(long)]
         output: Option<String>,
+        /// Use Kernel Streaming with the endpoint disabled; fall back to WASAPI exclusive.
+        #[arg(long, conflicts_with_all = ["shared", "allow_shared_fallback"])]
+        kernel_streaming: bool,
         /// Use WASAPI shared mode instead of exclusive.
         #[arg(long)]
         shared: bool,
@@ -644,8 +812,23 @@ enum Command {
         #[arg(long = "direct-layout")]
         direct_layouts: Vec<engine::DirectLayoutOverride>,
     },
+    /// Test direct Kernel Streaming with the endpoint disabled, then enable it again.
+    KsProbe {
+        /// Part of the output device's name or its exact endpoint id.
+        #[arg(long)]
+        output: String,
+        /// Seconds to play a 1 kHz sine at -12 dBFS (48 kHz stereo).
+        #[arg(long, default_value_t = 2.0, value_parser = ks_lifecycle::positive_seconds)]
+        seconds: f64,
+        /// Write the result as JSON to this file, including failures.
+        #[arg(long)]
+        json: Option<PathBuf>,
+    },
     /// List render endpoints (name, default flag, id).
     Devices {
+        /// Include the Kernel Streaming filter and pin, or the discovery failure.
+        #[arg(long)]
+        kernel: bool,
         /// Include shared mix format and standard-layout exclusive support.
         #[arg(long)]
         formats: bool,
@@ -668,6 +851,7 @@ fn localized_command(language: Language) -> clap::Command {
         ("record", live::record_about(language)),
         ("play", live::play_about(language)),
         ("devices", live::devices_about(language)),
+        ("ks-probe", live::ks_probe_about(language)),
         ("host", live::host_about(language)),
     ] {
         command = command.mut_subcommand(name, |subcommand| subcommand.about(about));
@@ -689,6 +873,9 @@ fn localized_command(language: Language) -> clap::Command {
                 })
                 .mut_arg("profile", |arg| arg.help(live::play_profile_help(language)))
                 .mut_arg("output", |arg| arg.help(live::play_output_help(language)))
+                .mut_arg("kernel_streaming", |arg| {
+                    arg.help(live::play_kernel_streaming_help(language))
+                })
                 .mut_arg("shared", |arg| arg.help(live::play_shared_help(language)))
                 .mut_arg("allow_shared_fallback", |arg| {
                     arg.help(live::play_allow_shared_fallback_help(language))
@@ -719,8 +906,21 @@ fn localized_command(language: Language) -> clap::Command {
                     arg.help(live::play_direct_layout_help(language))
                 })
         })
+        .mut_subcommand("ks-probe", |subcommand| {
+            subcommand
+                .mut_arg("output", |arg| {
+                    arg.help(live::ks_probe_output_help(language))
+                })
+                .mut_arg("seconds", |arg| {
+                    arg.help(live::ks_probe_seconds_help(language))
+                })
+                .mut_arg("json", |arg| arg.help(live::ks_probe_json_help(language)))
+        })
         .mut_subcommand("devices", |subcommand| {
             subcommand
+                .mut_arg("kernel", |arg| {
+                    arg.help(live::devices_kernel_help(language))
+                })
                 .mut_arg("formats", |arg| {
                     arg.help(live::devices_formats_help(language))
                 })
@@ -728,6 +928,8 @@ fn localized_command(language: Language) -> clap::Command {
         })
         .mut_subcommand("host", |mut subcommand| {
             for (name, about) in [
+                ("apps", live::host_apps_about(language)),
+                ("set-app", live::host_set_app_about(language)),
                 ("show", live::host_show_about(language)),
                 ("set-default", live::host_set_default_about(language)),
                 ("setup", live::host_setup_about(language)),
@@ -735,6 +937,13 @@ fn localized_command(language: Language) -> clap::Command {
                 subcommand = subcommand.mut_subcommand(name, |nested| nested.about(about));
             }
             subcommand
+                .mut_subcommand("set-app", |nested| {
+                    nested
+                        .mut_arg("pid", |arg| arg.help(live::host_app_pid_help(language)))
+                        .mut_arg("endpoint", |arg| {
+                            arg.help(live::host_app_endpoint_help(language))
+                        })
+                })
                 .mut_subcommand("show", |nested| {
                     nested.mut_arg("state_dir", |arg| {
                         arg.help(live::host_state_dir_help(language))
@@ -850,6 +1059,7 @@ fn main() -> ExitCode {
             endpoints,
             profile,
             output,
+            kernel_streaming,
             shared,
             allow_shared_fallback,
             rate,
@@ -870,6 +1080,7 @@ fn main() -> ExitCode {
             endpoints,
             profile,
             output,
+            kernel_streaming,
             shared,
             allow_shared_fallback,
             rate,
@@ -886,8 +1097,19 @@ fn main() -> ExitCode {
             scene_log_ms,
             direct_layouts,
         }),
-        Command::Devices { formats, json } => platform::devices(formats, json),
+        Command::Devices {
+            formats,
+            json,
+            kernel,
+        } => platform::devices(formats, json, kernel),
+        Command::KsProbe {
+            output,
+            seconds,
+            json,
+        } => platform::ks_probe(&output, seconds, json.as_deref()),
         Command::Host { command } => match command {
+            HostCommand::Apps => platform::host_apps(),
+            HostCommand::SetApp { pid, endpoint } => platform::host_set_app(pid, &endpoint),
             HostCommand::Show { state_dir } => platform::host_show(state_dir),
             HostCommand::SetDefault {
                 role,
@@ -945,6 +1167,7 @@ mod platform {
         pub endpoints: Option<String>,
         pub profile: PathBuf,
         pub output: Option<String>,
+        pub kernel_streaming: bool,
         pub shared: bool,
         pub allow_shared_fallback: bool,
         pub rate: u32,
@@ -1171,6 +1394,7 @@ mod platform {
             options.from_dump.is_some(),
             options.clock,
             options.shared,
+            options.kernel_streaming,
             options
                 .direct_layouts
                 .iter()
@@ -1191,7 +1415,41 @@ mod platform {
 
     pub fn play(options: PlayOptions) -> Result<(), String> {
         let profile = engine::load_output_profile(&options.profile).map_err(|e| e.to_string())?;
-        let endpoint = devices::find(options.output.as_deref()).map_err(|e| e.to_string())?;
+        let endpoint = if options.kernel_streaming {
+            selected_endpoint(options.output.as_deref())?
+        } else {
+            devices::find(options.output.as_deref()).map_err(|e| e.to_string())?
+        };
+        let cancel = ssr_sys::ks::ConsoleCancel::install().map_err(|e| e.to_string())?;
+        let target = if options.kernel_streaming {
+            match windows_host(&sibling_setup_exe()?, None)?
+                .kernel_target(&DeviceId(endpoint.id.clone()))
+            {
+                Ok(target) => Some(target),
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        ssr_i18n::supervisor::ks_unavailable(ssr_i18n::cli_language(), error)
+                    );
+                    eprintln!(
+                        "{}",
+                        ssr_i18n::live::ks_fallback_detail(
+                            ssr_i18n::cli_language(),
+                            "no_target",
+                            0
+                        )
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        // Declared before Session: Engine::drop joins both threads before this
+        // guard can restore the endpoint, including during unwinding.
+        let mut restore = target
+            .as_ref()
+            .map(|_| super::ks_lifecycle::RestoreOnDrop::new(|| restore_endpoint(&endpoint.id)));
         let language = ssr_i18n::cli_language();
         eprintln!("{}", ssr_i18n::live::output(language, &endpoint.name));
         let ended = Arc::new(AtomicBool::new(false));
@@ -1200,8 +1458,8 @@ mod platform {
         let output = WasapiOpener {
             endpoint: Some(endpoint.id.clone()),
             rate: options.rate,
-            exclusive: !options.shared,
-            shared_fallback: options.allow_shared_fallback,
+            exclusive: options.kernel_streaming || !options.shared,
+            shared_fallback: !options.kernel_streaming && options.allow_shared_fallback,
             period: options
                 .period_ms
                 .filter(|ms| ms.is_finite() && *ms > 0.0)
@@ -1214,19 +1472,30 @@ mod platform {
                 path: path.clone(),
                 now: qpc::now,
             });
-        let mut session = supervisor::Session::start(
-            supervisor::SessionConfig {
-                engine: config,
-                profile,
-                qpc_frequency: source_qpc,
-                mute: options.mute,
-                recorder,
-            },
-            source,
-            output,
-            driver_stats,
-        )
+        let session_config = supervisor::SessionConfig {
+            engine: config,
+            profile,
+            qpc_frequency: source_qpc,
+            mute: options.mute,
+            recorder,
+        };
+        let mut session = if let Some(target) = target {
+            let output = ssr_sys::ks::KsOrWasapiOpener {
+                ks: ssr_sys::ks::KsOpener {
+                    target,
+                    rate: options.rate,
+                    period: output.period,
+                },
+                wasapi: output,
+                endpoint: endpoint.id.clone(),
+            };
+            supervisor::Session::start(session_config, source, output, driver_stats)
+        } else {
+            supervisor::Session::start(session_config, source, output, driver_stats)
+        }
         .map_err(|error| error.to_string())?;
+        let discovery_fallback = options.kernel_streaming && restore.is_none();
+        let mut fallback_reported = discovery_fallback;
 
         let stop = Arc::new(AtomicBool::new(false));
         if options.seconds.is_none() {
@@ -1259,6 +1528,7 @@ mod platform {
         let mut reported_underruns = 0;
         let mut reported_lane_underrun_frames = 0;
         while !stop.load(Ordering::Acquire)
+            && !cancel.cancelled()
             && options
                 .seconds
                 .is_none_or(|s| started.elapsed().as_secs_f64() < s)
@@ -1268,6 +1538,19 @@ mod platform {
                 eprintln!("{}", ssr_i18n::live::dump_ended(language));
                 ended_at = Some(Instant::now());
                 session.source_ended();
+            }
+            if session.status().output_ks_fallback && !fallback_reported {
+                eprintln!("{}", ssr_i18n::supervisor::ks_fallback(language));
+                let status = session.status();
+                eprintln!(
+                    "{}",
+                    ssr_i18n::live::ks_fallback_detail(
+                        language,
+                        serde_json::to_value(status.output_ks_fallback_reason).unwrap_or_default(),
+                        status.output_ks_fallback_code
+                    )
+                );
+                fallback_reported = true;
             }
             for notice in session.poll().map_err(|error| error.to_string())? {
                 print_notice(notice, language);
@@ -1311,7 +1594,14 @@ mod platform {
             }));
         }
 
-        let report = session.stop().map_err(|error| error.to_string())?;
+        let mut report = session.stop().map_err(|error| error.to_string())?;
+        if discovery_fallback {
+            report.engine.final_status.output_ks_fallback = true;
+            report.engine.final_status.output_ks_fallback_reason =
+                Some(ssr_types::ports::KsFallbackReason::NoTarget);
+            report.engine.final_status.output_ks_fallback_code = 0;
+        }
+        let restoration = restore.as_mut().map_or(Ok(()), |guard| guard.restore());
         eprintln!(
             "{}",
             ssr_i18n::live::stopped(
@@ -1330,7 +1620,7 @@ mod platform {
                 .map_err(|error| error.to_string())?;
             std::fs::write(path, text).map_err(|error| format!("{}: {error}", path.display()))?;
         }
-        Ok(())
+        restoration
     }
 
     fn print_notice(notice: supervisor::SessionNotice, language: ssr_types::app::Language) {
@@ -1476,7 +1766,10 @@ mod platform {
         *reported_lane_underrun_frames = status.lane_underrun_frames;
     }
 
-    pub fn devices(formats: bool, json: bool) -> Result<(), String> {
+    pub fn devices(formats: bool, json: bool, kernel: bool) -> Result<(), String> {
+        if kernel {
+            return kernel_devices(formats, json);
+        }
         if json {
             let endpoints = if formats {
                 devices::render_endpoint_formats()
@@ -1651,6 +1944,186 @@ mod platform {
         Ok(())
     }
 
+    fn selected_endpoint(name: Option<&str>) -> Result<devices::Endpoint, String> {
+        let endpoints = devices::render_endpoints().map_err(|e| e.to_string())?;
+        let choices = endpoints
+            .iter()
+            .map(|e| (e.id.as_str(), e.name.as_str(), e.is_default))
+            .collect::<Vec<_>>();
+        let index = super::select_endpoint(&choices, name)?;
+        Ok(endpoints[index].clone())
+    }
+
+    fn restore_endpoint(endpoint: &str) -> Result<(), String> {
+        let mut host = windows_host(&sibling_setup_exe()?, None)?;
+        let id = DeviceId(endpoint.to_owned());
+        let mut last_error = None;
+        for _ in 0..20 {
+            if let Err(error) = host.set_endpoint_visible(&id, true) {
+                last_error = Some(error.to_string());
+            }
+            if host
+                .outputs()
+                .iter()
+                .any(|output| output.id == id && output.state == ssr_types::DeviceState::Active)
+            {
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        Err(last_error.unwrap_or_else(|| {
+            ssr_i18n::live::endpoint_not_active(ssr_i18n::cli_language(), endpoint)
+        }))
+    }
+
+    pub fn ks_probe(output: &str, seconds: f64, json: Option<&Path>) -> Result<(), String> {
+        use ssr_types::{OutputLayout, OutputOpener, OutputSink};
+        let mut report = super::ks_lifecycle::probe_report();
+        let mut chosen = None;
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(), String> {
+                let endpoint = selected_endpoint(Some(output))?;
+                chosen = Some(endpoint.id.clone());
+                let cancel = ssr_sys::ks::ConsoleCancel::install().map_err(|e| e.to_string())?;
+                let mut host = windows_host(&sibling_setup_exe()?, None)?;
+                let id = DeviceId(endpoint.id.clone());
+                let target = host.kernel_target(&id).map_err(|e| e.to_string())?;
+                report["filter"] = target.filter.clone().into();
+                report["pin"] = target.pin.into();
+                let mut restore =
+                    super::ks_lifecycle::RestoreOnDrop::new(|| restore_endpoint(&endpoint.id));
+                host.set_endpoint_visible(&id, false)
+                    .map_err(|e| e.to_string())?;
+                let mut opener = ssr_sys::ks::KsOpener {
+                    target,
+                    rate: 48_000,
+                    period: None,
+                };
+                let mut sink = opener
+                    .open(OutputLayout::STEREO)
+                    .map_err(|e| e.to_string())?;
+                let format = sink.format();
+                report["opened"] = true.into();
+                report["interface"] = sink.interface().into();
+                report["sample_format"] = sink.sample_format().into();
+                report["rate"] = format.rate.into();
+                report["channels"] = format.channels.into();
+                report["channel_mask"] = format.channel_mask.into();
+                let started = Instant::now();
+                let mut frame = 0_u64;
+                let amplitude = 10.0_f32.powf(-12.0 / 20.0);
+                while started.elapsed().as_secs_f64() < seconds && !cancel.cancelled() {
+                    sink.next_period(&mut |samples| {
+                        for channels in samples.chunks_mut(usize::from(format.channels)) {
+                            let sample = (std::f64::consts::TAU * 1000.0 * frame as f64
+                                / f64::from(format.rate))
+                            .sin() as f32
+                                * amplitude;
+                            channels.fill(sample);
+                            frame += 1;
+                        }
+                    })
+                    .map_err(|e| e.to_string())?;
+                }
+                drop(sink);
+                restore.restore()
+            }));
+        let mut result = result.unwrap_or_else(|_| {
+            Err(ssr_i18n::live::ks_probe_panicked(ssr_i18n::cli_language()).to_owned())
+        });
+        // Read the actual state after every unwind/error path has dropped its sink
+        // and restoration guard. A successful visibility call alone is not proof.
+        if let Some(id) = chosen {
+            let inspection = sibling_setup_exe()
+                .and_then(|exe| windows_host(&exe, None))
+                .map(|mut host| host.outputs());
+            let restored = inspection.as_ref().is_ok_and(|outputs| {
+                outputs.iter().any(|output| {
+                    output.id.0 == id && output.state == ssr_types::DeviceState::Active
+                })
+            });
+            report["endpoint_restored"] = restored.into();
+            if !restored && result.is_ok() {
+                result = Err(inspection.err().unwrap_or_else(|| {
+                    ssr_i18n::live::endpoint_not_active(ssr_i18n::cli_language(), id)
+                }));
+            }
+        }
+        if let Err(error) = &result {
+            report["error"] = error.clone().into();
+        }
+        let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+        println!("{text}");
+        if let Some(path) = json {
+            std::fs::write(path, &text).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        eprintln!(
+            "{}",
+            ssr_i18n::live::ks_probe_result(
+                ssr_i18n::cli_language(),
+                &report["opened"],
+                &report["endpoint_restored"]
+            )
+        );
+        result
+    }
+
+    fn kernel_devices(formats: bool, json: bool) -> Result<(), String> {
+        let mut host = windows_host(&sibling_setup_exe()?, None)?;
+        let outputs = host.outputs();
+        let defaults = host.default_roles();
+        let formats = if formats {
+            devices::render_endpoint_formats().map_err(|e| e.to_string())?
+        } else {
+            Vec::new()
+        };
+        let mut rows = Vec::new();
+        for output in outputs {
+            let target = host.kernel_target(&output.id);
+            let mut row = serde_json::json!({
+                "id": output.id.0, "name": output.name,
+                "default": defaults.console.as_ref() == Some(&output.id),
+                "state": output.state,
+                "kernel": match &target {
+                    Ok(target) => serde_json::json!({"filter": target.filter, "pin": target.pin, "reason": null}),
+                    Err(error) => serde_json::json!({"filter": null, "pin": null, "reason": error.to_string()}),
+                },
+            });
+            if let Some(format) = formats
+                .iter()
+                .find(|format| format.endpoint.id == output.id.0)
+            {
+                row["mix"] = serde_json::json!({"rate": format.mix.rate, "channels": format.mix.channels, "channel_mask": format.mix.channel_mask});
+                row["layouts"] = format.layouts.iter().map(|layout| serde_json::json!({"channels": layout.channels, "channel_mask": layout.channel_mask, "exclusive": layout.exclusive})).collect::<Vec<_>>().into();
+            }
+            if !json {
+                println!("{}  [{}]", output.name, output.id.0);
+                match target {
+                    Ok(target) => println!(
+                        "{}",
+                        ssr_i18n::live::ks_target(
+                            ssr_i18n::cli_language(),
+                            target.filter,
+                            target.pin
+                        )
+                    ),
+                    Err(error) => println!(
+                        "{}",
+                        ssr_i18n::live::ks_target_failed(ssr_i18n::cli_language(), error)
+                    ),
+                }
+            }
+            rows.push(row);
+        }
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&rows).map_err(|e| e.to_string())?
+            );
+        }
+        Ok(())
+    }
+
     /// `ssr-setup.exe` beside the running ssr-live.exe.
     fn sibling_setup_exe() -> Result<PathBuf, String> {
         let exe = std::env::current_exe()
@@ -1678,6 +2151,20 @@ mod platform {
             println!("{}", host_json::to_ascii_json(document));
         }
         answer.error.map_or(Ok(()), Err)
+    }
+
+    pub fn host_apps() -> Result<(), String> {
+        let mut host = windows_host(&sibling_setup_exe()?, None)?;
+        let document = super::app_routing::apps_json(&mut host);
+        println!("{}", host_json::to_ascii_json(&document));
+        Ok(())
+    }
+
+    pub fn host_set_app(pid: u32, endpoint: &str) -> Result<(), String> {
+        let mut host = windows_host(&sibling_setup_exe()?, None)?;
+        let document = super::app_routing::set_app(&mut host, pid, endpoint)?;
+        println!("{}", host_json::to_ascii_json(&document));
+        Ok(())
     }
 
     pub fn host_show(state_dir: Option<PathBuf>) -> Result<(), String> {
@@ -1964,6 +2451,7 @@ mod platform {
         pub endpoints: Option<String>,
         pub profile: PathBuf,
         pub output: Option<String>,
+        pub kernel_streaming: bool,
         pub shared: bool,
         pub allow_shared_fallback: bool,
         pub rate: u32,
@@ -1989,7 +2477,27 @@ mod platform {
         Err(ssr_i18n::live::windows_only(ssr_i18n::cli_language()).to_owned())
     }
 
-    pub fn devices(_formats: bool, _json: bool) -> Result<(), String> {
+    pub fn ks_probe(_output: &str, _seconds: f64, json: Option<&Path>) -> Result<(), String> {
+        let error = ssr_i18n::live::windows_only(ssr_i18n::cli_language()).to_owned();
+        let mut report = super::ks_lifecycle::probe_report();
+        report["error"] = error.clone().into();
+        let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+        println!("{text}");
+        if let Some(path) = json {
+            std::fs::write(path, &text).map_err(|e| e.to_string())?;
+        }
+        Err(error)
+    }
+
+    pub fn devices(_formats: bool, _json: bool, _kernel: bool) -> Result<(), String> {
+        Err(ssr_i18n::live::windows_only(ssr_i18n::cli_language()).to_owned())
+    }
+
+    pub fn host_apps() -> Result<(), String> {
+        Err(ssr_i18n::live::windows_only(ssr_i18n::cli_language()).to_owned())
+    }
+
+    pub fn host_set_app(_pid: u32, _endpoint: &str) -> Result<(), String> {
         Err(ssr_i18n::live::windows_only(ssr_i18n::cli_language()).to_owned())
     }
 

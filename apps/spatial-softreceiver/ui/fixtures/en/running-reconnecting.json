@@ -1,6 +1,7 @@
 {
   "language": "en",
   "language_choice": null,
+  "output_path": "wasapi",
   "phase": {
     "kind": "running"
   },
@@ -172,6 +173,68 @@
     "headphones": true,
     "speakers": true,
     "first_party_available": false
+  },
+  "routing": {
+    "available": true,
+    "enabled": true,
+    "rules": [
+      {
+        "exe": "applemusic.exe",
+        "entrance": "music",
+        "built_in": "music"
+      },
+      {
+        "exe": "foobar2000.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      },
+      {
+        "exe": "kodi.exe",
+        "entrance": null,
+        "built_in": "pass"
+      },
+      {
+        "exe": "mpc-be.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      },
+      {
+        "exe": "mpc-be64.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      },
+      {
+        "exe": "mpc-hc.exe",
+        "entrance": "main",
+        "built_in": "pass"
+      },
+      {
+        "exe": "mpc-hc64.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      },
+      {
+        "exe": "player.exe",
+        "entrance": "music",
+        "built_in": null
+      }
+    ],
+    "apps": [
+      {
+        "exe": "applemusic.exe",
+        "display_name": "Apple Music",
+        "entrance_now": "main",
+        "rule": "music",
+        "moved": true
+      },
+      {
+        "exe": "browser.exe",
+        "display_name": "Browser",
+        "entrance_now": "main",
+        "rule": null,
+        "moved": false
+      }
+    ]
   },
   "engine": {
     "directions": [
@@ -428,6 +491,7 @@
     "output_periods": 12345,
     "capture_reads": 6789,
     "output_restarts": 0,
+    "output_late_resyncs": 0,
     "output_rate": 48000,
     "trim_available": true,
     "output_channels": 2,
@@ -437,6 +501,9 @@
     "output_reconnect_attempts": 0,
     "output_mode": "exclusive",
     "output_fell_back": false,
+    "output_ks_fallback": false,
+    "output_ks_fallback_reason": null,
+    "output_ks_fallback_code": 0,
     "output_mix_channels": 0,
     "output_cadence_ratio": 1.001,
     "output_cadence_faults": 0,

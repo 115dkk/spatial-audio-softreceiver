@@ -66,6 +66,21 @@ class ReportCheckTests(unittest.TestCase):
                 with self.subTest(preset=name, key=key):
                     self.assertIn(f"{key} is 7", problems(value, expect))
 
+    def test_kernel_streaming_must_open_and_must_not_fall_back(self):
+        expect = PRESETS["listen"]
+        value = self.good("listen")
+        value["output_mode"] = value["output_mode_requested"] = "kernel_streaming"
+        value.update(ks_fallback=False, ks_fallback_reason=None, ks_fallback_code=0)
+        self.assertEqual(problems(value, expect), [])
+        value.update(output_mode="exclusive", ks_fallback=True,
+                     ks_fallback_reason="no_sink_pin", ks_fallback_code=0x490)
+        found = problems(value, expect)
+        self.assertIn("output opened exclusive, expected kernel_streaming", found)
+        self.assertIn("kernel streaming fell back to WASAPI exclusive (no_sink_pin, code 0x490)", found)
+        # A report from before ADR 0037 has no ks_fallback and is not a problem.
+        older = self.good("listen")
+        self.assertEqual(problems(older, expect), [])
+
     def test_missing_fields_are_problems_not_exceptions(self):
         for name, expect in PRESETS.items():
             value = self.good(name)

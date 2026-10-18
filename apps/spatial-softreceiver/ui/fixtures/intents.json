@@ -12,6 +12,36 @@
     "value": "en"
   },
   {
+    "kind": "set_output_path",
+    "value": "kernel_streaming"
+  },
+  {
+    "kind": "set_output_path",
+    "value": "wasapi"
+  },
+  {
+    "kind": "set_routing_enabled",
+    "value": false
+  },
+  {
+    "kind": "set_app_rule",
+    "value": {
+      "exe": "PLAYER.EXE",
+      "entrance": "pass"
+    }
+  },
+  {
+    "kind": "set_app_rule",
+    "value": {
+      "exe": "kodi.exe",
+      "entrance": null
+    }
+  },
+  {
+    "kind": "remove_app_rule",
+    "value": "player.exe"
+  },
+  {
     "kind": "begin_setup"
   },
   {

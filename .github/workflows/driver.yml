@@ -442,6 +442,32 @@ jobs:
           python tools/ci/host_role_check.py --ssr-live target/release/ssr-live.exe --summary (Join-Path $env:RUNNER_TEMP 'host-roles.json') --state-dir (Join-Path $env:RUNNER_TEMP 'host-state')
           if ($LASTEXITCODE -ne 0) { throw "host_role_check.py exited $LASTEXITCODE" }
 
+      # ADR 0037: kernel streaming through the WaveRT transport. VB-CABLE is
+      # WaveCyclic (ci.yml checks the standard transport there), so the probe
+      # disables our endpoint 1, opens its render pin directly, plays 1 kHz at
+      # -12 dBFS and gives the endpoint back; the tone must reach the ring as
+      # endpoint 1's PCM without gaps or overruns.
+      - name: Kernel streaming into endpoint 1 through WaveRT, read back on the ring (tools/ci/ks_ring_check.py)
+        if: ${{ !cancelled() && steps.host-build.outcome == 'success' }}
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          python tools/ci/ks_ring_check.py --ssr-live target/release/ssr-live.exe --summary (Join-Path $env:RUNNER_TEMP 'ks-ring.json')
+          if ($LASTEXITCODE -ne 0) { throw "ks_ring_check.py exited $LASTEXITCODE" }
+
+      # ADR 0038: per-app entrances through Windows' per-app output setting
+      # (the private IAudioPolicyConfigFactory). A helper with an audio session
+      # is sent to endpoints 2, 1 and 0 and back to no setting; every write must
+      # read back. A Windows build that refuses the activation fails here first.
+      - name: Per-app entrances set and read back (tools/ci/app_routing_check.py)
+        if: ${{ !cancelled() && steps.host-build.outcome == 'success' }}
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          python -m pip install --quiet -r tools/ci/requirements.txt soundcard==0.4.5
+          python tools/ci/app_routing_check.py --ssr-live target/release/ssr-live.exe --summary (Join-Path $env:RUNNER_TEMP 'app-routing.json')
+          if ($LASTEXITCODE -ne 0) { throw "app_routing_check.py exited $LASTEXITCODE" }
+
       # ADR 0033: the guard process against a fake app. tools/ci/guard_check.py
       # points the three default roles at our main endpoint, writes a restore
       # point as the supervisor would, and lets ssr-guard run the fake app
@@ -552,6 +578,9 @@ jobs:
             ${{ runner.temp }}/driver-e2e-report.json
             ${{ runner.temp }}/driver-e2e.ssrdump
             ${{ runner.temp }}/ioctl-fuzz.json
+            ${{ runner.temp }}/ks-ring.json
+            ${{ runner.temp }}/ks-ring-probe.json
+            ${{ runner.temp }}/app-routing.json
             ${{ runner.temp }}/volume.json
             ${{ runner.temp }}/exclusive-policy.json
             ${{ runner.temp }}/aeb-trace

@@ -5,7 +5,10 @@
 //! real-time threads.
 
 use crate::{
-    format::SourceFormat, layout::DirectionView, ports::OutputMode, scene_layout::SceneLayout,
+    format::SourceFormat,
+    layout::DirectionView,
+    ports::{KsFallbackReason, OutputMode},
+    scene_layout::SceneLayout,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -302,6 +305,9 @@ pub struct EngineStatus {
     pub capture_reads: u64,
     /// Times the output device's stream was restarted after it stalled.
     pub output_restarts: u64,
+    /// Times the sink realigned its write position after a late period
+    /// (kernel streaming), summed over every sink this engine opened.
+    pub output_late_resyncs: u64,
     /// Sample rate of the currently open output sink, or zero before open.
     pub output_rate: u32,
     /// Whether the capture source accepted rate trim when the engine started.
@@ -317,6 +323,9 @@ pub struct EngineStatus {
     pub output_reconnect_attempts: u64,
     pub output_mode: OutputMode,
     pub output_fell_back: bool,
+    pub output_ks_fallback: bool,
+    pub output_ks_fallback_reason: Option<KsFallbackReason>,
+    pub output_ks_fallback_code: u32,
     /// Channels in the shared engine's mix format when fallback occurred.
     pub output_mix_channels: u16,
     /// Observed output periods per second divided by the nominal period rate.

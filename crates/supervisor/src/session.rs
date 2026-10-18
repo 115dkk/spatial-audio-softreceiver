@@ -341,9 +341,11 @@ impl Session {
         Snapshot {
             language: ssr_types::app::Language::Ko,
             language_choice: None,
+            output_path: ssr_types::app::OutputPath::Wasapi,
             phase,
             profile: crate::machine::default_profile_view(),
             upmix: crate::upmix::default_upmix_view(),
+            routing: ssr_types::app::RoutingView::default(),
             engine: Some(status),
             outputs: Vec::new(),
             chosen_output: None,

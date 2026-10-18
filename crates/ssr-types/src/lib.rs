@@ -25,10 +25,10 @@ pub use feeds::Feeds;
 pub use format::{BitstreamCodec, BitstreamFormat, PcmFormat, SampleType, SourceFormat};
 pub use layout::{Direction, DirectionId, DirectionView, Layout, LayoutError};
 pub use ports::{
-    Arch, CaptureError, CaptureSource, DefaultRoles, DeviceId, DeviceState, DriverState,
-    EngineThread, Host, HostError, OutputDevice, OutputError, OutputFormat, OutputLayout,
-    OutputMode, OutputOpener, OutputSink, Platform, PolicyState, Role, SecureBoot, SetupOutcome,
-    SetupTask, TrimUnsupported,
+    Arch, AudioApp, CaptureError, CaptureSource, DefaultRoles, DeviceId, DeviceState, DriverState,
+    EngineThread, Host, HostError, KsFallbackReason, KsTarget, OutputDevice, OutputError,
+    OutputFormat, OutputLayout, OutputMode, OutputOpener, OutputSink, Platform, PolicyState, Role,
+    SecureBoot, SetupOutcome, SetupTask, TrimUnsupported,
 };
 pub use position::{Speaker, direction_to_room, room_to_direction};
 

@@ -21,6 +21,8 @@ pub struct RestorePoint {
     pub ours: DeviceId,
     pub previous: DefaultRoles,
     pub fallback: Option<DeviceId>,
+    /// A DAC endpoint hidden for kernel-streaming output.
+    pub hidden: Option<DeviceId>,
     pub app_pid: u32,
 }
 
@@ -28,14 +30,14 @@ pub struct RestorePoint {
 pub enum RestorePointError {
     #[error("the restore point is not JSON: {0}")]
     Json(String),
-    #[error("the restore point has version {0}, this build reads version 1")]
+    #[error("the restore point has version {0}, this build reads versions 1 and 2")]
     Version(u64),
     #[error("the restore point field `{0}` is missing or has the wrong type")]
     Field(&'static str),
 }
 
 impl RestorePoint {
-    pub const VERSION: u32 = 1;
+    pub const VERSION: u32 = 2;
 
     /// One line: `version`, `ours`, `previous` (`console`, `multimedia`,
     /// `communications`, each an id or null), `fallback` (an id or null) and
@@ -53,20 +55,21 @@ impl RestorePoint {
             "ours": self.ours.0,
             "previous": previous,
             "fallback": self.fallback.as_ref().map(|id| id.0.clone()),
+            "hidden": self.hidden.as_ref().map(|id| id.0.clone()),
             "app_pid": self.app_pid,
         })
         .to_string()
     }
 
-    /// Reads a restore point, refusing any version but [`Self::VERSION`].
-    /// Unknown keys are ignored.
+    /// Reads restore-point versions 1 and 2. Version 1 had no hidden endpoint;
+    /// unknown keys are ignored and later versions are refused.
     pub fn from_json(text: &str) -> Result<Self, RestorePointError> {
         let value: Value = serde_json::from_str(text)
             .map_err(|error| RestorePointError::Json(error.to_string()))?;
         let version = value["version"]
             .as_u64()
             .ok_or(RestorePointError::Field("version"))?;
-        if version != u64::from(Self::VERSION) {
+        if !matches!(version, 1 | 2) {
             return Err(RestorePointError::Version(version));
         }
         let ours = value["ours"]
@@ -81,6 +84,11 @@ impl RestorePoint {
             previous.set(role, optional_id(previous_value.get(key), key)?);
         }
         let fallback = optional_id(value.get("fallback"), "fallback")?;
+        let hidden = if version == 1 {
+            None
+        } else {
+            optional_id(value.get("hidden"), "hidden")?
+        };
         let app_pid = value["app_pid"]
             .as_u64()
             .and_then(|pid| u32::try_from(pid).ok())
@@ -89,6 +97,7 @@ impl RestorePoint {
             ours: DeviceId(ours.to_owned()),
             previous,
             fallback,
+            hidden,
             app_pid,
         })
     }
@@ -124,14 +133,36 @@ pub fn restore_with_language(
 }
 
 pub fn restore_messages(point: &RestorePoint, host: &mut impl Host) -> Vec<Message> {
-    let mut notes =
-        restore_roles_messages(host, &point.ours, &point.previous, point.fallback.as_ref());
-    if let Err(error) = host.write_restore_point(None) {
+    restore_messages_checked(point, host).0
+}
+
+/// Restores a point and reports whether every recovery action, including
+/// removing the durable point, succeeded.
+pub fn restore_messages_checked(
+    point: &RestorePoint,
+    host: &mut impl Host,
+) -> (Vec<Message>, bool) {
+    let mut notes = Vec::new();
+    let mut restored = true;
+    if let Some(hidden) = &point.hidden
+        && let Err(error) = host.set_endpoint_visible(hidden, true)
+    {
+        notes.push(Message::RestoreEndpointFailed {
+            detail: error.to_string(),
+        });
+        restored = false;
+    }
+    let (role_notes, roles_restored) =
+        restore_roles_messages_checked(host, &point.ours, &point.previous, point.fallback.as_ref());
+    notes.extend(role_notes);
+    restored &= roles_restored;
+    if restored && let Err(error) = host.write_restore_point(None) {
         notes.push(Message::RestorePointRemoveFailed {
             detail: error.to_string(),
         });
+        restored = false;
     }
-    notes
+    (notes, restored)
 }
 
 /// The one rule for giving the default roles back (ADR 0023):
@@ -176,7 +207,18 @@ pub fn restore_roles_messages(
     previous: &DefaultRoles,
     fallback: Option<&DeviceId>,
 ) -> Vec<Message> {
+    restore_roles_messages_checked(host, ours, previous, fallback).0
+}
+
+fn restore_roles_messages_checked(
+    host: &mut impl Host,
+    ours: &DeviceId,
+    previous: &DefaultRoles,
+    fallback: Option<&DeviceId>,
+) -> (Vec<Message>, bool) {
     let current = host.default_roles();
+    // Endpoint visibility must be restored before this enumeration: the hidden
+    // DAC is also the fallback and is otherwise absent from the active set.
     let outputs = host.outputs();
     // A device a role may go to: listed, active, and not ours.
     let usable = |id: &DeviceId| {
@@ -186,6 +228,7 @@ pub fn restore_roles_messages(
     };
     let fallback = fallback.and_then(usable);
     let mut notes = Vec::new();
+    let mut restored = true;
     for role in Role::ALL {
         if current.get(role) != Some(ours) {
             continue;
@@ -208,13 +251,16 @@ pub fn restore_roles_messages(
         };
         match host.set_default_role(role, &target.id) {
             Ok(()) => notes.extend(note),
-            Err(error) => notes.push(Message::RestoreRoleFailed {
-                role,
-                detail: error.to_string(),
-            }),
+            Err(error) => {
+                restored = false;
+                notes.push(Message::RestoreRoleFailed {
+                    role,
+                    detail: error.to_string(),
+                });
+            }
         }
     }
-    notes
+    (notes, restored)
 }
 
 fn role_key(role: Role) -> &'static str {

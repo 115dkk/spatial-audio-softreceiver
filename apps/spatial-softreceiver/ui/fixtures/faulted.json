@@ -1,6 +1,7 @@
 {
   "language": "ko",
   "language_choice": null,
+  "output_path": "wasapi",
   "phase": {
     "kind": "faulted"
   },
@@ -88,6 +89,68 @@
     "headphones": true,
     "speakers": true,
     "first_party_available": false
+  },
+  "routing": {
+    "available": true,
+    "enabled": true,
+    "rules": [
+      {
+        "exe": "applemusic.exe",
+        "entrance": "music",
+        "built_in": "music"
+      },
+      {
+        "exe": "foobar2000.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      },
+      {
+        "exe": "kodi.exe",
+        "entrance": null,
+        "built_in": "pass"
+      },
+      {
+        "exe": "mpc-be.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      },
+      {
+        "exe": "mpc-be64.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      },
+      {
+        "exe": "mpc-hc.exe",
+        "entrance": "main",
+        "built_in": "pass"
+      },
+      {
+        "exe": "mpc-hc64.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      },
+      {
+        "exe": "player.exe",
+        "entrance": "music",
+        "built_in": null
+      }
+    ],
+    "apps": [
+      {
+        "exe": "applemusic.exe",
+        "display_name": "Apple Music",
+        "entrance_now": "main",
+        "rule": "music",
+        "moved": true
+      },
+      {
+        "exe": "browser.exe",
+        "display_name": "Browser",
+        "entrance_now": "main",
+        "rule": null,
+        "moved": false
+      }
+    ]
   },
   "engine": null,
   "outputs": [

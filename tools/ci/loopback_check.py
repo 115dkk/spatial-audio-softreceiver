@@ -164,7 +164,8 @@ def main():
     parser.add_argument("--dump", required=True)
     parser.add_argument("--profile", required=True)
     parser.add_argument("--reference", required=True)
-    parser.add_argument("--mode", choices=["exclusive", "shared"], required=True)
+    parser.add_argument("--mode", choices=["exclusive", "shared", "kernel_streaming"], required=True,
+                        help="kernel_streaming disables the render endpoint and opens its KS pin (ADR 0037)")
     parser.add_argument("--render", default="VB-Audio Virtual Cable")
     parser.add_argument("--capture", default="CABLE Output")
     parser.add_argument("--period-ms", type=float, help="exclusive device period for ssr-live")
@@ -195,6 +196,8 @@ def main():
     ]
     if args.mode == "shared":
         command.append("--shared")
+    elif args.mode == "kernel_streaming":
+        command.append("--kernel-streaming")
     if args.period_ms:
         command += ["--period-ms", str(args.period_ms)]
     if args.report:
@@ -232,6 +235,7 @@ def main():
             figures = json.load(report)
         summary["underruns_while_streaming"] = figures.get("underruns_while_streaming")
         summary["output_restarts"] = figures.get("output_restarts")
+        summary["output_late_resyncs"] = figures.get("output_late_resyncs")
         problems.extend(report_problems(figures, expected_mode=args.mode))
     if summary["windows"] == 0 or summary["matched"] < args.min_matched:
         problems.append(f"only {summary['matched']:.1%} of windows matched")

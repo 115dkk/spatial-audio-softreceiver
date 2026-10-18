@@ -7,18 +7,21 @@
 mod common;
 
 use std::cell::{RefCell, RefMut};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use engine::adapters::NullOpener;
 use engine::{LiveChange, MatrixUpmixer, OutputProfile, UpmixMonitor, UpmixStatus, Upmixer};
-use ssr_types::app::{Intent, Language, NextAction, OutputChoice, Phase, SetupStep, UserError};
+use ssr_types::app::{
+    AppRule, Entrance, Intent, Language, NextAction, OutputChoice, OutputPath, Phase, SetupStep,
+    UserError,
+};
 use ssr_types::ports::PolicyState;
 use ssr_types::{
-    Arch, DefaultRoles, DeviceId, DeviceState, DirectionView, DriverState, EngineFault,
-    EngineStatus, Host, HostError, OutputDevice, OutputLayout, Platform, Role, SecureBoot,
-    SetupOutcome, SetupTask,
+    Arch, AudioApp, DefaultRoles, DeviceId, DeviceState, DirectionView, DriverState, EngineFault,
+    EngineStatus, Host, HostError, KsTarget, OutputDevice, OutputLayout, Platform, Role,
+    SecureBoot, SetupOutcome, SetupTask,
 };
 use supervisor::machine::Config;
 use supervisor::restore_point::{self, RestorePoint, RestorePointError};
@@ -41,6 +44,8 @@ struct World {
     outputs: Vec<OutputDevice>,
     roles: DefaultRoles,
     restore_point: Option<String>,
+    /// Fail writes (`Some(true)`) or removals (`Some(false)`) of the restore point.
+    restore_write_error: Option<bool>,
     /// `run_setup` results in order; an empty queue succeeds.
     setup_results: VecDeque<Result<SetupOutcome, HostError>>,
     failing_role: Option<Role>,
@@ -55,15 +60,22 @@ struct World {
     apply_errors: VecDeque<SessionError>,
     /// Result returned by the layout probe; defaults to accepting the layout.
     layout_support: Result<bool, HostError>,
+    kernel_target: Result<KsTarget, HostError>,
+    visibility_error: Option<bool>,
     /// The directions the running engine reports in its status.
     engine_directions: Vec<DirectionView>,
     /// The recoverable fault the running engine reports in its status.
     engine_fault: Option<EngineFault>,
+    ks_fallback: bool,
     /// The status readers of the upmix stages the running engine took.
     stages: [Option<UpmixMonitor>; 3],
     /// Upmix statuses the running engine reports instead of its stages'.
     upmix_status: [Option<UpmixStatus>; 3],
     plugins: PluginScript,
+    audio_apps: Vec<AudioApp>,
+    app_entrances: HashMap<u32, Result<Option<DeviceId>, HostError>>,
+    app_set_results: VecDeque<Result<(), HostError>>,
+    routing_reads: Vec<String>,
     calls: Vec<String>,
 }
 
@@ -144,6 +156,60 @@ impl Host for FakeHost {
         Ok(())
     }
 
+    fn audio_apps(&mut self) -> Vec<AudioApp> {
+        let mut world = self.0.get();
+        world.routing_reads.push("audio apps".into());
+        world.audio_apps.clone()
+    }
+
+    fn app_entrance(&mut self, pid: u32) -> Result<Option<DeviceId>, HostError> {
+        let mut world = self.0.get();
+        world.routing_reads.push(format!("get app {pid}"));
+        if pid != std::process::id() {
+            world.calls.push(format!("get app {pid}"));
+        }
+        world
+            .app_entrances
+            .get(&pid)
+            .cloned()
+            .unwrap_or(Err(HostError::Unsupported))
+    }
+
+    fn set_app_entrance(&mut self, pid: u32, device: Option<&DeviceId>) -> Result<(), HostError> {
+        let mut world = self.0.get();
+        world.calls.push(format!(
+            "set app {pid} {}",
+            device.map_or("default", |device| device.0.as_str())
+        ));
+        let result = world.app_set_results.pop_front().unwrap_or(Ok(()));
+        if result.is_ok() {
+            world.app_entrances.insert(pid, Ok(device.cloned()));
+        }
+        result
+    }
+
+    fn kernel_target(&mut self, output: &DeviceId) -> Result<KsTarget, HostError> {
+        let mut world = self.0.get();
+        world.calls.push(format!("kernel target {}", output.0));
+        world.kernel_target.clone()
+    }
+
+    fn set_endpoint_visible(&mut self, output: &DeviceId, visible: bool) -> Result<(), HostError> {
+        let mut world = self.0.get();
+        world.calls.push(format!("visible {} {visible}", output.0));
+        if world.visibility_error == Some(visible) {
+            return Err(HostError::Failed("visibility scripted".into()));
+        }
+        if let Some(device) = world.outputs.iter_mut().find(|device| device.id == *output) {
+            device.state = if visible {
+                DeviceState::Active
+            } else {
+                DeviceState::Disabled
+            };
+        }
+        Ok(())
+    }
+
     fn supports_layout(
         &mut self,
         output: &DeviceId,
@@ -185,6 +251,9 @@ impl Host for FakeHost {
             }
             .into(),
         );
+        if world.restore_write_error == Some(json.is_some()) {
+            return Err(HostError::Failed("restore persistence scripted".into()));
+        }
         world.restore_point = json.map(str::to_owned);
         Ok(())
     }
@@ -198,8 +267,20 @@ impl Launcher for FakeLauncher {
         output: &OutputDevice,
         profile: &OutputProfile,
     ) -> Result<Box<dyn EngineHandle>, SessionError> {
+        self.launch_with_ks(output, profile, None)
+    }
+
+    fn launch_with_ks(
+        &mut self,
+        output: &OutputDevice,
+        profile: &OutputProfile,
+        ks_target: Option<&KsTarget>,
+    ) -> Result<Box<dyn EngineHandle>, SessionError> {
         let mut world = self.0.get();
-        world.calls.push(format!("launch {}", output.id.0));
+        world.calls.push(match ks_target {
+            Some(target) => format!("launch {} ks {}:{}", output.id.0, target.filter, target.pin),
+            None => format!("launch {}", output.id.0),
+        });
         world.launched.push(describe(profile));
         if world.launch_fails {
             return Err(SessionError::Recorder("scripted failure".into()));
@@ -223,6 +304,7 @@ impl EngineHandle for FakeEngine {
         let world = self.0.get();
         EngineStatus {
             directions: world.engine_directions.clone(),
+            output_ks_fallback: world.ks_fallback,
             fault: world.engine_fault.clone(),
             ..EngineStatus::default()
         }
@@ -526,6 +608,7 @@ fn ready_pc() -> World {
         ],
         roles: previous_roles(),
         restore_point: None,
+        restore_write_error: None,
         setup_results: VecDeque::new(),
         failing_role: None,
         launch_fails: false,
@@ -534,14 +617,24 @@ fn ready_pc() -> World {
         applied: Vec::new(),
         apply_errors: VecDeque::new(),
         layout_support: Ok(true),
+        kernel_target: Ok(KsTarget {
+            filter: "\\\\?\\ks-filter".into(),
+            pin: 3,
+        }),
+        visibility_error: None,
         engine_directions: Vec::new(),
         engine_fault: None,
+        ks_fallback: false,
         stages: Default::default(),
         upmix_status: Default::default(),
         plugins: PluginScript {
             latency: 64,
             ..PluginScript::default()
         },
+        audio_apps: Vec::new(),
+        app_entrances: HashMap::from([(std::process::id(), Ok(None))]),
+        app_set_results: VecDeque::new(),
+        routing_reads: Vec::new(),
         calls: Vec::new(),
     }
 }
@@ -606,7 +699,9 @@ fn dac_settings() -> Settings {
         language: None,
         output: Some(dac_choice()),
         profile: Default::default(),
+        output_path: Default::default(),
         upmix: Default::default(),
+        routing: Default::default(),
     }
 }
 
@@ -644,6 +739,23 @@ fn running(world: World) -> (Shared, Machine) {
     (shared, supervisor)
 }
 
+fn audio_app(pid: u32, exe: &str, device: &str, active: bool) -> AudioApp {
+    AudioApp {
+        pid,
+        exe: exe.into(),
+        display_name: exe.trim_end_matches(".exe").into(),
+        device: id(device),
+        active,
+    }
+}
+
+fn ks_settings() -> Settings {
+    Settings {
+        output_path: OutputPath::KernelStreaming,
+        ..dac_settings()
+    }
+}
+
 fn error(message: &str, next: NextAction) -> UserError {
     UserError {
         message: message.into(),
@@ -666,6 +778,323 @@ fn give_back_calls() -> Vec<String> {
         "set Communications {headset}",
         "remove restore point",
     ])
+}
+
+#[test]
+fn routing_settings_round_trip_and_legacy_settings_default() {
+    let legacy: Settings = serde_json::from_str(
+        r#"{"language":null,"output":null,"profile":{},"output_path":"wasapi","upmix":{}}"#,
+    )
+    .unwrap();
+    assert!(legacy.routing.enabled);
+    assert!(legacy.routing.rules.is_empty());
+
+    let mut settings = dac_settings();
+    settings.routing.enabled = false;
+    settings.routing.rules.push(AppRule {
+        exe: "player.exe".into(),
+        entrance: Some(Entrance::Music),
+    });
+    let json = serde_json::to_string(&settings).unwrap();
+    assert_eq!(serde_json::from_str::<Settings>(&json).unwrap(), settings);
+}
+
+#[test]
+fn routing_pass_rule_is_written_once_and_survives_session_disappearance() {
+    let mut world = ready_pc();
+    world.audio_apps = vec![audio_app(40, "kodi.exe", OURS, true)];
+    world.app_entrances.insert(40, Ok(Some(id(OURS))));
+    let (shared, mut supervisor) = running(world);
+    let now = Instant::now();
+    supervisor.tick(now);
+    assert!(
+        shared
+            .take_calls()
+            .contains(&"set app 40 {ours-pass}".into())
+    );
+    assert!(supervisor.snapshot().routing.apps[0].moved);
+    assert!(supervisor.snapshot().notes.is_empty());
+
+    shared.get().audio_apps.clear();
+    supervisor.tick(now + Duration::from_secs(1));
+    shared.get().audio_apps = vec![audio_app(40, "kodi.exe", OURS, true)];
+    shared.get().app_entrances.insert(40, Ok(Some(id(OURS))));
+    supervisor.tick(now + Duration::from_secs(2));
+    assert!(
+        !shared
+            .take_calls()
+            .iter()
+            .any(|call| call.starts_with("get app 40"))
+    );
+}
+
+#[test]
+fn routing_inactive_and_duplicate_sessions_do_not_repeat_writes() {
+    let mut world = ready_pc();
+    world.audio_apps = vec![
+        audio_app(50, "kodi.exe", OURS, false),
+        audio_app(51, "kodi.exe", OURS, true),
+        audio_app(51, "kodi.exe", OURS, true),
+        audio_app(52, "kodi.exe", OURS, true),
+    ];
+    world.app_entrances.insert(51, Ok(Some(id(OURS))));
+    world.app_entrances.insert(52, Ok(Some(id(OURS))));
+    let (shared, mut supervisor) = running(world);
+    supervisor.tick(Instant::now());
+    let calls = shared.take_calls();
+    assert!(!calls.iter().any(|call| call.contains(" 50")));
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|call| *call == "set app 51 {ours-pass}")
+            .count(),
+        1
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|call| *call == "set app 52 {ours-pass}")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn routing_unknown_pass_session_moves_to_main_and_notes_once() {
+    let mut world = ready_pc();
+    world.audio_apps = vec![
+        audio_app(60, "browser.exe", OURS, true),
+        audio_app(60, "browser.exe", "{ours-pass}", true),
+    ];
+    world.app_entrances.insert(60, Ok(Some(id("{ours-pass}"))));
+    let (shared, mut supervisor) = running(world);
+    supervisor.tick(Instant::now());
+    let calls = shared.take_calls();
+    assert!(calls.contains(&"set app 60 {ours-main}".into()));
+    assert_eq!(supervisor.snapshot().notes.len(), 1);
+}
+
+#[test]
+fn routing_disabled_and_unavailable_make_no_calls_after_detection() {
+    let mut world = ready_pc();
+    world
+        .app_entrances
+        .insert(std::process::id(), Err(HostError::Unsupported));
+    let (shared, mut supervisor) = running(world);
+    supervisor.handle(Intent::SetRoutingEnabled(false)).unwrap();
+    let now = Instant::now();
+    supervisor.tick(now);
+    assert!(shared.get().routing_reads.is_empty());
+    supervisor.handle(Intent::SetRoutingEnabled(true)).unwrap();
+    supervisor.tick(now + Duration::from_secs(1));
+    assert!(!supervisor.snapshot().routing.available);
+    assert_eq!(supervisor.snapshot().notes.len(), 1);
+    shared.take_calls();
+    shared.get().routing_reads.clear();
+    supervisor.tick(now + Duration::from_secs(2));
+    assert!(shared.take_calls().is_empty());
+    assert!(shared.get().routing_reads.is_empty());
+}
+
+#[test]
+fn routing_rule_change_reapplies_only_that_executable_and_identical_rule_does_not() {
+    let mut world = ready_pc();
+    world.audio_apps = vec![
+        audio_app(70, "kodi.exe", OURS, true),
+        audio_app(71, "foobar2000.exe", OURS, true),
+    ];
+    world.app_entrances.insert(70, Ok(Some(id("{ours-pass}"))));
+    world.app_entrances.insert(71, Ok(Some(id("{ours-pass}"))));
+    let (shared, mut supervisor) = running(world);
+    let now = Instant::now();
+    supervisor.tick(now);
+    shared.take_calls();
+    supervisor
+        .handle(Intent::SetAppRule(AppRule {
+            exe: "KODI.EXE".into(),
+            entrance: Some(Entrance::Music),
+        }))
+        .unwrap();
+    supervisor.tick(now + Duration::from_secs(1));
+    let calls = shared.take_calls();
+    assert!(calls.contains(&"set app 70 {ours-music}".into()));
+    assert!(!calls.iter().any(|call| call.contains("app 71")));
+
+    supervisor
+        .handle(Intent::SetAppRule(AppRule {
+            exe: "kodi.exe".into(),
+            entrance: Some(Entrance::Music),
+        }))
+        .unwrap();
+    shared.get().app_entrances.insert(70, Ok(Some(id(OURS))));
+    supervisor.tick(now + Duration::from_secs(2));
+    assert!(
+        !shared
+            .take_calls()
+            .iter()
+            .any(|call| call.contains("app 70"))
+    );
+    assert_eq!(
+        supervisor.snapshot().routing.apps[0].rule,
+        Some(Entrance::Music)
+    );
+
+    supervisor
+        .handle(Intent::RemoveAppRule("KODI.EXE".into()))
+        .unwrap();
+    assert_eq!(
+        supervisor.snapshot().routing.apps[0].rule,
+        Some(Entrance::Pass)
+    );
+}
+
+#[test]
+fn routing_a_built_in_rule_turned_off_treats_the_app_like_one_without_a_rule() {
+    let mut world = ready_pc();
+    world.audio_apps = vec![audio_app(75, "kodi.exe", "{ours-pass}", true)];
+    world.app_entrances.insert(75, Ok(Some(id("{ours-pass}"))));
+    let (shared, mut supervisor) = running(world);
+    supervisor
+        .handle(Intent::SetAppRule(AppRule {
+            exe: "kodi.exe".into(),
+            entrance: None,
+        }))
+        .unwrap();
+    supervisor.tick(Instant::now());
+    assert!(
+        shared
+            .take_calls()
+            .contains(&"set app 75 {ours-main}".into())
+    );
+    let snapshot = supervisor.snapshot();
+    assert_eq!(snapshot.routing.apps[0].rule, None);
+    assert_eq!(snapshot.notes.len(), 1);
+    let row = snapshot
+        .routing
+        .rules
+        .iter()
+        .find(|row| row.exe == "kodi.exe")
+        .unwrap();
+    assert_eq!((row.entrance, row.built_in), (None, Some(Entrance::Pass)));
+
+    supervisor
+        .handle(Intent::RemoveAppRule("kodi.exe".into()))
+        .unwrap();
+    assert_eq!(
+        supervisor.snapshot().routing.apps[0].rule,
+        Some(Entrance::Pass)
+    );
+}
+
+#[test]
+fn routing_conflict_is_not_reasserted_until_the_effective_rule_changes() {
+    let mut world = ready_pc();
+    world.audio_apps = vec![audio_app(80, "kodi.exe", OURS, true)];
+    world.app_entrances.insert(80, Ok(Some(id(OURS))));
+    world.app_set_results = VecDeque::from([Err(HostError::Conflict), Ok(())]);
+    let (shared, mut supervisor) = running(world);
+    let now = Instant::now();
+
+    supervisor.tick(now);
+    assert_eq!(
+        shared.take_calls(),
+        calls(&["get app 80", "set app 80 {ours-pass}"])
+    );
+    assert!(!supervisor.snapshot().routing.apps[0].moved);
+    assert!(supervisor.snapshot().notes.is_empty());
+
+    supervisor.tick(now + Duration::from_secs(1));
+    assert!(shared.take_calls().is_empty());
+
+    supervisor
+        .handle(Intent::SetAppRule(AppRule {
+            exe: "kodi.exe".into(),
+            entrance: Some(Entrance::Music),
+        }))
+        .unwrap();
+    supervisor.tick(now + Duration::from_secs(2));
+    assert_eq!(
+        shared.take_calls(),
+        calls(&["get app 80", "set app 80 {ours-music}"])
+    );
+    assert!(supervisor.snapshot().routing.apps[0].moved);
+}
+
+#[test]
+fn routing_transient_set_failure_is_retried() {
+    let mut world = ready_pc();
+    world.audio_apps = vec![audio_app(81, "kodi.exe", OURS, true)];
+    world.app_entrances.insert(81, Ok(Some(id(OURS))));
+    world.app_set_results =
+        VecDeque::from([Err(HostError::Failed("temporary failure".into())), Ok(())]);
+    let (shared, mut supervisor) = running(world);
+    let now = Instant::now();
+
+    supervisor.tick(now);
+    assert_eq!(
+        shared.take_calls(),
+        calls(&["get app 81", "set app 81 {ours-pass}"])
+    );
+    assert!(!supervisor.snapshot().routing.apps[0].moved);
+
+    supervisor.tick(now + Duration::from_secs(1));
+    assert_eq!(
+        shared.take_calls(),
+        calls(&["get app 81", "set app 81 {ours-pass}"])
+    );
+    assert!(supervisor.snapshot().routing.apps[0].moved);
+}
+
+#[test]
+fn routing_absent_target_and_transient_failure_do_not_disable_policy() {
+    let mut world = ready_pc();
+    world.outputs.retain(|output| output.endpoint != Some(2));
+    world.audio_apps = vec![audio_app(80, "kodi.exe", OURS, true)];
+    world.app_entrances.insert(80, Ok(Some(id(OURS))));
+    let (shared, mut supervisor) = running(world);
+    let now = Instant::now();
+    supervisor.tick(now);
+    assert!(
+        !shared
+            .take_calls()
+            .iter()
+            .any(|call| call.starts_with("get app 80"))
+    );
+    assert!(supervisor.snapshot().routing.available);
+
+    shared
+        .get()
+        .outputs
+        .push(device("{ours-pass}", "Spatial SoftReceiver PASS", Some(2)));
+    shared
+        .get()
+        .app_entrances
+        .insert(80, Err(HostError::Failed("process exited".into())));
+    supervisor.tick(now + Duration::from_secs(1));
+    assert!(supervisor.snapshot().routing.available);
+    shared.get().app_entrances.insert(80, Ok(Some(id(OURS))));
+    supervisor.tick(now + Duration::from_secs(2));
+    assert!(
+        shared
+            .take_calls()
+            .contains(&"set app 80 {ours-pass}".into())
+    );
+}
+
+#[test]
+fn enable_rechecks_missing_policy_before_roles_or_launch() {
+    let (shared, mut supervisor) = start(ready_pc(), dac_settings());
+    supervisor.handle(Intent::Enable).unwrap();
+    supervisor.handle(Intent::Disable).unwrap();
+    shared.take_calls();
+    shared.get().driver = DriverState::Installed {
+        problem_code: 0,
+        service_running: true,
+        exclusive_policy: PolicyState::Missing,
+    };
+    assert!(supervisor.handle(Intent::Enable).is_err());
+    assert_eq!(supervisor.snapshot().phase, Phase::Setup(SetupStep::Driver));
+    assert!(shared.take_calls().is_empty());
 }
 
 #[test]
@@ -801,6 +1230,7 @@ fn the_wizard_walks_every_step_on_a_fresh_pc() {
             ours: id(OURS),
             previous: previous_roles(),
             fallback: Some(id(DAC)),
+            hidden: None,
             app_pid: std::process::id(),
         })
     );
@@ -1074,6 +1504,165 @@ fn another_architecture_is_unsupported() {
 }
 
 #[test]
+fn output_path_defaults_to_wasapi_changes_only_while_stopped_and_is_in_snapshot() {
+    let json = r#"{"language":null,"output":null,"profile":{},"upmix":{}}"#;
+    let old: Settings = serde_json::from_str(json).unwrap();
+    assert_eq!(old.output_path, OutputPath::Wasapi);
+
+    let (_shared, mut supervisor) = start(ready_pc(), dac_settings());
+    assert_eq!(supervisor.snapshot().output_path, OutputPath::Wasapi);
+    supervisor
+        .handle(Intent::SetOutputPath(OutputPath::KernelStreaming))
+        .unwrap();
+    assert_eq!(
+        supervisor.snapshot().output_path,
+        OutputPath::KernelStreaming
+    );
+    supervisor.handle(Intent::Enable).unwrap();
+    assert!(
+        supervisor
+            .handle(Intent::SetOutputPath(OutputPath::Wasapi))
+            .is_err()
+    );
+    assert_eq!(
+        supervisor.snapshot().output_path,
+        OutputPath::KernelStreaming
+    );
+}
+
+#[test]
+fn kernel_streaming_records_hidden_before_disable_and_restores_on_disable() {
+    let (shared, mut supervisor) = start(ready_pc(), ks_settings());
+    supervisor.handle(Intent::Enable).unwrap();
+    assert_eq!(
+        shared.take_calls(),
+        calls(&[
+            "kernel target {dac}",
+            "write restore point",
+            "set Console {ours-main}",
+            "set Multimedia {ours-main}",
+            "set Communications {ours-main}",
+            "visible {dac} false",
+            "launch {dac} ks \\\\?\\ks-filter:3",
+        ])
+    );
+    let point = RestorePoint::from_json(shared.get().restore_point.as_deref().unwrap()).unwrap();
+    assert_eq!(point.hidden, Some(id(DAC)));
+    assert_eq!(shared.output(DAC).state, DeviceState::Disabled);
+
+    supervisor.handle(Intent::Disable).unwrap();
+    let calls = shared.take_calls();
+    assert_eq!(calls[0], "stop engine");
+    assert_eq!(calls[1], "visible {dac} true");
+    assert!(
+        calls
+            .last()
+            .is_some_and(|call| call == "remove restore point")
+    );
+    assert_eq!(shared.output(DAC).state, DeviceState::Active);
+    assert!(shared.get().restore_point.is_none());
+}
+
+#[test]
+fn kernel_target_discovery_failure_launches_wasapi_and_notes_once() {
+    let mut world = ready_pc();
+    world.kernel_target = Err(HostError::Failed("no pin".into()));
+    let (shared, mut supervisor) = start(world, ks_settings());
+    supervisor.handle(Intent::Enable).unwrap();
+    assert!(shared.get().calls.iter().any(|call| call == "launch {dac}"));
+    assert_eq!(
+        supervisor
+            .snapshot()
+            .notes
+            .iter()
+            .filter(|note| note.contains("no pin"))
+            .count(),
+        1
+    );
+    supervisor.tick(Instant::now());
+    supervisor.tick(Instant::now());
+    assert_eq!(supervisor.snapshot().notes.len(), 1);
+}
+
+#[test]
+fn durable_hidden_is_recorded_before_endpoint_disable_and_persistence_failure_prevents_hiding() {
+    let mut world = ready_pc();
+    world.restore_write_error = Some(true);
+    let (shared, mut supervisor) = start(world, ks_settings());
+    assert!(supervisor.handle(Intent::Enable).is_err());
+    assert_eq!(
+        shared.take_calls(),
+        calls(&["kernel target {dac}", "write restore point"])
+    );
+    assert_eq!(shared.output(DAC).state, DeviceState::Active);
+    assert!(shared.get().restore_point.is_none());
+}
+
+#[test]
+fn visibility_restore_failure_retains_recovery_record_and_blocks_reenable() {
+    let (shared, mut supervisor) = start(ready_pc(), ks_settings());
+    supervisor.handle(Intent::Enable).unwrap();
+    shared.take_calls();
+    shared.get().visibility_error = Some(true);
+    supervisor.handle(Intent::Disable).unwrap();
+    assert!(supervisor.snapshot().roles_taken);
+    assert!(shared.get().restore_point.is_some());
+    assert!(supervisor.handle(Intent::Enable).is_err());
+    assert!(shared.get().restore_point.is_some());
+}
+
+#[test]
+fn kernel_streaming_launch_failure_fault_and_quit_restore_visibility() {
+    // Start failure restores immediately.
+    let mut world = ready_pc();
+    world.launch_fails = true;
+    let (shared, mut supervisor) = start(world, ks_settings());
+    assert!(supervisor.handle(Intent::Enable).is_err());
+    assert_eq!(shared.output(DAC).state, DeviceState::Active);
+    assert!(shared.get().restore_point.is_none());
+
+    // A running-engine fault restores before entering Faulted.
+    let (shared, mut supervisor) = start(ready_pc(), ks_settings());
+    supervisor.handle(Intent::Enable).unwrap();
+    shared
+        .get()
+        .engine_polls
+        .push_back(Err(SessionError::Rejected));
+    supervisor.tick(Instant::now());
+    assert_eq!(supervisor.snapshot().phase, Phase::Faulted);
+    assert_eq!(shared.output(DAC).state, DeviceState::Active);
+    assert!(shared.get().restore_point.is_none());
+
+    // Quit uses the same shared restoration path.
+    let (shared, mut supervisor) = start(ready_pc(), ks_settings());
+    supervisor.handle(Intent::Enable).unwrap();
+    supervisor.handle(Intent::Quit).unwrap();
+    assert_eq!(supervisor.snapshot().phase, Phase::Quit);
+    assert_eq!(shared.output(DAC).state, DeviceState::Active);
+    assert!(shared.get().restore_point.is_none());
+}
+
+#[test]
+fn ks_fallback_status_adds_only_one_note_per_run() {
+    let (shared, mut supervisor) = start(ready_pc(), ks_settings());
+    supervisor.handle(Intent::Enable).unwrap();
+    shared.get().engine_fault = None;
+    // The fake status reads this world field through a dedicated flag below.
+    shared.get().ks_fallback = true;
+    supervisor.tick(Instant::now());
+    supervisor.tick(Instant::now());
+    assert_eq!(
+        supervisor
+            .snapshot()
+            .notes
+            .iter()
+            .filter(|note| note.contains("커널 스트리밍으로 출력 장치를 열지 못해"))
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn a_changed_device_id_is_found_by_name_and_remembered() {
     // After a reboot the DAC came back under a new id.
     let (shared, mut supervisor) = start(
@@ -1085,7 +1674,9 @@ fn a_changed_device_id_is_found_by_name_and_remembered() {
                 name: DAC_NAME.into(),
             }),
             profile: Default::default(),
+            output_path: Default::default(),
             upmix: Default::default(),
+            routing: Default::default(),
         },
     );
     let note = format!("출력 장치의 식별자가 바뀌어 이름으로 다시 찾았습니다: {DAC_NAME}");
@@ -1274,6 +1865,28 @@ fn a_gone_previous_device_falls_back_to_the_chosen_output() {
             communications: Some(id(HEADSET)),
         }
     );
+}
+
+#[test]
+fn guard_shared_restore_enables_hidden_endpoint_before_roles() {
+    let (shared, _supervisor) = {
+        let (shared, mut supervisor) = start(ready_pc(), ks_settings());
+        supervisor.handle(Intent::Enable).unwrap();
+        shared.take_calls();
+        (shared, supervisor)
+    };
+    let point = RestorePoint::from_json(shared.get().restore_point.as_deref().unwrap()).unwrap();
+    let notes = restore_point::restore(&point, &mut FakeHost(shared.clone()));
+    assert!(notes.is_empty());
+    let calls = shared.take_calls();
+    assert_eq!(calls[0], "visible {dac} true");
+    assert!(
+        calls
+            .last()
+            .is_some_and(|call| call == "remove restore point")
+    );
+    assert_eq!(shared.output(DAC).state, DeviceState::Active);
+    assert!(shared.get().restore_point.is_none());
 }
 
 #[test]
@@ -1570,7 +2183,9 @@ fn a_fault_that_outlasts_the_grace_stops_and_restores() {
     assert!(snapshot.roles_taken);
     assert!(shared.take_calls().is_empty());
 
+    shared.get().routing_reads.clear();
     supervisor.tick(start + Duration::from_secs(15));
+    assert!(shared.get().routing_reads.is_empty());
     let snapshot = supervisor.snapshot();
     assert_eq!(snapshot.phase, Phase::Faulted);
     assert_eq!(
@@ -1765,7 +2380,9 @@ fn new_starts_at_welcome_otherwise() {
             name: "Old DAC".into(),
         }),
         profile: Default::default(),
+        output_path: Default::default(),
         upmix: Default::default(),
+        routing: Default::default(),
     };
     let unplugged = |mut world: World| {
         world
@@ -1889,7 +2506,7 @@ fn a_real_session_runs_behind_the_engine_handle() {
 }
 
 #[test]
-fn restore_point_round_trips_and_rejects_other_versions() {
+fn restore_point_v2_round_trips_reads_v1_and_rejects_other_versions() {
     let point = RestorePoint {
         ours: id(OURS),
         previous: DefaultRoles {
@@ -1898,12 +2515,13 @@ fn restore_point_round_trips_and_rejects_other_versions() {
             communications: Some(id(HEADSET)),
         },
         fallback: Some(id(DAC)),
+        hidden: Some(id(DAC)),
         app_pid: 4_242,
     };
     let json = point.to_json();
     assert!(!json.contains('\n'));
     let value: serde_json::Value = serde_json::from_str(&json).unwrap();
-    assert_eq!(value["version"], 1);
+    assert_eq!(value["version"], 2);
     assert_eq!(value["ours"], OURS);
     assert_eq!(value["previous"]["console"], REALTEK);
     assert!(value["previous"]["multimedia"].is_null());
@@ -1914,17 +2532,24 @@ fn restore_point_round_trips_and_rejects_other_versions() {
 
     let without_fallback = RestorePoint {
         fallback: None,
-        ..point
+        ..point.clone()
     };
     let json = without_fallback.to_json();
     assert!(serde_json::from_str::<serde_json::Value>(&json).unwrap()["fallback"].is_null());
     assert_eq!(RestorePoint::from_json(&json), Ok(without_fallback));
 
+    let mut old = value.clone();
+    old["version"] = 1.into();
+    old.as_object_mut().unwrap().remove("hidden");
+    let mut expected_old = point.clone();
+    expected_old.hidden = None;
+    assert_eq!(RestorePoint::from_json(&old.to_string()), Ok(expected_old));
+
     let mut newer = value.clone();
-    newer["version"] = 2.into();
+    newer["version"] = 3.into();
     assert_eq!(
         RestorePoint::from_json(&newer.to_string()),
-        Err(RestorePointError::Version(2))
+        Err(RestorePointError::Version(3))
     );
     let mut unversioned = value.clone();
     unversioned.as_object_mut().unwrap().remove("version");

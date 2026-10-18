@@ -16,8 +16,9 @@ use std::path::{Path, PathBuf};
 use specta::TypeCollection;
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use ssr_types::app::{
-    CorrectionView, EndpointUpmixView, HeadphonesView, Intent, Language, NextAction, OutputChoice,
-    Phase, PluginChoice, PluginFormat, PluginView, ProfileKind, ProfileView, SetupStep, Snapshot,
+    AppRule, CorrectionView, EndpointUpmixView, Entrance, HeadphonesView, Intent, Language,
+    NextAction, OutputChoice, Phase, PluginChoice, PluginFormat, PluginView, ProfileKind,
+    ProfileView, RoutedApp, RoutingSettings, RoutingView, RuleView, SetupStep, Snapshot,
     SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply, UpmixBypass, UpmixState,
     UpmixView, UpmixerChoice, UpmixerSetting, UserError,
 };
@@ -60,6 +61,7 @@ fn typescript_bindings_match_the_types() {
     types
         .register::<Intent>()
         .register::<Snapshot>()
+        .register::<RoutingSettings>()
         .register::<UserError>()
         .register::<EngineStatus>();
     let header = "// Generated from crates/ssr-types by `SSR_UI_BLESS=1 cargo test -p ssr-types \
@@ -373,9 +375,11 @@ fn blank(language: Language, phase: Phase) -> Snapshot {
     Snapshot {
         language,
         language_choice: None,
+        output_path: ssr_types::app::OutputPath::Wasapi,
         phase,
         profile: stereo_profile(language),
         upmix: default_upmix(),
+        routing: RoutingView::default(),
         engine: None,
         outputs: Vec::new(),
         chosen_output: None,
@@ -545,6 +549,7 @@ fn engine_status(language: Language) -> EngineStatus {
         output_periods: 12_345,
         capture_reads: 6_789,
         output_restarts: 0,
+        output_late_resyncs: 0,
         output_rate: 48_000,
         trim_available: true,
         output_channels: 2,
@@ -554,6 +559,9 @@ fn engine_status(language: Language) -> EngineStatus {
         output_reconnect_attempts: 0,
         output_mode: OutputMode::Exclusive,
         output_fell_back: false,
+        output_ks_fallback: false,
+        output_ks_fallback_reason: None,
+        output_ks_fallback_code: 0,
         output_mix_channels: 0,
         output_cadence_ratio: 1.001,
         output_cadence_faults: 0,
@@ -571,12 +579,52 @@ fn engine_status(language: Language) -> EngineStatus {
     }
 }
 
+/// The built-in rules with one turned off, one changed and one rule of the
+/// user's own, as the supervisor lists them.
+fn rules_with_overrides() -> Vec<RuleView> {
+    let mut rules = RoutingView::default().rules;
+    for row in &mut rules {
+        match row.exe.as_str() {
+            "kodi.exe" => row.entrance = None,
+            "mpc-hc.exe" => row.entrance = Some(Entrance::Main),
+            _ => {}
+        }
+    }
+    rules.push(RuleView {
+        exe: "player.exe".into(),
+        entrance: Some(Entrance::Music),
+        built_in: None,
+    });
+    rules.sort_by(|left, right| left.exe.cmp(&right.exe));
+    rules
+}
+
 /// One snapshot per screen state the wizard, the status screen and the error
 /// banner must draw. The messages are the supervisor's own sentences.
 fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
     let output_choices = outputs(language);
     let selected_name = output_choices[1].name.clone();
     let ready = Snapshot {
+        routing: RoutingView {
+            apps: vec![
+                RoutedApp {
+                    exe: "applemusic.exe".into(),
+                    display_name: "Apple Music".into(),
+                    entrance_now: Some(Entrance::Main),
+                    rule: Some(Entrance::Music),
+                    moved: true,
+                },
+                RoutedApp {
+                    exe: "browser.exe".into(),
+                    display_name: "Browser".into(),
+                    entrance_now: Some(Entrance::Main),
+                    rule: None,
+                    moved: false,
+                },
+            ],
+            rules: rules_with_overrides(),
+            ..RoutingView::default()
+        },
         outputs: output_choices.clone(),
         chosen_output: Some(output_choices[1].clone()),
         driver: Some(installed(PolicyState::Applied)),
@@ -940,6 +988,27 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
                 ..ready.clone()
             },
         ),
+        (
+            // Kernel streaming chosen, and no app with sound at the moment.
+            "ready-kernel-streaming",
+            Snapshot {
+                output_path: ssr_types::app::OutputPath::KernelStreaming,
+                routing: RoutingView::default(),
+                ..ready.clone()
+            },
+        ),
+        (
+            // Windows without the per-app output setting: the supervisor
+            // lists no app (routing.rs clears them) but keeps the rules.
+            "ready-routing-unavailable",
+            Snapshot {
+                routing: RoutingView {
+                    available: false,
+                    ..RoutingView::default()
+                },
+                ..ready.clone()
+            },
+        ),
         ("quit", with_phase(ready, Phase::Quit)),
     ]
 }
@@ -950,6 +1019,18 @@ fn intents() -> Vec<Intent> {
         Intent::SetLanguage(None),
         Intent::SetLanguage(Some(Language::Ko)),
         Intent::SetLanguage(Some(Language::En)),
+        Intent::SetOutputPath(ssr_types::app::OutputPath::KernelStreaming),
+        Intent::SetOutputPath(ssr_types::app::OutputPath::Wasapi),
+        Intent::SetRoutingEnabled(false),
+        Intent::SetAppRule(AppRule {
+            exe: "PLAYER.EXE".into(),
+            entrance: Some(Entrance::Pass),
+        }),
+        Intent::SetAppRule(AppRule {
+            exe: "kodi.exe".into(),
+            entrance: None,
+        }),
+        Intent::RemoveAppRule("player.exe".into()),
         Intent::BeginSetup,
         Intent::InstallDriver,
         Intent::Recheck,

@@ -9,7 +9,12 @@
 # nodes, endpoint topology, the exclusive-mode policy read from the endpoint
 # property stores, IPolicyConfig and the elevated ssr-setup launch (ADR 0032,
 # which allows up to 40).
-ssr-sys = 40
+# Kernel streaming output (ADR 0037, 74): endpoint visibility through
+# IPolicyConfig, KS filter and pin discovery, pin creation, WaveRT and
+# standard streaming I/O, and console cancellation. Per-app entrances
+# (ADR 0038, 107): audio session enumeration, process image names and the
+# private IAudioPolicyConfigFactory activation and calls.
+ssr-sys = 107
 # The administrator tasks of ssr-setup (ADR 0032): COM endpoint enumeration
 # and the exclusive-mode property store, cfgmgr32 device nodes, SetupAPI root
 # device install and removal, the local machine certificate stores, and the

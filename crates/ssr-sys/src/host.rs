@@ -25,11 +25,10 @@
 //!   IUnknown, then GetMixFormat, GetDeviceFormat, ResetDeviceFormat,
 //!   SetDeviceFormat, GetProcessingPeriod, SetProcessingPeriod, GetShareMode,
 //!   SetShareMode, GetPropertyValue, SetPropertyValue, SetDefaultEndpoint
-//!   (`HRESULT (LPCWSTR id, ERole role)`) and SetEndpointVisibility. Only
-//!   SetDefaultEndpoint is declared as a function pointer, so no other slot can
-//!   be called. A changed interface would come with a new IID, so creating
-//!   this one fails (E_NOINTERFACE) instead of calling a moved slot, and the
-//!   supervisor keeps the roles (ADR 0032).
+//!   (`HRESULT (LPCWSTR id, ERole role)`) and SetEndpointVisibility. These two
+//!   slots are callable. The layout is community evidence, not a Microsoft ABI
+//!   guarantee: QueryInterface failure or a visibility confirmation timeout
+//!   prevents takeover and retains the restore point (ADR 0032, ADR 0037).
 
 use std::ffi::{OsStr, c_void};
 use std::fs::{self, File};
@@ -187,6 +186,18 @@ impl Host for WindowsHost {
             .collect()
     }
 
+    fn audio_apps(&mut self) -> Vec<ssr_types::AudioApp> {
+        crate::app_routing::audio_apps()
+    }
+
+    fn app_entrance(&mut self, pid: u32) -> Result<Option<DeviceId>, HostError> {
+        crate::app_routing::app_entrance(pid)
+    }
+
+    fn set_app_entrance(&mut self, pid: u32, device: Option<&DeviceId>) -> Result<(), HostError> {
+        crate::app_routing::set_app_entrance(pid, device)
+    }
+
     fn default_roles(&mut self) -> DefaultRoles {
         let mut roles = DefaultRoles::default();
         let Ok(_com) = ComGuard::new() else {
@@ -217,6 +228,17 @@ impl Host for WindowsHost {
         let policy: PolicyConfig = create_instance(&POLICY_CONFIG_CLIENT)
             .map_err(|error| HostError::Failed(format!("IPolicyConfig: {error}")))?;
         policy.set_default_endpoint(&device.0, endpoint_role(role))
+    }
+
+    fn kernel_target(
+        &mut self,
+        device: &DeviceId,
+    ) -> Result<ssr_types::ports::KsTarget, HostError> {
+        crate::ks::kernel_target(&device.0)
+    }
+
+    fn set_endpoint_visible(&mut self, device: &DeviceId, visible: bool) -> Result<(), HostError> {
+        set_endpoint_visible(&device.0, visible)
     }
 
     fn supports_layout(
@@ -651,7 +673,7 @@ fn connected_device_id(connector: &IConnector) -> windows::core::Result<String> 
 
 /// Copies a string COM allocated for the caller, then frees it with
 /// `CoTaskMemFree`.
-fn take_com_string(text: PWSTR) -> String {
+pub(crate) fn take_com_string(text: PWSTR) -> String {
     if text.is_null() {
         return String::new();
     }
@@ -775,7 +797,10 @@ struct IPolicyConfigVtbl {
     /// GetPropertyValue, SetPropertyValue.
     _slots: [usize; 10],
     set_default_endpoint: unsafe extern "system" fn(*mut c_void, PCWSTR, i32) -> HRESULT,
-    set_endpoint_visibility: usize,
+    // Win7+ IID f8679f50: IUnknown slots 0..2, ten methods 3..12,
+    // SetDefaultEndpoint 13, SetEndpointVisibility 14 (BOOL is 32 bits).
+    // Verified: https://github.com/frgnca/AudioDeviceCmdlets/blob/master/SOURCE/IPolicyConfig.cs
+    set_endpoint_visibility: unsafe extern "system" fn(*mut c_void, PCWSTR, i32) -> HRESULT,
 }
 
 // SAFETY: PolicyConfig is a transparent IUnknown (one non-null interface
@@ -805,6 +830,46 @@ impl PolicyConfig {
             )))
         }
     }
+}
+
+/// Changes endpoint visibility (not PnP device state) and waits for AudioSrv's
+/// MMDevice view to reflect it. Non-RT; caller owns crash-safe restoration.
+pub fn set_endpoint_visible(endpoint: &str, visible: bool) -> Result<(), HostError> {
+    if endpoint.is_empty() || endpoint.contains('\0') {
+        return Err(HostError::Failed("invalid endpoint id".into()));
+    }
+    let _com = ComGuard::new().map_err(|e| HostError::Failed(e.to_string()))?;
+    let policy: PolicyConfig = create_instance(&POLICY_CONFIG_CLIENT)
+        .map_err(|e| HostError::Failed(format!("IPolicyConfig: {e}")))?;
+    let id = wide(endpoint);
+    // SAFETY: live interface of the verified Win7 IID, slot 14 signature is
+    // HRESULT(this,LPCWSTR,BOOL); terminated id lives throughout the call.
+    let result = unsafe {
+        (policy.vtable().set_endpoint_visibility)(
+            policy.as_raw(),
+            PCWSTR(id.as_ptr()),
+            i32::from(visible),
+        )
+    };
+    result
+        .ok()
+        .map_err(|e| HostError::Failed(format!("IPolicyConfig::SetEndpointVisibility: {e}")))?;
+    let enumerator =
+        wasapi::DeviceEnumerator::new().map_err(|e| HostError::Failed(e.to_string()))?;
+    for _ in 0..100 {
+        if let Ok(device) = enumerator.get_device(endpoint)
+            && let Ok(state) = device.get_state()
+        {
+            let disabled = matches!(state, wasapi::DeviceState::Disabled);
+            if disabled != visible && !matches!(state, wasapi::DeviceState::NotPresent) {
+                return Ok(());
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    Err(HostError::Failed(
+        "endpoint visibility confirmation timed out".into(),
+    ))
 }
 
 // ---------------------------------------------------------------- ssr-setup

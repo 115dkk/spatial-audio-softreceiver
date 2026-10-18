@@ -112,6 +112,14 @@ pub mod supervisor {
         }
     }
 
+    #[doc = "앱의 출력 설정을 바꿨습니다: {app}"]
+    pub fn app_entrance_moved(language: Language, app: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("앱의 출력 설정을 바꿨습니다: {app}"),
+            Language::En => format!("Changed the app's output setting: {app}"),
+        }
+    }
+
     #[doc = "Arm64"]
     pub fn arch_arm64(language: Language) -> &'static str {
         match language {
@@ -320,6 +328,18 @@ pub mod supervisor {
         }
     }
 
+    #[doc = "이 PC에서는 앱의 출력을 자동으로 정할 수 없습니다. Windows 소리 설정을 열고 앱 볼륨 설정에서 출력을 고르십시오."]
+    pub fn entrance_routing_unavailable(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "이 PC에서는 앱의 출력을 자동으로 정할 수 없습니다. Windows 소리 설정을 열고 앱 볼륨 설정에서 출력을 고르십시오."
+            }
+            Language::En => {
+                "Automatic app output selection is unavailable on this PC. Open Windows sound settings and choose an output under app volume settings."
+            }
+        }
+    }
+
     #[doc = "드라이버는 있지만 독점 정책이 적용되지 않았습니다. 복구를 실행하십시오."]
     pub fn exclusive_policy_missing(language: Language) -> &'static str {
         match language {
@@ -348,11 +368,47 @@ pub mod supervisor {
         }
     }
 
+    #[doc = "실행 파일 이름을 입력하십시오. 이름은 비어 있으면 안 되며 폴더 경로나 NUL 문자를 포함할 수 없습니다."]
+    pub fn invalid_app_rule(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "실행 파일 이름을 입력하십시오. 이름은 비어 있으면 안 되며 폴더 경로나 NUL 문자를 포함할 수 없습니다."
+            }
+            Language::En => {
+                "Enter a nonempty executable file name without a folder path or NUL character."
+            }
+        }
+    }
+
     #[doc = "hesuvi.wav, hrir.wav 또는 방향별 WAV 폴더를 고르십시오."]
     pub fn invalid_brir_source(language: Language) -> &'static str {
         match language {
             Language::Ko => "hesuvi.wav, hrir.wav 또는 방향별 WAV 폴더를 고르십시오.",
             Language::En => "Choose hesuvi.wav, hrir.wav, or a folder of per-direction WAV files.",
+        }
+    }
+
+    #[doc = "커널 스트리밍으로 출력 장치를 열지 못해, 장치를 다시 사용으로 돌려놓고 WASAPI 독점으로 재생합니다."]
+    pub fn ks_fallback(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "커널 스트리밍으로 출력 장치를 열지 못해, 장치를 다시 사용으로 돌려놓고 WASAPI 독점으로 재생합니다."
+            }
+            Language::En => {
+                "Kernel streaming could not open the output device, so the device is enabled again and plays through WASAPI exclusive."
+            }
+        }
+    }
+
+    #[doc = "Kernel Streaming으로 출력을 열지 못해 WASAPI 독점 모드를 씁니다: {detail}"]
+    pub fn ks_unavailable(language: Language, detail: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => {
+                format!("Kernel Streaming으로 출력을 열지 못해 WASAPI 독점 모드를 씁니다: {detail}")
+            }
+            Language::En => format!(
+                "Could not open the output through Kernel Streaming. Using WASAPI exclusive instead: {detail}"
+            ),
         }
     }
 
@@ -522,6 +578,14 @@ pub mod supervisor {
         match language {
             Language::Ko => "다시 연결했습니다.",
             Language::En => "Reconnected.",
+        }
+    }
+
+    #[doc = "출력 엔드포인트를 다시 켜지 못했습니다: {detail}"]
+    pub fn restore_endpoint_failed(language: Language, detail: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("출력 엔드포인트를 다시 켜지 못했습니다: {detail}"),
+            Language::En => format!("Could not enable the output endpoint again: {detail}"),
         }
     }
 
@@ -935,6 +999,58 @@ pub mod live {
         }
     }
 
+    #[doc = "번호가 {endpoint}인 렌더 엔드포인트가 여럿입니다."]
+    pub fn app_endpoint_ambiguous(language: Language, endpoint: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("번호가 {endpoint}인 렌더 엔드포인트가 여럿입니다."),
+            Language::En => {
+                format!("More than one render endpoint has endpoint number {endpoint}.")
+            }
+        }
+    }
+
+    #[doc = "렌더 엔드포인트가 활성 상태가 아닙니다: {endpoint}"]
+    pub fn app_endpoint_inactive(language: Language, endpoint: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("렌더 엔드포인트가 활성 상태가 아닙니다: {endpoint}"),
+            Language::En => format!("Render endpoint {endpoint} is not active."),
+        }
+    }
+
+    #[doc = "번호가 {endpoint}인 렌더 엔드포인트가 없습니다."]
+    pub fn app_endpoint_missing(language: Language, endpoint: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("번호가 {endpoint}인 렌더 엔드포인트가 없습니다."),
+            Language::En => format!("No render endpoint has endpoint number {endpoint}."),
+        }
+    }
+
+    #[doc = "앱의 출력을 바꾸거나 읽지 못했습니다: {detail}"]
+    pub fn app_routing_failed(language: Language, detail: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("앱의 출력을 바꾸거나 읽지 못했습니다: {detail}"),
+            Language::En => format!("Could not change or read the app's output: {detail}"),
+        }
+    }
+
+    #[doc = "프로세스 {pid}의 저장된 출력이 요청과 다릅니다."]
+    pub fn app_routing_mismatch(language: Language, pid: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("프로세스 {pid}의 저장된 출력이 요청과 다릅니다."),
+            Language::En => {
+                format!("The saved output for process {pid} does not match the request.")
+            }
+        }
+    }
+
+    #[doc = "이 호스트는 앱별 출력 지정을 지원하지 않습니다."]
+    pub fn app_routing_unsupported(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "이 호스트는 앱별 출력 지정을 지원하지 않습니다.",
+            Language::En => "Per-app audio routing is not supported on this host.",
+        }
+    }
+
     #[doc = "{name} 캡처 장치에 접근할 수 없습니다. 관리자 명령 프롬프트에서 실행하십시오"]
     pub fn capture_access_denied(language: Language, name: impl core::fmt::Display) -> String {
         match language {
@@ -1010,6 +1126,14 @@ pub mod live {
         match language {
             Language::Ko => "기계가 읽는 JSON으로 출력합니다.",
             Language::En => "Emit machine-readable JSON",
+        }
+    }
+
+    #[doc = "Kernel Streaming 필터와 핀 또는 찾지 못한 이유를 함께 표시합니다."]
+    pub fn devices_kernel_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "Kernel Streaming 필터와 핀 또는 찾지 못한 이유를 함께 표시합니다.",
+            Language::En => "Include the Kernel Streaming filter and pin, or the discovery failure",
         }
     }
 
@@ -1107,6 +1231,14 @@ pub mod live {
         }
     }
 
+    #[doc = "출력 엔드포인트를 켰지만 활성 상태가 아닙니다: {id}"]
+    pub fn endpoint_not_active(language: Language, id: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("출력 엔드포인트를 켰지만 활성 상태가 아닙니다: {id}"),
+            Language::En => format!("The output endpoint is not active after enabling it: {id}"),
+        }
+    }
+
     #[doc = "엔드포인트 {endpoint}은 0..{last} 범위 밖입니다"]
     pub fn endpoint_out_of_range(
         language: Language,
@@ -1196,6 +1328,32 @@ pub mod live {
         }
     }
 
+    #[doc = "우리 엔드포인트 번호(0, 1, 2)입니다. none이면 이 앱의 출력 지정을 해제합니다."]
+    pub fn host_app_endpoint_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "우리 엔드포인트 번호(0, 1, 2)입니다. none이면 이 앱의 출력 지정을 해제합니다."
+            }
+            Language::En => "Our endpoint number (0, 1 or 2), or none to clear this app's override",
+        }
+    }
+
+    #[doc = "출력을 지정할 앱의 프로세스 식별자입니다."]
+    pub fn host_app_pid_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "출력을 지정할 앱의 프로세스 식별자입니다.",
+            Language::En => "The process id of the app to route",
+        }
+    }
+
+    #[doc = "오디오 세션과 앱마다 저장된 렌더 엔드포인트를 출력합니다."]
+    pub fn host_apps_about(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "오디오 세션과 앱마다 저장된 렌더 엔드포인트를 출력합니다.",
+            Language::En => "Print audio sessions and each app's persisted render endpoint",
+        }
+    }
+
     #[doc = "set-formats에서 쓰는 드라이버 EndpointMask입니다. n번 비트가 n번 엔드포인트를 켭니다(1~15)."]
     pub fn host_endpoint_mask_help(language: Language) -> &'static str {
         match language {
@@ -1233,6 +1391,18 @@ pub mod live {
         match language {
             Language::Ko => "기본 장치를 바꿀 역할입니다.",
             Language::En => "The role whose default device changes",
+        }
+    }
+
+    #[doc = "통신용 설정은 바꾸지 않고 앱의 렌더 엔드포인트를 지정해 저장하거나 해제합니다."]
+    pub fn host_set_app_about(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "통신용 설정은 바꾸지 않고 앱의 렌더 엔드포인트를 지정해 저장하거나 해제합니다."
+            }
+            Language::En => {
+                "Set or clear an app's persisted render endpoint without changing communications"
+            }
         }
     }
 
@@ -1340,6 +1510,102 @@ pub mod live {
         }
     }
 
+    #[doc = "시간(초)은 유한한 양수여야 합니다"]
+    pub fn invalid_seconds(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "시간(초)은 유한한 양수여야 합니다",
+            Language::En => "seconds must be finite and greater than zero",
+        }
+    }
+
+    #[doc = "KS 대체 출력: {reason}(코드 {code})"]
+    pub fn ks_fallback_detail(
+        language: Language,
+        reason: impl core::fmt::Display,
+        code: impl core::fmt::Display,
+    ) -> String {
+        match language {
+            Language::Ko => format!("KS 대체 출력: {reason}(코드 {code})"),
+            Language::En => format!("KS fallback: {reason} (code {code})"),
+        }
+    }
+
+    #[doc = "엔드포인트를 끈 상태로 Kernel Streaming 직접 출력을 시험한 뒤 다시 켭니다."]
+    pub fn ks_probe_about(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "엔드포인트를 끈 상태로 Kernel Streaming 직접 출력을 시험한 뒤 다시 켭니다."
+            }
+            Language::En => {
+                "Test direct Kernel Streaming with the endpoint disabled, then enable it again"
+            }
+        }
+    }
+
+    #[doc = "실패한 경우를 포함하여 결과를 이 JSON 파일에 씁니다."]
+    pub fn ks_probe_json_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "실패한 경우를 포함하여 결과를 이 JSON 파일에 씁니다.",
+            Language::En => "Write the result as JSON to this file, including failures",
+        }
+    }
+
+    #[doc = "출력 장치 이름의 일부 또는 정확한 엔드포인트 식별자입니다."]
+    pub fn ks_probe_output_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "출력 장치 이름의 일부 또는 정확한 엔드포인트 식별자입니다.",
+            Language::En => "Part of the output device's name or its exact endpoint id",
+        }
+    }
+
+    #[doc = "KS 시험이 예기치 않게 멈췄습니다."]
+    pub fn ks_probe_panicked(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "KS 시험이 예기치 않게 멈췄습니다.",
+            Language::En => "The KS probe stopped unexpectedly.",
+        }
+    }
+
+    #[doc = "KS 시험: 열기 {opened}, 엔드포인트 복원 {restored}"]
+    pub fn ks_probe_result(
+        language: Language,
+        opened: impl core::fmt::Display,
+        restored: impl core::fmt::Display,
+    ) -> String {
+        match language {
+            Language::Ko => format!("KS 시험: 열기 {opened}, 엔드포인트 복원 {restored}"),
+            Language::En => format!("KS probe: opened {opened}, endpoint restored {restored}"),
+        }
+    }
+
+    #[doc = "1 kHz 사인파를 -12 dBFS로 재생할 시간(초)입니다(48 kHz 스테레오)."]
+    pub fn ks_probe_seconds_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "1 kHz 사인파를 -12 dBFS로 재생할 시간(초)입니다(48 kHz 스테레오).",
+            Language::En => "Seconds to play a 1 kHz sine at -12 dBFS (48 kHz stereo)",
+        }
+    }
+
+    #[doc = "    KS: {filter}, 핀 {pin}"]
+    pub fn ks_target(
+        language: Language,
+        filter: impl core::fmt::Display,
+        pin: impl core::fmt::Display,
+    ) -> String {
+        match language {
+            Language::Ko => format!("    KS: {filter}, 핀 {pin}"),
+            Language::En => format!("    KS: {filter}, pin {pin}"),
+        }
+    }
+
+    #[doc = "    KS를 쓸 수 없습니다: {detail}"]
+    pub fn ks_target_failed(language: Language, detail: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("    KS를 쓸 수 없습니다: {detail}"),
+            Language::En => format!("    KS unavailable: {detail}"),
+        }
+    }
+
     #[doc = "ssr-live.exe 위치를 찾지 못했습니다: {detail}"]
     pub fn locate_exe_failed(language: Language, detail: impl core::fmt::Display) -> String {
         match language {
@@ -1389,6 +1655,18 @@ pub mod live {
         match language {
             Language::Ko => format!("출력 주기로 다시 열기: {period} ms"),
             Language::En => format!("output cadence reopen: {period} ms"),
+        }
+    }
+
+    #[doc = "같은 이름에 맞는 장치가 여럿입니다. 정확한 엔드포인트 식별자로 하나를 고르십시오: {name}"]
+    pub fn output_not_unique(language: Language, name: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!(
+                "같은 이름에 맞는 장치가 여럿입니다. 정확한 엔드포인트 식별자로 하나를 고르십시오: {name}"
+            ),
+            Language::En => format!(
+                "Choose one output device by its exact endpoint id; the name matches more than one device: {name}"
+            ),
         }
     }
 
@@ -1500,6 +1778,18 @@ pub mod live {
             }
             Language::En => {
                 "Play a dump file at its recorded pace instead of the SAL ring, to run the live path on a PC without SAL. Stops when the dump ends"
+            }
+        }
+    }
+
+    #[doc = "엔드포인트를 끄고 Kernel Streaming을 씁니다. 실패하면 WASAPI 독점 모드로 대체합니다."]
+    pub fn play_kernel_streaming_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "엔드포인트를 끄고 Kernel Streaming을 씁니다. 실패하면 WASAPI 독점 모드로 대체합니다."
+            }
+            Language::En => {
+                "Use Kernel Streaming with the endpoint disabled; fall back to WASAPI exclusive"
             }
         }
     }

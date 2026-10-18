@@ -107,7 +107,15 @@ export function describeOutputMode(engine: EngineStatus): string {
       ? text.meters.fellBackMix(engine.output_mix_channels)
       : text.meters.fellBack;
   }
-  return engine.output_mode === 'exclusive' ? text.meters.exclusive : text.meters.shared;
+  if (engine.output_ks_fallback) return text.meters.ksFellBack;
+  switch (engine.output_mode) {
+    case 'exclusive':
+      return text.meters.exclusive;
+    case 'shared':
+      return text.meters.shared;
+    case 'kernel_streaming':
+      return text.meters.kernelStreaming;
+  }
 }
 
 export function describeOutputFormat(engine: EngineStatus): string {

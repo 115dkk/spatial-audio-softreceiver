@@ -54,11 +54,17 @@ pub enum Message {
     RestoreFallback { role: Role, name: String },
     RestoreLeftToWindows { role: Role },
     RestoreRoleFailed { role: Role, detail: String },
+    KsUnavailable(String),
+    KsFallback,
+    RestoreEndpointFailed { detail: String },
     UpmixerUnavailable,
     EndpointCannotUpmix,
     PluginScanFailed { detail: String },
     PluginNotUpmixer { name: String },
     PluginDisabled { name: String },
+    AppEntranceMoved { app: String },
+    EntranceRoutingUnavailable,
+    InvalidAppRule,
 }
 
 impl Message {
@@ -165,11 +171,19 @@ impl Message {
             Self::RestoreRoleFailed { role, detail } => {
                 text::restore_role_failed(language, role_name(*role, language), detail)
             }
+            Self::KsUnavailable(detail) => text::ks_unavailable(language, detail),
+            Self::KsFallback => text::ks_fallback(language).into(),
+            Self::RestoreEndpointFailed { detail } => {
+                text::restore_endpoint_failed(language, detail)
+            }
             Self::UpmixerUnavailable => text::upmixer_unavailable(language).into(),
             Self::EndpointCannotUpmix => text::endpoint_cannot_upmix(language).into(),
             Self::PluginScanFailed { detail } => text::plugin_scan_failed(language, detail),
             Self::PluginNotUpmixer { name } => text::plugin_not_upmixer(language, name),
             Self::PluginDisabled { name } => text::plugin_disabled(language, name),
+            Self::AppEntranceMoved { app } => text::app_entrance_moved(language, app),
+            Self::EntranceRoutingUnavailable => text::entrance_routing_unavailable(language).into(),
+            Self::InvalidAppRule => text::invalid_app_rule(language).into(),
         }
     }
 }
