@@ -30,7 +30,7 @@ REQUESTED = "requested"
 @dataclass(frozen=True)
 class Expect:
     source: str | None  # driver, sal or dump
-    output_mode: str | None  # exclusive, shared, requested
+    output_mode: str | None  # exclusive, shared, kernel_streaming, requested
     clock: str | None  # auto, trim, asrc, requested
     reconnects: str  # required, forbidden, or ignored
     latency_ceiling_ms: float | None
@@ -125,6 +125,13 @@ def problems(report, expect):
     if expect.require_no_fallback:
         if not _missing(report, "output_fell_back", result) and report["output_fell_back"]:
             result.append("exclusive output fell back to shared mode")
+        # Reports written before kernel streaming (ADR 0037) have no ks_fallback.
+        if report.get("ks_fallback"):
+            reason = report.get("ks_fallback_reason")
+            code = report.get("ks_fallback_code")
+            result.append(f"kernel streaming fell back to WASAPI exclusive ({reason}, code {code:#x})"
+                          if isinstance(code, int) else
+                          f"kernel streaming fell back to WASAPI exclusive ({reason})")
     if expect.output_kind is not None:
         if not _missing(report, "output_kind", result) and report["output_kind"] != expect.output_kind:
             result.append(f"output_kind is {report['output_kind']}, expected {expect.output_kind}")
@@ -207,7 +214,7 @@ def main(argv=None):
     parser.add_argument("report")
     # Overrides; by default the presets compare with what the run requested.
     parser.add_argument("--clock", choices=("auto", "trim", "asrc"))
-    parser.add_argument("--output-mode", choices=("exclusive", "shared"))
+    parser.add_argument("--output-mode", choices=("exclusive", "shared", "kernel_streaming"))
     parser.add_argument("--min-dynamic-objects", type=int)
     args = parser.parse_args(argv)
     if args.min_dynamic_objects is not None and args.min_dynamic_objects < 0:

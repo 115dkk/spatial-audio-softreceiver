@@ -424,6 +424,64 @@ jobs:
           fi
           exit $status
 
+      # Kernel streaming (ADR 0037). The cable's render endpoint is disabled
+      # while ssr-live writes its KS pin directly, and must be enabled again
+      # afterwards. VB-CABLE is WaveCyclic, so this is the standard-streaming
+      # transport; driver.yml runs the WaveRT transport against our own
+      # endpoint. ks-probe plays a 1 kHz tone at -12 dBFS for 3 s that
+      # cable_capture records at the far end (it wants at least 2 s of signal
+      # per ear, so a 2 s probe minus its start latency fell short); the loopback renders the fixtures through the
+      # whole engine and compares the far end with the offline render, and its
+      # report must say kernel_streaming without a fallback to WASAPI.
+      - name: Kernel streaming (VB-CABLE's render pin with its endpoint disabled)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          python -m pip install --quiet -r tools/ci/requirements.txt soundcard==0.4.5
+          status=0
+          ks="$RUNNER_TEMP/ks"
+          mkdir -p "$ks"
+          target/release/ssr-live.exe devices --kernel || status=1
+          cargo build --locked --release -p ssr-sys --example cable_capture || exit 1
+          target/release/examples/cable_capture.exe --endpoint "CABLE Output" --seconds 6 "$ks/probe-captured.wav" &
+          capture=$!
+          sleep 1
+          target/release/ssr-live.exe ks-probe --output "VB-Audio Virtual Cable" --seconds 3 --json "$ks/probe.json" || status=1
+          wait $capture || status=1
+          python tools/ci/ks_probe_check.py "$ks/probe.json" --interface standard --captured "$ks/probe-captured.wav" || status=1
+          fx="$RUNNER_TEMP/fx"
+          {
+            echo "## Kernel streaming (${{ matrix.os }})"
+            echo
+            jq -r '"probe: opened \(.opened), \(.interface), \(.sample_format), endpoint restored \(.endpoint_restored)"' "$ks/probe.json" 2>/dev/null || echo "probe: no report"
+            echo
+            echo "| dump | windows | matched | median | worst | underruns while streaming | restarts |"
+            echo "| --- | --- | --- | --- | --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for d in pcm71 ddp51; do
+            s="$ks/loopback-$d.json"
+            python tools/ci/loopback_check.py --ssr-live target/release/ssr-live.exe \
+              --dump "$fx/$d.ssrdump" --profile "$fx/profile.toml" \
+              --reference "$RUNNER_TEMP/$d-ref.wav" --mode kernel_streaming --summary "$s" \
+              --report "$ks/loopback-$d-report.json" || status=1
+            if [ -f "$s" ]; then
+              jq -r --arg d "$d" '"| \($d) | \(.windows) | \(.matched) | \(.median_correlation) | \(.worst_correlation) | \(.underruns_while_streaming) | \(.output_restarts) |"' "$s" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          # Every run must have given the endpoint back: `devices --json` lists
+          # active render endpoints only. The cable's render endpoint is
+          # "CABLE Input" on some images and "Speakers" on windows-2025; the
+          # device part of the name is the same on both.
+          target/release/ssr-live.exe devices --json > "$ks/devices-after.json" || status=1
+          if jq -e 'any(.[]; .name | contains("VB-Audio Virtual Cable"))' "$ks/devices-after.json" > /dev/null; then
+            echo "the cable's render endpoint is active again"
+          else
+            echo "::error::the cable's render endpoint is not active after the kernel-streaming runs"
+            status=1
+          fi
+          exit $status
+
       - name: Soaks (exclusive 5 min, exclusive at 10 ms 2 min, shared 2 min, DD+ 2 min, exclusive under CPU load 2 min, under full page heap 1 min)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: pwsh
@@ -472,6 +530,7 @@ jobs:
           path: |
             ${{ runner.temp }}/loopback-*.json
             ${{ runner.temp }}/multichannel
+            ${{ runner.temp }}/ks
             ${{ runner.temp }}/soak-*.json
             ${{ runner.temp }}/soak-*.log
             ${{ runner.temp }}/dumps

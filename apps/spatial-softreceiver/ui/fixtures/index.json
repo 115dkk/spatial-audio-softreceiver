@@ -28,5 +28,7 @@
   "ready-profile-file",
   "ready-brir-unreadable",
   "ready-start-failed",
+  "ready-kernel-streaming",
+  "ready-routing-unavailable",
   "quit"
 ]

@@ -27,7 +27,12 @@
 //! Windows modules are `cfg(windows)`. The administrator tasks `ssr-setup`
 //! runs live in `ssr-setup-sys`, which only `ssr-setup` links (ADR 0032).
 
+#[cfg(any(windows, test))]
+mod app_device_id;
+#[cfg(windows)]
+mod app_routing;
 pub mod driver_ring;
+pub mod ks;
 mod playback_clock;
 pub mod sal_format;
 mod stall_guard;

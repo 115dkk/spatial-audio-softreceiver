@@ -51,9 +51,9 @@ use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use ssr_types::{
     BitstreamCodec, BitstreamFormat, CaptureError, CaptureSource, ChainErrorCounts, ChainErrorKind,
     ClockStatus, DirectionId, DirectionView, ENGINE_ENDPOINTS, EndpointStatus, EngineFault,
-    EngineStatus, LatencyStats, OutputError, OutputFormat, OutputLayout, OutputMode, OutputOpener,
-    OutputSink, PcmFormat, SampleType, SceneLayoutTable, SceneObject, SourceFormat,
-    UnderrunSnapshot, UnsupportedReason,
+    EngineStatus, KsFallbackReason, LatencyStats, OutputError, OutputFormat, OutputLayout,
+    OutputMode, OutputOpener, OutputSink, PcmFormat, SampleType, SceneLayoutTable, SceneObject,
+    SourceFormat, UnderrunSnapshot, UnsupportedReason,
 };
 
 use crate::Chain;
@@ -969,6 +969,7 @@ struct Shared {
     underrun_sequence: AtomicU64,
     underrun_fields: [AtomicU32; 6],
     output_restarts: AtomicU64,
+    output_late_resyncs: AtomicU64,
     output_channels: AtomicU32,
     output_channel_mask: AtomicU32,
     output_reopens: AtomicU64,
@@ -976,6 +977,9 @@ struct Shared {
     output_reconnect_attempts: AtomicU64,
     output_mode: AtomicU32,
     output_fell_back: AtomicBool,
+    output_ks_fallback: AtomicBool,
+    output_ks_fallback_reason: AtomicU32,
+    output_ks_fallback_code: AtomicU32,
     output_mix_channels: AtomicU32,
     output_cadence_ratio_bits: AtomicU32,
     output_cadence_faults: AtomicU64,
@@ -1291,6 +1295,7 @@ impl Shared {
             underrun_sequence: AtomicU64::new(0),
             underrun_fields: std::array::from_fn(|_| AtomicU32::new(0)),
             output_restarts: AtomicU64::new(0),
+            output_late_resyncs: AtomicU64::new(0),
             output_channels: AtomicU32::new(0),
             output_channel_mask: AtomicU32::new(0),
             output_reopens: AtomicU64::new(0),
@@ -1298,6 +1303,9 @@ impl Shared {
             output_reconnect_attempts: AtomicU64::new(0),
             output_mode: AtomicU32::new(OutputMode::Exclusive as u32),
             output_fell_back: AtomicBool::new(false),
+            output_ks_fallback: AtomicBool::new(false),
+            output_ks_fallback_reason: AtomicU32::new(0),
+            output_ks_fallback_code: AtomicU32::new(0),
             output_mix_channels: AtomicU32::new(0),
             output_cadence_ratio_bits: AtomicU32::new(1.0_f32.to_bits()),
             output_cadence_faults: AtomicU64::new(0),
@@ -1403,6 +1411,16 @@ impl Shared {
             .store(format.mode as u32, Ordering::Release);
         self.output_fell_back
             .store(format.fell_back, Ordering::Release);
+        self.output_ks_fallback
+            .store(format.ks_fallback, Ordering::Release);
+        self.output_ks_fallback_reason.store(
+            format
+                .ks_fallback_reason
+                .map_or(0, |reason| reason as u32 + 1),
+            Ordering::Release,
+        );
+        self.output_ks_fallback_code
+            .store(format.ks_fallback_code, Ordering::Release);
         self.output_mix_channels
             .store(u32::from(format.mix_channels), Ordering::Release);
     }
@@ -1601,6 +1619,7 @@ impl Shared {
             output_periods: self.output_periods.load(Ordering::Acquire),
             capture_reads: self.capture_reads.load(Ordering::Acquire),
             output_restarts: self.output_restarts.load(Ordering::Acquire),
+            output_late_resyncs: self.output_late_resyncs.load(Ordering::Acquire),
             output_rate: self.device_rate.load(Ordering::Acquire),
             trim_available: self.trim_available.load(Ordering::Acquire),
             output_channels: self.output_channels.load(Ordering::Acquire) as u16,
@@ -1608,12 +1627,26 @@ impl Shared {
             output_reopens: self.output_reopens.load(Ordering::Acquire),
             output_reconnects: self.output_reconnects.load(Ordering::Acquire),
             output_reconnect_attempts: self.output_reconnect_attempts.load(Ordering::Acquire),
-            output_mode: if self.output_mode.load(Ordering::Acquire) == OutputMode::Shared as u32 {
-                OutputMode::Shared
-            } else {
-                OutputMode::Exclusive
+            output_mode: match self.output_mode.load(Ordering::Acquire) {
+                value if value == OutputMode::Shared as u32 => OutputMode::Shared,
+                value if value == OutputMode::KernelStreaming as u32 => OutputMode::KernelStreaming,
+                _ => OutputMode::Exclusive,
             },
             output_fell_back: self.output_fell_back.load(Ordering::Acquire),
+            output_ks_fallback: self.output_ks_fallback.load(Ordering::Acquire),
+            output_ks_fallback_reason: match self.output_ks_fallback_reason.load(Ordering::Acquire)
+            {
+                1 => Some(KsFallbackReason::NoTarget),
+                2 => Some(KsFallbackReason::FilterOpen),
+                3 => Some(KsFallbackReason::NoSinkPin),
+                4 => Some(KsFallbackReason::FormatRejected),
+                5 => Some(KsFallbackReason::PinCreate),
+                6 => Some(KsFallbackReason::StateChange),
+                7 => Some(KsFallbackReason::BufferAlloc),
+                8 => Some(KsFallbackReason::Other),
+                _ => None,
+            },
+            output_ks_fallback_code: self.output_ks_fallback_code.load(Ordering::Acquire),
             output_mix_channels: self.output_mix_channels.load(Ordering::Acquire) as u16,
             output_cadence_ratio: f32::from_bits(
                 self.output_cadence_ratio_bits.load(Ordering::Acquire),
@@ -2207,6 +2240,23 @@ enum ReopenStep {
     GrowCadence(Duration),
 }
 
+/// The open sink's own counters when it was opened or last read, so that a
+/// reopened sink (which starts again from zero) adds only what it counted.
+#[derive(Clone, Copy, Debug)]
+struct SinkBaseline {
+    restarts: u64,
+    late_resyncs: u64,
+}
+
+impl SinkBaseline {
+    fn of<S: OutputSink>(sink: &S) -> Self {
+        Self {
+            restarts: sink.restarts(),
+            late_resyncs: sink.late_resyncs(),
+        }
+    }
+}
+
 #[derive(Debug)]
 enum OutputStep {
     Continue,
@@ -2220,7 +2270,7 @@ fn output_rt_step<S: OutputSink>(
     sink: &mut S,
     shared: &Shared,
     qpc_frequency: u64,
-    sink_restart_baseline: &mut u64,
+    sink_baseline: &mut SinkBaseline,
     cadence_period_grown: bool,
 ) -> OutputStep {
     if let Some(layout) = output.pending_layout_change() {
@@ -2234,12 +2284,19 @@ fn output_rt_step<S: OutputSink>(
     };
     shared.output_periods.fetch_add(1, Ordering::Relaxed);
     let restarts = sink.restarts();
-    if restarts > *sink_restart_baseline {
+    if restarts > sink_baseline.restarts {
         shared
             .output_restarts
-            .fetch_add(restarts - *sink_restart_baseline, Ordering::Relaxed);
-        *sink_restart_baseline = restarts;
+            .fetch_add(restarts - sink_baseline.restarts, Ordering::Relaxed);
+        sink_baseline.restarts = restarts;
         output.reprime(Reprime::SinkRestarted);
+    }
+    let late_resyncs = sink.late_resyncs();
+    if late_resyncs > sink_baseline.late_resyncs {
+        shared
+            .output_late_resyncs
+            .fetch_add(late_resyncs - sink_baseline.late_resyncs, Ordering::Relaxed);
+        sink_baseline.late_resyncs = late_resyncs;
     }
     output.finish_period(qpc);
     if let Some(ratio) =
@@ -2315,7 +2372,7 @@ fn output_thread_main<O: OutputOpener>(
 
     shared.publish_output_format(format);
     let mut cadence_period_grown = false;
-    let mut sink_restart_baseline = sink.restarts();
+    let mut sink_baseline = SinkBaseline::of(&sink);
     let mut output = OutputState::new(
         crossing,
         format.rate,
@@ -2366,7 +2423,7 @@ fn output_thread_main<O: OutputOpener>(
                     &mut sink,
                     &shared,
                     qpc_frequency,
-                    &mut sink_restart_baseline,
+                    &mut sink_baseline,
                     cadence_period_grown,
                 )
             });
@@ -2486,7 +2543,7 @@ fn output_thread_main<O: OutputOpener>(
                         (delay * 2).min(RECONNECT_MAX_MS)
                     };
                 }
-                sink_restart_baseline = sink.restarts();
+                sink_baseline = SinkBaseline::of(&sink);
                 shared.output_reopens.fetch_add(1, Ordering::Relaxed);
                 output.events.clear_fault(FAULT_OUTPUT);
                 output.events.push(RtEvent::OutputLayoutChanged { layout });
@@ -2539,7 +2596,7 @@ fn output_thread_main<O: OutputOpener>(
                                 hook(RtLoopEvent::OutputOpenEnd);
                             }
                             sink = reopened;
-                            sink_restart_baseline = sink.restarts();
+                            sink_baseline = SinkBaseline::of(&sink);
                             shared.output_reconnects.fetch_add(1, Ordering::Relaxed);
                             output.events.clear_fault(FAULT_OUTPUT);
                             output.events.push(RtEvent::OutputReconnected);
@@ -2590,7 +2647,7 @@ fn output_thread_main<O: OutputOpener>(
                                         hook(RtLoopEvent::OutputOpenEnd);
                                     }
                                     sink = reopened;
-                                    sink_restart_baseline = sink.restarts();
+                                    sink_baseline = SinkBaseline::of(&sink);
                                     output.events.clear_fault(FAULT_OUTPUT);
                                     output.events.push(RtEvent::OutputCadenceReopen {
                                         period_ms: format.period_frames as f32 * 1_000.0

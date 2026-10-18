@@ -20,6 +20,126 @@ pub enum Language {
     En,
 }
 
+/// One of the driver's portable application entrances (ADR 0028).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum Entrance {
+    Main,
+    Music,
+    Pass,
+}
+
+/// A saved application-to-entrance override. `exe` is normalized to an ASCII
+/// lowercase basename before it is kept. `entrance: None` turns a built-in rule
+/// off, so the app is treated like any app without a rule. An override equal
+/// to the built-in rule is not kept.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct AppRule {
+    pub exe: String,
+    pub entrance: Option<Entrance>,
+}
+
+/// One row of the rules table: the effective rule and the built-in rule for the
+/// same executable. There is a row for every built-in rule and every saved
+/// override.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct RuleView {
+    pub exe: String,
+    pub entrance: Option<Entrance>,
+    pub built_in: Option<Entrance>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+#[serde(default)]
+pub struct RoutingSettings {
+    pub enabled: bool,
+    pub rules: Vec<AppRule>,
+}
+
+impl Default for RoutingSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            rules: Vec::new(),
+        }
+    }
+}
+
+/// Built-in rules. Saved rules with the same normalized executable name win.
+pub const DEFAULT_APP_RULES: &[(&str, Entrance)] = &[
+    ("kodi.exe", Entrance::Pass),
+    ("mpc-hc64.exe", Entrance::Pass),
+    ("mpc-hc.exe", Entrance::Pass),
+    ("mpc-be64.exe", Entrance::Pass),
+    ("mpc-be.exe", Entrance::Pass),
+    ("foobar2000.exe", Entrance::Pass),
+    ("applemusic.exe", Entrance::Music),
+];
+
+/// The built-in rule for a normalized executable name.
+pub fn built_in_rule(exe: &str) -> Option<Entrance> {
+    DEFAULT_APP_RULES
+        .iter()
+        .find(|(name, _)| *name == exe)
+        .map(|(_, entrance)| *entrance)
+}
+
+/// One process/session shown by the routing settings screen.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct RoutedApp {
+    pub exe: String,
+    pub display_name: String,
+    pub entrance_now: Option<Entrance>,
+    pub rule: Option<Entrance>,
+    /// This supervisor lifetime successfully wrote this process's policy.
+    pub moved: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct RoutingView {
+    pub available: bool,
+    pub enabled: bool,
+    /// Built-in rules merged with valid saved overrides, by executable name.
+    pub rules: Vec<RuleView>,
+    pub apps: Vec<RoutedApp>,
+}
+
+impl Default for RoutingView {
+    fn default() -> Self {
+        let mut rules: Vec<_> = DEFAULT_APP_RULES
+            .iter()
+            .map(|(exe, entrance)| RuleView {
+                exe: (*exe).to_owned(),
+                entrance: Some(*entrance),
+                built_in: Some(*entrance),
+            })
+            .collect();
+        rules.sort_by(|left, right| left.exe.cmp(&right.exe));
+        Self {
+            available: true,
+            enabled: true,
+            rules,
+            apps: Vec::new(),
+        }
+    }
+}
+
+/// How the engine reaches the selected DAC.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum OutputPath {
+    #[default]
+    Wasapi,
+    KernelStreaming,
+}
+
 /// One line on the pipe from a guarded app (ADR 0033).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Heartbeat {
@@ -33,6 +153,10 @@ pub struct Heartbeat {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum Intent {
     SetLanguage(Option<Language>),
+    SetOutputPath(OutputPath),
+    SetRoutingEnabled(bool),
+    SetAppRule(AppRule),
+    RemoveAppRule(String),
     BeginSetup,
     InstallDriver,
     /// Looks at the PC again after the user did something outside the app
@@ -426,9 +550,11 @@ pub struct Snapshot {
     /// The saved choice behind `language`: `None` follows the Windows display
     /// language. The settings screen's selector shows this, not the result.
     pub language_choice: Option<Language>,
+    pub output_path: OutputPath,
     pub phase: Phase,
     pub profile: ProfileView,
     pub upmix: UpmixView,
+    pub routing: RoutingView,
     pub engine: Option<EngineStatus>,
     /// Outputs the user may choose: active, and never our own endpoints.
     pub outputs: Vec<OutputChoice>,

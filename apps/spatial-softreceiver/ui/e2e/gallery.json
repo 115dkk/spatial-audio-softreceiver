@@ -116,7 +116,10 @@
     { "name": "running-upmix-fallback-status", "group": "upmix", "title": "상태 화면의 업믹스 줄, 원래 스테레오", "fixture": "running-upmix-fallback", "tab": "status" },
     { "name": "running-upmix-native-surround-status", "group": "upmix", "title": "상태 화면의 업믹스 줄, 모노·스테레오가 아니라 업믹스하지 않음", "fixture": "running-upmix-native-surround", "tab": "status" },
 
-    { "name": "ready-settings", "group": "settings", "title": "설정(업데이트 없음)", "fixture": "ready", "tab": "settings" },
+    { "name": "ready-settings", "group": "settings", "title": "설정(WASAPI 독점, 재생 중인 앱 둘, 업데이트 없음)", "fixture": "ready", "tab": "settings" },
+    { "name": "ready-settings-kernel-streaming", "group": "settings", "title": "커널 스트리밍을 고름, 재생 중인 앱 없음", "fixture": "ready-kernel-streaming", "tab": "settings" },
+    { "name": "running-settings", "group": "settings", "title": "켜짐, 출력 방식은 끈 뒤에 바꿈", "fixture": "running", "tab": "settings" },
+    { "name": "ready-settings-routing-unavailable", "group": "settings", "title": "앱별 출력 장치를 정할 수 없는 Windows", "fixture": "ready-routing-unavailable", "tab": "settings" },
     {
       "name": "ready-settings-update-ready",
       "group": "settings",

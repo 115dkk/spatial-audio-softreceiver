@@ -780,7 +780,7 @@ tests = [
   "supervisor::new_starts_ready_when_the_driver_and_the_output_are_present",
   "supervisor::new_starts_at_welcome_otherwise",
   "supervisor::a_real_session_runs_behind_the_engine_handle",
-  "supervisor::restore_point_round_trips_and_rejects_other_versions",
+  "supervisor::restore_point_v2_round_trips_reads_v1_and_rejects_other_versions",
 ]
 note = "ADR 0013: supervisor::machine holds the wizard steps (Welcome, Unsupported, NotTestSigning, Driver, RebootRequired, ChooseOutput), Ready, Running, Faulted and Quit; the OS is reached only through the ssr-types Host port (platform facts, driver state, outputs with our endpoint numbers, the three default roles, ssr-setup, the restore point) and the engine through Launcher/EngineHandle (Session implements it). Enabling writes the restore point, takes the three roles and launches; disabling, a fault and quit restore only the roles that still point at us (restore_roles, shared with the guard), falling back to the chosen output when the previous device is gone or was ours. A recoverable engine fault (lost output or capture) keeps Running while the engine reconnects and stops only after Config::fault_grace (15 s). The chosen output is kept by id and name and re-found by a unique name after an id change. Tested on Linux with a scripted Fake Host and a fake engine, plus one real Session behind the handle. The Windows Host adapter is ssr-sys::host (ADR 0032) and the Tauri shell drives the machine from its control thread (app.shell)."
 
@@ -1221,18 +1221,46 @@ note = "tools/ci/exclusive-policy.ps1 writes private MMDevice properties {b3f8fa
 [[feature]]
 id = "sys.ks_output"
 kind = "platform"
-milestone = "M6"
-status = "planned"
-tests = []
-note = "ADR 0028: Spatial SoftReceiver opens the DAC's render pin through kernel streaming while the DAC endpoint is disabled, so no app can pick the DAC; falls back to WASAPI exclusive when the pin does not open; ssr-guard re-enables the endpoint"
+milestone = "M4"
+status = "partial"
+tests = [
+  "ssr-sys::ks_conversion_clips_rounds_and_silences_nonfinite",
+  "ssr-sys::ks_sample_order_is_float_then_integer_precision",
+  "ssr-sys::ks_graph_does_not_select_unrelated_render_branch",
+  "ssr-sys::ks_physical_path_requires_terminated_bounded_utf16",
+  "ssr-sys::ks_filter_path_drops_the_topology_prefix_and_the_nt_link_prefix",
+  "ssr-sys::ks_audio_range_and_period_respect_requested_shape",
+  "ssr-sys::ks_position_unwraps_hardware_not_elapsed_frames",
+  "ssr-sys::ks_position_rejects_ambiguous_wrap_and_invalid_bounds",
+  "supervisor::kernel_streaming_records_hidden_before_disable_and_restores_on_disable",
+  "supervisor::kernel_target_discovery_failure_launches_wasapi_and_notes_once",
+  "supervisor::durable_hidden_is_recorded_before_endpoint_disable_and_persistence_failure_prevents_hiding",
+  "supervisor::visibility_restore_failure_retains_recovery_record_and_blocks_reenable",
+  "supervisor::kernel_streaming_launch_failure_fault_and_quit_restore_visibility",
+  "supervisor::ks_fallback_status_adds_only_one_note_per_run",
+  "supervisor::guard_shared_restore_enables_hidden_endpoint_before_roles",
+  "supervisor::restore_point_v2_round_trips_reads_v1_and_rejects_other_versions",
+]
+note = "ADR 0028: opt-in KS direct output while the selected DAC endpoint is disabled, with WASAPI exclusive fallback and supervisor/guard endpoint restoration. Portable tests cover sample conversion, connected-pin selection, period arithmetic and position wrapping. Windows hardware validation remains: VB-CABLE standard streaming, USB UAC2 and GPU HDMI WaveRT pins while disabled, sleep/resume and unplug/replug recovery. Default remains WASAPI until public-beta hardware reports."
 
 [[feature]]
 id = "supervisor.entrance_routing"
 kind = "app"
-milestone = "M6"
-status = "planned"
-tests = []
-note = "ADR 0028: sends known exclusive and bitstream players to the passthrough entrance with the per-app output device setting, and moves shared sessions off it"
+milestone = "M4"
+status = "partial"
+tests = [
+  "supervisor::user_rules_override_defaults_last_wins_and_invalid_rules_are_ignored",
+  "supervisor::routing_settings_round_trip_and_legacy_settings_default",
+  "supervisor::routing_pass_rule_is_written_once_and_survives_session_disappearance",
+  "supervisor::routing_inactive_and_duplicate_sessions_do_not_repeat_writes",
+  "supervisor::routing_unknown_pass_session_moves_to_main_and_notes_once",
+  "supervisor::routing_disabled_and_unavailable_make_no_calls_after_detection",
+  "supervisor::routing_rule_change_reapplies_only_that_executable_and_identical_rule_does_not",
+  "supervisor::routing_absent_target_and_transient_failure_do_not_disable_policy",
+  "supervisor::a_built_in_rule_can_be_turned_off_and_restored_and_only_differences_are_saved",
+  "supervisor::routing_a_built_in_rule_turned_off_treats_the_app_like_one_without_a_rule",
+]
+note = "ADR 0028 portable per-app entrance policy. Private IAudioPolicyConfigFactory; CI checks set/get on the runner; the test-signed PC checks real players."
 
 [[feature]]
 id = "ring.streamring"

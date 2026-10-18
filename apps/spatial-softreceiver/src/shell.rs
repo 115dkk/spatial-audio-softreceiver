@@ -218,6 +218,11 @@ fn setup(
             }
         }
     }
+    // Never replace recovery information while an earlier endpoint or role
+    // still needs restoring. The next launch can retry the same point.
+    if state_dir.join(RESTORE_POINT_FILE).try_exists()? {
+        return Err(io::Error::other(Note::RestoreFailed.render(language)).into());
+    }
     let marker = consume_guard_marker(&state_dir);
     let host = windows_host(&state_dir);
     let launcher = WindowsLauncher;
@@ -642,7 +647,11 @@ fn restore_notes(state_dir: &Path) -> Vec<Note> {
         }
     };
     let notes = restore_point::restore_messages(&point, &mut windows_host(state_dir));
-    log::line("shell: last resort: gave the roles back from the restore point");
+    if path.try_exists().unwrap_or(true) {
+        log::line("shell: last resort: recovery incomplete; retained restore point");
+    } else {
+        log::line("shell: last resort: restored endpoints and roles from the restore point");
+    }
     notes.into_iter().map(Note::Supervisor).collect()
 }
 

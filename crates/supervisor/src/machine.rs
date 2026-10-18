@@ -25,17 +25,20 @@ use std::time::{Duration, Instant};
 use engine::{CorrectionProfile, LiveChange, OutputProfile, Prepared, UpmixStatus};
 use speakers::SpeakerProfile;
 use ssr_types::app::{
-    CorrectionView, HeadphonesView, Intent, Language, NextAction, OutputChoice, Phase,
-    PluginChoice, PluginFormat, ProfileKind, ProfileView, SetupStep, Snapshot, SpeakerChannelView,
-    SpeakerLayout, SpeakersView, UpmixApply, UpmixerChoice, UpmixerSetting, UserError,
+    CorrectionView, HeadphonesView, Intent, Language, NextAction, OutputChoice, OutputPath, Phase,
+    PluginChoice, PluginFormat, ProfileKind, ProfileView, RoutingSettings, SetupStep, Snapshot,
+    SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply, UpmixerChoice, UpmixerSetting,
+    UserError,
 };
 use ssr_types::ports::PolicyState;
 use ssr_types::{
     Arch, DeviceId, DeviceState, DirectionId, DirectionView, DriverState, EngineFault,
-    EngineStatus, Host, HostError, Layout, OutputDevice, OutputLayout, Platform, Role, SetupTask,
+    EngineStatus, Host, HostError, KsTarget, Layout, OutputDevice, OutputLayout, Platform, Role,
+    SetupTask,
 };
 
 use crate::restore_point::{self, RestorePoint};
+use crate::routing::Routing;
 use crate::session::{Session, SessionError, SessionNotice};
 use crate::text::Message;
 use crate::upmix::{
@@ -117,6 +120,18 @@ pub trait Launcher {
         output: &OutputDevice,
         profile: &OutputProfile,
     ) -> Result<Box<dyn EngineHandle>, SessionError>;
+
+    fn launch_with_ks(
+        &mut self,
+        output: &OutputDevice,
+        profile: &OutputProfile,
+        ks_target: Option<&KsTarget>,
+    ) -> Result<Box<dyn EngineHandle>, SessionError> {
+        if ks_target.is_some() {
+            return Err(SessionError::Rejected);
+        }
+        self.launch(output, profile)
+    }
 }
 
 /// The running engine and the profile it plays.
@@ -146,6 +161,8 @@ struct Running {
     /// A prepared output the engine's full change queue has not taken yet.
     /// Keeping it makes retries cheap and leaves the guard's stall clock alone.
     pending: Option<Box<Prepared>>,
+    /// The current run has already reported a KS-to-WASAPI fallback.
+    ks_fallback_noted: bool,
 }
 
 /// What the profile intents remember (ADR 0034).
@@ -257,10 +274,16 @@ pub struct Settings {
     pub output: Option<OutputChoice>,
     #[serde(default)]
     pub profile: ProfileSettings,
+    /// How the selected output is opened. Old settings default to WASAPI.
+    #[serde(default)]
+    pub output_path: OutputPath,
     /// Each endpoint's upmixer and each kind's switch (ADR 0035). Settings
     /// written before it load the defaults.
     #[serde(default)]
     pub upmix: UpmixSettings,
+    /// Portable per-application entrance policy (ADR 0028).
+    #[serde(default)]
+    pub routing: RoutingSettings,
 }
 
 /// What this build needs from the PC.
@@ -343,6 +366,7 @@ pub struct Supervisor<H: Host, L: Launcher> {
     profile: ProfileView,
     /// The upmixers' plugin hosts and their stages in the engine (ADR 0035).
     upmix: Upmixers,
+    routing: Routing,
 }
 
 impl<H: Host, L: Launcher> fmt::Debug for Supervisor<H, L> {
@@ -388,6 +412,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             shell_notes: Vec::new(),
             profile: default_profile_view_for(language),
             upmix: Upmixers::new(plugins),
+            routing: Routing::new(),
         };
         supervisor.refresh_profile();
         let driver = supervisor.host.get_mut().driver();
@@ -489,6 +514,13 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                 _ => {}
             }
         }
+        if let Some(running) = self.engine.as_mut()
+            && !running.ks_fallback_noted
+            && running.handle.status().output_ks_fallback
+        {
+            running.ks_fallback_noted = true;
+            self.notes.push(Message::KsFallback);
+        }
         if let Some(reconnecting) = &self.reconnecting
             && now.saturating_duration_since(reconnecting.since) >= self.config.fault_grace
         {
@@ -503,6 +535,12 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             };
             let error = self.message_error(message, NextAction::Retry);
             self.fault(error);
+        }
+        if self.phase == Phase::Running && self.engine.is_some() {
+            let routing_notes = self
+                .routing
+                .tick(self.host.get_mut(), &self.settings.routing, now);
+            self.notes.extend(routing_notes);
         }
         if let Some(running) = self.engine.as_mut() {
             let engine = running.handle.as_mut();
@@ -637,6 +675,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         Snapshot {
             language,
             language_choice: self.settings.language,
+            output_path: self.settings.output_path,
             phase: self.phase.clone(),
             profile: self.profile.clone(),
             upmix: self.upmix.view(
@@ -645,6 +684,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                 self.profile.kind,
                 language,
             ),
+            routing: self.routing.view(&self.settings.routing),
             engine: self.engine_status(),
             outputs,
             chosen_output: self.settings.output.clone(),
@@ -709,6 +749,31 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                 self.settings.language = language;
                 Ok(())
             }
+            Intent::SetOutputPath(path) => match self.phase {
+                Phase::Ready | Phase::Faulted => {
+                    self.settings.output_path = path;
+                    Ok(())
+                }
+                Phase::Running => {
+                    Err(self.message_error(Message::DisableBeforeChangingOutput, NextAction::None))
+                }
+                _ => return self.refused(),
+            },
+            Intent::SetRoutingEnabled(enabled) => match self.phase {
+                Phase::Ready | Phase::Running | Phase::Faulted => {
+                    self.settings.routing.enabled = enabled;
+                    Ok(())
+                }
+                _ => return self.refused(),
+            },
+            Intent::SetAppRule(rule) => match self.phase {
+                Phase::Ready | Phase::Running | Phase::Faulted => self.set_app_rule(rule),
+                _ => return self.refused(),
+            },
+            Intent::RemoveAppRule(exe) => match self.phase {
+                Phase::Ready | Phase::Running | Phase::Faulted => self.remove_app_rule(&exe),
+                _ => return self.refused(),
+            },
             // The profile can change whenever the wizard is done; a running
             // engine takes changes to the kind in use live, all or nothing.
             Intent::SetProfileKind(kind) => match self.phase {
@@ -1006,6 +1071,20 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     /// the chosen output is gone).
     fn enable(&mut self) -> Result<(), UserError> {
         self.notes.clear();
+        // Ready is only a cached conclusion. Refresh the driver before any
+        // profile work, restore-point write, role mutation, or engine launch.
+        let driver = self.host.get_mut().driver();
+        self.driver = Some(driver.clone());
+        if matches!(
+            driver,
+            DriverState::Installed {
+                exclusive_policy: PolicyState::Missing,
+                ..
+            }
+        ) {
+            self.phase = Phase::Setup(SetupStep::Driver);
+            return Err(self.message_error(Message::ExclusivePolicyMissing, NextAction::Retry));
+        }
         let outputs = self.host.get_mut().outputs();
         let Some(ours) = outputs
             .iter()
@@ -1035,14 +1114,37 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             OutputProfile::Correction(profile) => self.check_correction(profile)?,
             OutputProfile::Headphones(_) => {}
         }
-        self.take_roles(ours, output.id.clone())?;
-        match self.launcher.launch(&output, &resolved.profile) {
+        let ks_target = if self.settings.output_path == OutputPath::KernelStreaming {
+            match self.host.get_mut().kernel_target(&output.id) {
+                Ok(target) => Some(target),
+                Err(error) => {
+                    self.notes.push(Message::KsUnavailable(error.to_string()));
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        self.take_roles(
+            ours,
+            output.id.clone(),
+            ks_target.as_ref().map(|_| output.id.clone()),
+        )?;
+        let launch = if self.settings.output_path == OutputPath::KernelStreaming {
+            self.launcher
+                .launch_with_ks(&output, &resolved.profile, ks_target.as_ref())
+        } else {
+            self.launcher.launch(&output, &resolved.profile)
+        };
+        match launch {
             Ok(handle) => {
                 self.engine = Some(Running {
                     handle,
                     profile: resolved.profile,
                     needs_prepared: false,
                     pending: None,
+                    ks_fallback_noted: self.settings.output_path == OutputPath::KernelStreaming
+                        && ks_target.is_none(),
                 });
                 self.phase = Phase::Running;
                 if let Some(running) = self.engine.as_mut() {
@@ -1069,15 +1171,30 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     /// Writes the restore point (with the chosen output as the fallback), then
     /// points the three roles at `ours` in [`Role::ALL`] order. A failure gives
     /// back what was already taken.
-    fn take_roles(&mut self, ours: DeviceId, fallback: DeviceId) -> Result<(), UserError> {
-        let host = self.host.get_mut();
-        let point = RestorePoint {
-            ours,
-            previous: host.default_roles(),
-            fallback: Some(fallback),
-            app_pid: std::process::id(),
+    fn take_roles(
+        &mut self,
+        ours: DeviceId,
+        fallback: DeviceId,
+        hidden: Option<DeviceId>,
+    ) -> Result<(), UserError> {
+        if self.taken.is_some() {
+            return Err(self.message_error(Message::NotAllowed, NextAction::Retry));
+        }
+        let point = {
+            let host = self.host.get_mut();
+            RestorePoint {
+                ours,
+                previous: host.default_roles(),
+                fallback: Some(fallback),
+                hidden,
+                app_pid: std::process::id(),
+            }
         };
-        if let Err(error) = host.write_restore_point(Some(&point.to_json())) {
+        if let Err(error) = self
+            .host
+            .get_mut()
+            .write_restore_point(Some(&point.to_json()))
+        {
             return Err(self.message_error(
                 Message::RoleChangeFailed {
                     detail: error.to_string(),
@@ -1085,10 +1202,12 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                 NextAction::Retry,
             ));
         }
+        // From here onward the recovery record is durable. Keep it in memory
+        // before any host mutation so every failure path retries the same point.
+        self.taken = Some(point.clone());
         for role in Role::ALL {
-            if let Err(error) = host.set_default_role(role, &point.ours) {
-                let notes = restore_point::restore_messages(&point, host);
-                self.notes.extend(notes);
+            if let Err(error) = self.host.get_mut().set_default_role(role, &point.ours) {
+                self.restore();
                 return Err(self.message_error(
                     Message::RoleChangeFailed {
                         detail: error.to_string(),
@@ -1097,16 +1216,31 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                 ));
             }
         }
-        self.taken = Some(point);
+        if let Some(hidden) = &point.hidden
+            && let Err(error) = self.host.get_mut().set_endpoint_visible(hidden, false)
+        {
+            self.restore();
+            return Err(self.message_error(
+                Message::RoleChangeFailed {
+                    detail: error.to_string(),
+                },
+                NextAction::Retry,
+            ));
+        }
         Ok(())
     }
 
     /// Gives the roles back when they were taken (ADR 0023) and removes the
     /// restore point.
     fn restore(&mut self) {
-        if let Some(point) = self.taken.take() {
-            let notes = restore_point::restore_messages(&point, self.host.get_mut());
-            self.notes.extend(notes);
+        let Some(point) = self.taken.clone() else {
+            return;
+        };
+        let (notes, restored) =
+            restore_point::restore_messages_checked(&point, self.host.get_mut());
+        self.notes.extend(notes);
+        if restored {
+            self.taken = None;
         }
     }
 
@@ -1320,6 +1454,9 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         &mut self,
         correction: &correction::Correction,
     ) -> Result<(), UserError> {
+        if self.settings.output_path == OutputPath::KernelStreaming {
+            return Ok(());
+        }
         let layout = OutputLayout {
             channels: u16::try_from(correction.device_channels).unwrap_or(u16::MAX),
             channel_mask: correction.channel_mask,
@@ -1350,6 +1487,9 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     }
 
     fn check_layout(&mut self, name: &str, layout: OutputLayout) -> Result<(), UserError> {
+        if self.settings.output_path == OutputPath::KernelStreaming {
+            return Ok(());
+        }
         if layout == OutputLayout::STEREO {
             return Ok(());
         }
@@ -1557,6 +1697,18 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         {
             self.upmix.set_apply(running.handle.as_mut(), apply.on);
         }
+    }
+
+    fn set_app_rule(&mut self, rule: ssr_types::app::AppRule) -> Result<(), UserError> {
+        self.routing
+            .set_rule(&mut self.settings.routing, rule)
+            .map_err(|()| self.message_error(Message::InvalidAppRule, NextAction::None))
+    }
+
+    fn remove_app_rule(&mut self, exe: &str) -> Result<(), UserError> {
+        self.routing
+            .remove_rule(&mut self.settings.routing, exe)
+            .map_err(|()| self.message_error(Message::InvalidAppRule, NextAction::None))
     }
 
     fn refused(&mut self) -> Outcome {

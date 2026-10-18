@@ -273,6 +273,9 @@ impl OutputOpener for WasapiOpener {
                     OutputMode::Shared
                 },
                 fell_back,
+                ks_fallback: false,
+                ks_fallback_reason: None,
+                ks_fallback_code: 0,
                 mix_channels,
             },
             encoding,

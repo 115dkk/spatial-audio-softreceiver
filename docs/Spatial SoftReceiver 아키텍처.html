@@ -920,9 +920,9 @@ impl&lt;H: Host&gt; Supervisor&lt;H&gt; {
           <tr><td>M1 리플레이</td><td>bitstream, decode(PCM·MAT·DD+), render, brir, convolver, ssr-replay</td><td>친구 덤프의 재생 결과가 블랙박스 골든과 허용 오차 안. Linux CI에서</td><td>없음</td></tr>
           <tr><td>M2 실시간</td><td>engine, speakers, ssr-sys(ring은 SAL 개발 어댑터, output), ssr-live</td><td>시험서명 PC에서 게임과 Apple Music을 헤드폰과 실제 스피커로 청취, 지연 숫자가 구축기 이하</td><td>SAL (개발용)</td></tr>
           <tr><td>M3 드라이버</td><td>spatialsoftreceiver.sys(렌더 엔드포인트 셋), ABI v1 초안, 쓰기 패킷 알림 측정</td><td>호스트 러너가 할 수 있는 서명 전 검사 통과(동결은 M5로, ADR 0027 고침)</td><td>시험서명</td></tr>
-          <tr><td>M4 앱</td><td>supervisor, 화면, ssr-setup, Velopack</td><td>새 PC에서 마법사만으로 설치와 청취</td><td>시험서명</td></tr>
+          <tr><td>M4 앱</td><td>supervisor, 화면, ssr-setup, Velopack, 커널 스트리밍 출력(ADR 0037), 앱별 입구 배정(ADR 0038)</td><td>새 PC에서 마법사만으로 설치와 청취</td><td>시험서명</td></tr>
           <tr><td>M5 서명·출시</td><td>ABI v1 동결, EV 구입, Partner Center 등록, 증명 제출</td><td>Secure Boot를 켠 PC에서 설치</td><td>증명 서명</td></tr>
-          <tr><td>M6 베타 뒤 확장</td><td>TrueHD 디코더, ASIO 입구, 커널 스트리밍 출력, 앱별 입구 배정, 자체 업믹서</td><td>기능마다 따로</td><td>증명 서명</td></tr>
+          <tr><td>M6 베타 뒤 확장</td><td>TrueHD 디코더, ASIO 입구, 자체 업믹서</td><td>기능마다 따로</td><td>증명 서명</td></tr>
         </tbody>
       </table>
     </div>

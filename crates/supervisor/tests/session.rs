@@ -67,6 +67,9 @@ fn dump_session_report_keeps_the_live_cli_key_contract() {
     let expected = [
         "output_mode",
         "output_fell_back",
+        "ks_fallback",
+        "ks_fallback_reason",
+        "ks_fallback_code",
         "output_kind",
         "output_channels",
         "output_channel_mask",
@@ -78,6 +81,7 @@ fn dump_session_report_keeps_the_live_cli_key_contract() {
         "underruns_while_streaming",
         "last_underrun",
         "output_restarts",
+        "output_late_resyncs",
         "output_reopens",
         "output_reconnects",
         "output_reconnect_attempts",

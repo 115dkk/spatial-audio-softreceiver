@@ -102,6 +102,8 @@ describe('i18n catalog contract', () => {
       'upmix.delayHint': [['23.3']],
       'settings.updateCurrent': [['0.13.0']],
       'settings.updateReady': [['0.14.0']],
+      'settings.routingHint': [['Spatial SoftReceiver PASS', 'Spatial SoftReceiver']],
+      'settings.routingBuiltInWas': [['Spatial SoftReceiver PASS']],
     } satisfies Record<FunctionPaths<typeof ko>, unknown[][]>;
     const functions = leaves(ko).filter(([, value]) => typeof value === 'function');
     expect(functions.map(([path]) => path).sort()).toEqual(Object.keys(cases).sort());
@@ -124,13 +126,14 @@ describe('i18n catalog contract', () => {
     [ko, catalogKo],
     [en, catalogEn],
   ])('projects generated screen leaves and sources shared names only from names', (projected, catalog) => {
-    const { endpoints, status, profile, upmix, ...screen } = catalog.screen;
+    const { endpoints, status, profile, upmix, settings, ...screen } = catalog.screen;
     const {
       product,
       endpoints: named,
       status: projectedStatus,
       profile: projectedProfile,
       upmix: projectedUpmix,
+      settings: projectedSettings,
       ...rest
     } = projected;
     expect(rest).toEqual(screen);
@@ -148,6 +151,12 @@ describe('i18n catalog contract', () => {
     });
     expect(projectedUpmix).toEqual({ ...upmix, needsPlugin: catalog.supervisor.choose_plugin_first });
     expect(upmix).not.toHaveProperty('needsPlugin');
+    expect(projectedSettings).toEqual({
+      ...settings,
+      outputPathLocked: catalog.supervisor.disable_before_changing_output,
+      routingUnavailable: catalog.supervisor.entrance_routing_unavailable,
+    });
+    for (const key of ['outputPathLocked', 'routingUnavailable']) expect(settings).not.toHaveProperty(key);
     for (const key of ['powerOn', 'powerOff']) expect(status).not.toHaveProperty(key);
     for (const key of ['fromFile', 'testOff', 'needsBrir']) expect(profile).not.toHaveProperty(key);
     expect(product).toBe(catalog.names.product);

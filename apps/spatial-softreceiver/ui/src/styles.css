@@ -1920,6 +1920,11 @@ input[type="radio"] {
   grid-column: 2;
 }
 
+/* A long hint keeps a readable line, as wide as the routing tables. */
+.check .hint {
+  max-width: 720px;
+}
+
 /* A labelled select (the language), drawn like the other controls. */
 .field {
   display: flex;
@@ -1932,7 +1937,8 @@ input[type="radio"] {
   font-weight: 500;
 }
 
-.field select {
+.field select,
+.routing-table select {
   min-height: 32px;
   max-width: 100%;
   padding: 0 8px;
@@ -1942,13 +1948,95 @@ input[type="radio"] {
   cursor: pointer;
 }
 
-.field select:disabled {
+.field select:disabled,
+.routing-table select:disabled {
   cursor: default;
   opacity: 0.5;
 }
 
+/* Under the select on a line of its own, its measure capped like the
+   check's hint; a max-width would let it fit beside the select. */
 .field .hint {
   flex-basis: 100%;
+  padding-right: max(0px, 100% - 720px);
+}
+
+/* The entrance of each app (ADR 0028): under the switch, the apps with
+   sound now and then the rules for the others, each a short table like the
+   profile's channel table: the app's name over its program file, where it
+   plays, and its choice at the row's end. */
+.routing-section {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.routing-section-title {
+  margin-bottom: 6px;
+  font-size: var(--size-m);
+  font-weight: 600;
+}
+
+.routing-table {
+  width: 100%;
+  max-width: 720px;
+  border-collapse: collapse;
+  font-size: var(--size-s);
+}
+
+.routing-table th,
+.routing-table td {
+  padding: 6px 16px 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-weight: 400;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.routing-table thead th {
+  padding-top: 0;
+  color: var(--text-muted);
+  font-size: var(--size-xs);
+  font-weight: 500;
+}
+
+.routing-table tr > :last-child {
+  padding-right: 0;
+}
+
+.routing-app > span {
+  display: block;
+}
+
+.routing-app-name {
+  font-weight: 500;
+}
+
+.routing-exe,
+.routing-moved,
+.routing-built-in-was {
+  color: var(--text-muted);
+  font-size: var(--size-xs);
+}
+
+.routing-entrance > span {
+  display: block;
+}
+
+/* A built-in rule as it ships: a word where the button would be. */
+.routing-default {
+  padding: 0 8px;
+  color: var(--text-muted);
+}
+
+/* The choice keeps its own width; the names and entrances wrap first. */
+.routing-choice {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.routing-table .button.quiet {
+  margin: -4px 0;
 }
 
 /* ---- Fallback page and gallery --------------------------------------- */

@@ -6,6 +6,7 @@
 // these guards, which is what ties fixtures, bindings and the screen together.
 
 import type {
+  AppRule,
   Arch,
   BitstreamCodec,
   BitstreamFormat,
@@ -18,13 +19,16 @@ import type {
   EngineFault,
   EndpointUpmixView,
   EngineStatus,
+  Entrance,
   HeadphonesView,
   Intent,
+  KsFallbackReason,
   LatencyStats,
   Language,
   NextAction,
   OutputChoice,
   OutputMode,
+  OutputPath,
   PcmFormat,
   Phase,
   Platform,
@@ -34,6 +38,8 @@ import type {
   PolicyState,
   ProfileKind,
   ProfileView,
+  RoutedApp,
+  RuleView,
   SampleType,
   SceneBedChannel,
   SceneDynamicObject,
@@ -82,6 +88,22 @@ const number: Guard<number> = (value, path) => {
 const string: Guard<string> = (value, path) => {
   if (typeof value !== 'string') throw new ShapeError(path, 'a string');
   return value;
+};
+
+/** Executable basenames arrive normalized from Rust; intent casing is accepted. */
+export const isAppExecutable = (value: string): boolean =>
+  value.length > 0 && value !== '.' && value !== '..' && !/[\/\\]/.test(value) && !value.includes('\0');
+
+const appExecutable: Guard<string> = (value, path) => {
+  const name = string(value, path);
+  if (!isAppExecutable(name)) throw new ShapeError(path, 'an executable file name without a path or NUL');
+  return name;
+};
+
+const normalizedAppExecutable: Guard<string> = (value, path) => {
+  const name = appExecutable(value, path);
+  if (/[A-Z]/.test(name)) throw new ShapeError(path, 'an ASCII-lowercase executable file name');
+  return name;
 };
 
 const boolean: Guard<boolean> = (value, path) => {
@@ -174,7 +196,23 @@ export const NEXT_ACTIONS: Record<NextAction, true> = {
   reboot: true,
   none: true,
 };
-export const OUTPUT_MODES: Record<OutputMode, true> = { exclusive: true, shared: true };
+export const OUTPUT_MODES: Record<OutputMode, true> = {
+  exclusive: true,
+  shared: true,
+  kernel_streaming: true,
+};
+export const OUTPUT_PATHS: Record<OutputPath, true> = { wasapi: true, kernel_streaming: true };
+export const ENTRANCES: Record<Entrance, true> = { main: true, music: true, pass: true };
+export const KS_FALLBACK_REASONS: Record<KsFallbackReason, true> = {
+  no_target: true,
+  filter_open: true,
+  no_sink_pin: true,
+  format_rejected: true,
+  pin_create: true,
+  state_change: true,
+  buffer_alloc: true,
+  other: true,
+};
 export const PROFILE_KINDS: Record<ProfileKind, true> = { headphones: true, speakers: true };
 /** The app's speaker layouts in the contract's order (`SpeakerLayout::ALL`), which the screen lists. */
 export const SPEAKER_LAYOUTS: Record<SpeakerLayout, true> = {
@@ -222,6 +260,9 @@ const policyState = oneOf(POLICY_STATES);
 const setupStep = oneOf(SETUP_STEPS);
 const nextAction = oneOf(NEXT_ACTIONS);
 const outputMode = oneOf(OUTPUT_MODES);
+const outputPath = oneOf(OUTPUT_PATHS);
+const entrance = oneOf(ENTRANCES);
+const ksFallbackReason = oneOf(KS_FALLBACK_REASONS);
 const profileKind = oneOf(PROFILE_KINDS);
 const speakerLayout = oneOf(SPEAKER_LAYOUTS);
 const upmixerChoice = oneOf(UPMIXER_CHOICES);
@@ -348,6 +389,7 @@ const engineStatus = object<EngineStatus>({
   output_periods: number,
   capture_reads: number,
   output_restarts: number,
+  output_late_resyncs: number,
   output_rate: number,
   trim_available: boolean,
   output_channels: number,
@@ -357,6 +399,9 @@ const engineStatus = object<EngineStatus>({
   output_reconnect_attempts: number,
   output_mode: outputMode,
   output_fell_back: boolean,
+  output_ks_fallback: boolean,
+  output_ks_fallback_reason: nullable(ksFallbackReason),
+  output_ks_fallback_code: number,
   output_mix_channels: number,
   output_cadence_ratio: number,
   output_cadence_faults: number,
@@ -464,12 +509,40 @@ const upmixerSetting = object<UpmixerSetting>({ endpoint: number, choice: upmixe
 const pluginChoice = object<PluginChoice>({ endpoint: number, path: string });
 const upmixApply = object<UpmixApply>({ kind: profileKind, on: boolean });
 
+const appRule = object<AppRule>({ exe: appExecutable, entrance: nullable(entrance) });
+const ruleViewShape = object<RuleView>({
+  exe: normalizedAppExecutable,
+  entrance: nullable(entrance),
+  built_in: nullable(entrance),
+});
+/** A rules-table row; a row with neither a rule nor a built-in one is not listed. */
+const ruleView: Guard<RuleView> = (value, path) => {
+  const row = ruleViewShape(value, path);
+  if (row.entrance === null && row.built_in === null) throw new ShapeError(path, 'a rule or a built-in rule');
+  return row;
+};
+const routedApp = object<RoutedApp>({
+  exe: normalizedAppExecutable,
+  display_name: string,
+  entrance_now: nullable(entrance),
+  rule: nullable(entrance),
+  moved: boolean,
+});
+const routing = object<Snapshot['routing']>({
+  available: boolean,
+  enabled: boolean,
+  rules: array(ruleView),
+  apps: array(routedApp),
+});
+
 const snapshot = object<Snapshot>({
   language,
   language_choice: nullable(language),
+  output_path: outputPath,
   phase,
   profile: profileView,
   upmix: upmixView,
+  routing,
   engine: nullable(engineStatus),
   outputs: array(outputChoice),
   chosen_output: nullable(outputChoice),
@@ -482,6 +555,10 @@ const snapshot = object<Snapshot>({
 
 const intent = tagged<Intent>({
   set_language: carrying('set_language', nullable(language)),
+  set_output_path: carrying('set_output_path', outputPath),
+  set_routing_enabled: carrying('set_routing_enabled', boolean),
+  set_app_rule: carrying('set_app_rule', appRule),
+  remove_app_rule: carrying('remove_app_rule', appExecutable),
   begin_setup: unit('begin_setup'),
   install_driver: unit('install_driver'),
   recheck: unit('recheck'),

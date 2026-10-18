@@ -7,11 +7,13 @@
 
 import type { Api, Shell, Unlisten, UpdateState } from './api';
 import type {
+  AppRule,
   Arch,
   CorrectionView,
   DirectionView,
   DriverState,
   EngineStatus,
+  Entrance,
   Intent,
   Language,
   NextAction,
@@ -36,6 +38,7 @@ import type {
 } from './bindings';
 import { en as catalogEn, ko as catalogKo } from './catalog';
 import { fixture, fixtureNames } from './fixtures';
+import { ENTRANCES, isAppExecutable } from './guard';
 import { text } from './text';
 
 /** What the app shell reads from the OS: login autostart and the updater. */
@@ -81,6 +84,13 @@ const archName = (arch: Arch): Message =>
 /** The Messages the mock can meet, by their names in text.rs. */
 const say = {
   notAllowed: message(catalogKo.supervisor.not_allowed, catalogEn.supervisor.not_allowed),
+  appEntranceMoved: (app: string): Message =>
+    message(catalogKo.supervisor.app_entrance_moved(app), catalogEn.supervisor.app_entrance_moved(app)),
+  entranceRoutingUnavailable: message(
+    catalogKo.supervisor.entrance_routing_unavailable,
+    catalogEn.supervisor.entrance_routing_unavailable,
+  ),
+  invalidAppRule: message(catalogKo.supervisor.invalid_app_rule, catalogEn.supervisor.invalid_app_rule),
   testAfterEnable: message(catalogKo.common.test_after_enable, catalogEn.common.test_after_enable),
   diagnosticRecordingUnavailable: message(
     catalogKo.supervisor.diagnostic_recording_unavailable,
@@ -317,6 +327,21 @@ interface ProfileSettings {
  */
 const DEFAULT_UPMIXER: UpmixerChoice = 'off';
 
+/** Built-in app rules (ssr-types DEFAULT_APP_RULES); Settings.routing.rules stores only overrides. */
+const DEFAULT_APP_RULES: readonly { exe: string; entrance: Entrance }[] = [
+  { exe: 'kodi.exe', entrance: 'pass' },
+  { exe: 'mpc-hc64.exe', entrance: 'pass' },
+  { exe: 'mpc-hc.exe', entrance: 'pass' },
+  { exe: 'mpc-be64.exe', entrance: 'pass' },
+  { exe: 'mpc-be.exe', entrance: 'pass' },
+  { exe: 'foobar2000.exe', entrance: 'pass' },
+  { exe: 'applemusic.exe', entrance: 'music' },
+];
+
+/** ssr-types built_in_rule: the built-in rule for a normalized executable name. */
+const builtInRule = (exe: string): Entrance | null =>
+  DEFAULT_APP_RULES.find((rule) => rule.exe === exe)?.entrance ?? null;
+
 /** The mock's scan finds every plugin to be the test plugin: stereo in, 5.1 out (ADR 0035). */
 const PLUGIN_INPUTS: readonly string[] = ['L', 'R'];
 const PLUGIN_OUTPUTS: readonly string[] = ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'];
@@ -403,6 +428,20 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
     driver: start.driver ?? ({ kind: 'not_installed' } as DriverState),
     outputs: start.outputs.length > 0 ? start.outputs : borrowed('ready').outputs,
   };
+  // Saved overrides, as routing.rs keeps them: only what differs from the
+  // built-in rule, null turning a built-in rule off. Removing one restores
+  // the built-in rule.
+  const routingOverrides = new Map<string, Entrance | null>();
+  for (const rule of start.routing.rules) {
+    if (rule.entrance !== builtInRule(rule.exe)) routingOverrides.set(rule.exe, rule.entrance);
+  }
+  // Output preferences and active streams are separate: changing a preference
+  // does not prove that an already-open exclusive stream has moved.
+  const appOutputs = new Map(start.routing.apps.map((app) => [
+    app.exe,
+    app.moved ? app.rule ?? 'main' : app.entrance_now,
+  ]));
+  let routingUnavailableNoted = start.notes.includes(say.entranceRoutingUnavailable[start.language]);
   const engineTemplate: EngineStatus = start.engine ?? (borrowed('running').engine as EngineStatus);
   // The scene the meters move around the listener, from the fixture.
   const sceneTemplate: SceneObject[] = structuredClone(engineTemplate.scene);
@@ -630,6 +669,61 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
     if (!Number.isFinite(db) || db < GAIN_MIN_DB || db > GAIN_MAX_DB) return failed(say.gainOutOfRange, 'none');
     settings.gainDb[state.profile.kind] = db;
     state.profile.gain_db = db;
+    return done;
+  }
+
+  function refreshRouting() {
+    // routing.rs effective_rule_map, then view: a row per built-in rule and
+    // per override, by executable name, none without either rule.
+    const rules = new Map(DEFAULT_APP_RULES.map((rule) => [rule.exe, rule.entrance]));
+    for (const [exe, entrance] of routingOverrides) {
+      if (entrance === null) rules.delete(exe);
+      else rules.set(exe, entrance);
+    }
+    const names = new Set([...DEFAULT_APP_RULES.map((rule) => rule.exe), ...routingOverrides.keys()]);
+    state.routing.rules = [...names]
+      .sort((left, right) => left < right ? -1 : left > right ? 1 : 0)
+      .map((exe) => ({ exe, entrance: rules.get(exe) ?? null, built_in: builtInRule(exe) }))
+      .filter((row) => row.entrance !== null || row.built_in !== null);
+    const running = state.phase.kind === 'running' && state.routing.enabled;
+    if (running && !state.routing.available && !routingUnavailableNoted) {
+      notes = [...(notes ?? []), say.entranceRoutingUnavailable];
+      routingUnavailableNoted = true;
+    }
+    for (const app of state.routing.apps) {
+      app.rule = rules.get(app.exe) ?? null;
+      const target = app.rule ?? (app.entrance_now === 'pass' ? 'main' : null);
+      if (running && state.routing.available && target !== null && appOutputs.get(app.exe) !== target) {
+        appOutputs.set(app.exe, target);
+        app.moved = true;
+        if (app.rule === null) notes = [...(notes ?? []), say.appEntranceMoved(app.display_name)];
+      }
+    }
+  }
+
+  function setRoutingEnabled(enabled: boolean): Outcome {
+    state.routing.enabled = enabled;
+    refreshRouting();
+    return done;
+  }
+
+  function setAppRule(rule: AppRule): Outcome {
+    if (!isAppExecutable(rule.exe) || (rule.entrance !== null && !Object.hasOwn(ENTRANCES, rule.entrance))) {
+      return failed(say.invalidAppRule, 'none');
+    }
+    // routing.rs set_rule: only a difference from the built-in rule is
+    // saved; null for an executable without one is the same as no rule.
+    const exe = rule.exe.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+    if (rule.entrance === builtInRule(exe)) routingOverrides.delete(exe);
+    else routingOverrides.set(exe, rule.entrance);
+    refreshRouting();
+    return done;
+  }
+
+  function removeAppRule(exe: string): Outcome {
+    if (!isAppExecutable(exe)) return failed(say.invalidAppRule, 'none');
+    routingOverrides.delete(exe.replace(/[A-Z]/g, (letter) => letter.toLowerCase()));
+    refreshRouting();
     return done;
   }
 
@@ -880,6 +974,18 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
         state.language_choice = intent.value;
         state.language = intent.value ?? systemLanguage;
         return done;
+      case 'set_output_path':
+        // As the supervisor: only while stopped; a running engine refuses with a reason.
+        if (phase.kind === 'running') return failed(say.disableBeforeChangingOutput, 'none');
+        if (phase.kind !== 'ready' && phase.kind !== 'faulted') return refused();
+        state.output_path = intent.value;
+        return done;
+      case 'set_routing_enabled':
+        return profileOpen ? setRoutingEnabled(intent.value) : refused();
+      case 'set_app_rule':
+        return profileOpen ? setAppRule(intent.value) : refused();
+      case 'remove_app_rule':
+        return profileOpen ? removeAppRule(intent.value) : refused();
       case 'set_profile_kind':
         return profileOpen ? setProfileKind(intent.value) : refused();
       case 'import_brir':
@@ -962,7 +1068,10 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
       await wait();
       const outcome = apply(structuredClone(intent));
       // A change of phase or of the kind in use starts or stops the upmixers.
-      if (outcome.kind === 'done' && PHASE_OR_KIND.has(intent.kind)) refreshUpmix();
+      if (outcome.kind === 'done' && PHASE_OR_KIND.has(intent.kind)) {
+        refreshUpmix();
+        refreshRouting();
+      }
       publishUpmix();
       // Like the supervisor, a snapshot lists the host's outputs afresh; a
       // refusal changed nothing, so its snapshot stays the same.

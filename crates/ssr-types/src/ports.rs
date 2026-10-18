@@ -82,6 +82,21 @@ pub enum OutputMode {
     #[default]
     Exclusive,
     Shared,
+    KernelStreaming,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum KsFallbackReason {
+    NoTarget,
+    FilterOpen,
+    NoSinkPin,
+    FormatRejected,
+    PinCreate,
+    StateChange,
+    BufferAlloc,
+    Other,
 }
 
 /// The shape of the periods an output sink asks for.
@@ -97,6 +112,11 @@ pub struct OutputFormat {
     pub mode: OutputMode,
     /// The caller requested exclusive mode, but explicitly allowed shared mode.
     pub fell_back: bool,
+    /// A kernel-streaming request fell back to WASAPI.
+    pub ks_fallback: bool,
+    pub ks_fallback_reason: Option<KsFallbackReason>,
+    /// Platform error/status code associated with the fallback, or zero.
+    pub ks_fallback_code: u32,
     /// Channels in the shared engine's mix format. Equal to `channels` unless
     /// an exclusive request fell back to the shared engine.
     pub mix_channels: u16,
@@ -116,6 +136,9 @@ impl OutputFormat {
             period_frames,
             mode: OutputMode::Exclusive,
             fell_back: false,
+            ks_fallback: false,
+            ks_fallback_reason: None,
+            ks_fallback_code: 0,
             mix_channels: channels,
         }
     }
@@ -160,6 +183,12 @@ pub trait OutputSink {
     fn played_frames(&self) -> Option<u64> {
         None
     }
+
+    /// Times the sink recovered from a late period by realigning its write
+    /// position; distinct from stream restarts and input-ring underruns.
+    fn late_resyncs(&self) -> u64 {
+        0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -189,6 +218,18 @@ pub struct OutputDevice {
     pub state: DeviceState,
 }
 
+/// An application audio session as the host policy API lists it. Duplicate
+/// sessions for one process are allowed; the supervisor deduplicates them.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AudioApp {
+    pub pid: u32,
+    /// ASCII-lowercase executable basename.
+    pub exe: String,
+    pub display_name: String,
+    pub device: DeviceId,
+    pub active: bool,
+}
+
 /// The operating system's identifier of a render endpoint (the `IMMDevice`
 /// id). It can change across reboots; the supervisor keeps the name as a
 /// fallback.
@@ -197,6 +238,13 @@ pub struct OutputDevice {
 )]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
 pub struct DeviceId(pub String);
+
+/// The kernel-streaming filter and pin that render to a chosen output.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct KsTarget {
+    pub filter: String,
+    pub pin: u32,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
@@ -341,6 +389,8 @@ pub enum HostError {
     Setup(String),
     #[error("the host refused: {0}")]
     Failed(String),
+    #[error("the application output preference changed concurrently")]
+    Conflict,
     #[error("not supported on this host")]
     Unsupported,
 }
@@ -359,6 +409,38 @@ pub trait Host {
     fn default_roles(&mut self) -> DefaultRoles;
 
     fn set_default_role(&mut self, role: Role, device: &DeviceId) -> Result<(), HostError>;
+
+    /// Every application audio session, active and inactive. Hosts that cannot
+    /// enumerate sessions keep the empty default.
+    fn audio_apps(&mut self) -> Vec<AudioApp> {
+        Vec::new()
+    }
+
+    /// The executable-scoped render device persisted in common for console and
+    /// multimedia. `None` means either role is unset or the two roles disagree.
+    fn app_entrance(&mut self, _pid: u32) -> Result<Option<DeviceId>, HostError> {
+        Err(HostError::Unsupported)
+    }
+
+    /// Persists the executable-scoped console and multimedia render device, or
+    /// clears both with `None`; the communications role is left untouched.
+    fn set_app_entrance(&mut self, _pid: u32, _device: Option<&DeviceId>) -> Result<(), HostError> {
+        Err(HostError::Unsupported)
+    }
+
+    /// Finds the kernel-streaming filter and render pin behind `output`.
+    fn kernel_target(&mut self, _output: &DeviceId) -> Result<KsTarget, HostError> {
+        Err(HostError::Unsupported)
+    }
+
+    /// Enables or disables the selected render endpoint in Windows.
+    fn set_endpoint_visible(
+        &mut self,
+        _output: &DeviceId,
+        _visible: bool,
+    ) -> Result<(), HostError> {
+        Err(HostError::Unsupported)
+    }
 
     /// Whether `output` accepts `layout` in exclusive mode. `Err(HostError::Unsupported)`
     /// when this host cannot tell; the supervisor then goes ahead.

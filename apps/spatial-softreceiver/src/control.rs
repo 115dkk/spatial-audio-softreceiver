@@ -309,6 +309,7 @@ where
                 initial_notes,
                 marker,
                 korean: thread_korean,
+                ks_fallback_logged: false,
             };
             if let Err(panic) = panic::catch_unwind(AssertUnwindSafe(|| thread.run(&rx))) {
                 thread.after_panic(panic.as_ref());
@@ -329,6 +330,7 @@ struct ControlThread<H: Host, L: Launcher, E: Emitter, S: SettingsStore> {
     initial_notes: Vec<Note>,
     marker: Option<Marker>,
     korean: Arc<AtomicBool>,
+    ks_fallback_logged: bool,
 }
 
 impl<H: Host, L: Launcher, E: Emitter, S: SettingsStore> ControlThread<H, L, E, S> {
@@ -428,6 +430,9 @@ impl<H: Host, L: Launcher, E: Emitter, S: SettingsStore> ControlThread<H, L, E, 
             self.idle_heartbeat();
         }
         let result = self.supervisor.handle(intent);
+        if *self.supervisor.phase() != Phase::Running {
+            self.ks_fallback_logged = false;
+        }
         self.korean.store(
             self.supervisor.language() == Language::Ko,
             Ordering::Relaxed,
@@ -500,9 +505,17 @@ impl<H: Host, L: Launcher, E: Emitter, S: SettingsStore> ControlThread<H, L, E, 
                     if lfe { " + LFE" } else { "" }
                 ));
             }
+            if status.output_ks_fallback && !self.ks_fallback_logged {
+                log::line(&format!(
+                    "control: KS fallback: {:?}, code {}",
+                    status.output_ks_fallback_reason, status.output_ks_fallback_code
+                ));
+                self.ks_fallback_logged = true;
+            }
             self.emitter.meters(&status);
         } else {
             self.scene_changes = supervisor::scene_log::SceneChanges::default();
+            self.ks_fallback_logged = false;
         }
     }
 
@@ -623,9 +636,11 @@ fn quit_snapshot(language: Language) -> Snapshot {
         phase: Phase::Quit,
         profile: supervisor::machine::default_profile_view_for(language),
         upmix: supervisor::default_upmix_view(),
+        routing: ssr_types::app::RoutingView::default(),
         engine: None,
         outputs: Vec::new(),
         chosen_output: None,
+        output_path: ssr_types::app::OutputPath::Wasapi,
         driver: None,
         platform: None,
         roles_taken: false,

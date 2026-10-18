@@ -289,6 +289,9 @@ impl OutputOpener for WavOpener {
                 period_frames: self.period_frames,
                 mode: ssr_types::OutputMode::Exclusive,
                 fell_back: false,
+                ks_fallback: false,
+                ks_fallback_reason: None,
+                ks_fallback_code: 0,
                 mix_channels: layout.channels,
             },
             interleaved: vec![
@@ -384,6 +387,9 @@ impl OutputOpener for NullOpener {
                 period_frames: self.period_frames,
                 mode: ssr_types::OutputMode::Exclusive,
                 fell_back: false,
+                ks_fallback: false,
+                ks_fallback_reason: None,
+                ks_fallback_code: 0,
                 mix_channels: layout.channels,
             },
             interleaved: vec![

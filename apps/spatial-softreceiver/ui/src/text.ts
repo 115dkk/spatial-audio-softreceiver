@@ -7,7 +7,7 @@ import { en as catalogEn, ko as catalogKo, type Catalog } from './catalog';
 type Screen = Catalog['screen'];
 type Common = Catalog['common'];
 type Supervisor = Catalog['supervisor'];
-type Text = Omit<Screen, 'endpoints' | 'chainErrorKinds' | 'status' | 'profile' | 'upmix'> & {
+type Text = Omit<Screen, 'endpoints' | 'chainErrorKinds' | 'status' | 'profile' | 'upmix' | 'settings'> & {
   product: Catalog['names']['product'];
   endpoints: (Screen['endpoints'][number] & { name: string })[];
   chainErrorKinds: Screen['chainErrorKinds'] & Record<string, string | undefined>;
@@ -18,6 +18,10 @@ type Text = Omit<Screen, 'endpoints' | 'chainErrorKinds' | 'status' | 'profile' 
     needsBrir: Supervisor['import_brir_first'];
   };
   upmix: Screen['upmix'] & { needsPlugin: Supervisor['choose_plugin_first'] };
+  settings: Screen['settings'] & {
+    outputPathLocked: Supervisor['disable_before_changing_output'];
+    routingUnavailable: Supervisor['entrance_routing_unavailable'];
+  };
 };
 
 function project(catalog: Catalog): Text {
@@ -37,6 +41,15 @@ function project(catalog: Catalog): Text {
     },
     // A VST upmixer without its plugin: the supervisor's own sentence.
     upmix: { ...screen.upmix, needsPlugin: supervisor.choose_plugin_first },
+    settings: {
+      ...screen.settings,
+      // A running engine refuses set_output_path in this sentence; the
+      // screen says it beside the locked choice.
+      outputPathLocked: supervisor.disable_before_changing_output,
+      // What the supervisor notes when Windows has no per-app output
+      // setting; the screen keeps it beside the locked routing controls.
+      routingUnavailable: supervisor.entrance_routing_unavailable,
+    },
     endpoints: [
       { ...screen.endpoints[0]!, name: names.endpoint_main },
       { ...screen.endpoints[1]!, name: names.endpoint_music },

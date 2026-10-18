@@ -38,6 +38,8 @@ const NAMES: &[&str] = &[
     "ready-profile-file",
     "ready-brir-unreadable",
     "ready-start-failed",
+    "ready-kernel-streaming",
+    "ready-routing-unavailable",
     "quit",
 ];
 
@@ -66,6 +68,8 @@ fn expected(name: &str, output_name: &str) -> Expected {
         | "setup-choose-output"
         | "setup-choose-output-empty"
         | "ready"
+        | "ready-kernel-streaming"
+        | "ready-routing-unavailable"
         | "quit" => none(),
         "setup-unsupported" => Expected {
             error: Some((

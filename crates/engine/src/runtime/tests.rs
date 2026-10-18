@@ -11,6 +11,9 @@ fn output_format(rate: u32) -> OutputFormat {
         period_frames: 480,
         mode: OutputMode::Exclusive,
         fell_back: false,
+        ks_fallback: false,
+        ks_fallback_reason: None,
+        ks_fallback_code: 0,
         mix_channels: 2,
     }
 }
