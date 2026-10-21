@@ -297,8 +297,8 @@ py .\endpoint_name_check.py --ssr-live .\ssr-live.exe --summary endpoint-name.js
 **합격 기준**
 - `host formats`에 기대 마스크의 엔드포인트가 하나씩 있고 모두 `active`; `device_format_error`는 `null`
 - 0은 extensible IEEE float 48 kHz, 8채널, 32/32비트, 채널 마스크 `0x63f`; 1과 2는 같은 형식의 2채널, 채널 마스크 `0x3`
-- `device_desc`가 서비스 Parameters의 `EndpointName<N>`과 같고, 값이 없으면 표의 영어 이름을 씀
-- 이름 검사가 1번의 짧은 이름을 그대로 쓰고 2번의 32자 값을 `Spatial SoftReceiver PASS`로 물린 뒤 원래 값과 이름을 모두 복원함
+- 새로 설치한 직후 `device_desc`가 서비스 Parameters의 `EndpointName<N>`과 같고, 값이 없으면 표의 영어 이름을 씀
+- 이름 검사에서 장치를 다시 시작한 뒤 토폴로지 핀의 싱크 설명(요약의 `sink_descriptions`)이 1번은 짧은 이름 그대로, 2번은 32자 값 대신 `Spatial SoftReceiver PASS`가 되고, 복원한 뒤 원래 값으로 돌아옴. Windows는 이미 만든 엔드포인트의 설명을 다시 쓰지 않으므로(사용자가 소리 설정에서 바꾼 이름과 같은 자리) 검사하는 동안 `device_desc`는 처음 값 그대로여야 함
 
 기본 `EndpointMask`는 `0x7`입니다. 비트 0은 **Spatial SoftReceiver**(기본 장치·시스템 소리·공간음향), 비트 1은 **Spatial SoftReceiver Music**(공유 음악), 비트 2는 **Spatial SoftReceiver PASS**(독점 비트스트림·PCM)를 켭니다. 미니페어가 없는 비트 3은 무시합니다. 비트 2를 끈 0x3으로 장치를 다시 시작하면 활성 패스스루 엔드포인트가 없어야 하고 QUERY_INFO도 0x3이어야 합니다. 이때 검사 명령의 기대 마스크도 3으로 바꿉니다. 0은 '전부 끔'이 아니라 기본값 0x7로 돌아갑니다.
 

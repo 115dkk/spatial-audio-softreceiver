@@ -71,6 +71,7 @@ SHIP = (
     "tools/ci/report_check.py",
     "tools/ci/endpoint_format_check.py",
     "tools/ci/endpoint_name_check.py",
+    "tools/ci/KsProbe.cs",
     "tools/ci/bitstream_check.py",
     # The example profiles in the tools zip (release.yml build-windows).
     "docs/profiles/*",

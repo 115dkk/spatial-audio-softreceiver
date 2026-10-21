@@ -1,11 +1,21 @@
 """Exercise driver endpoint-name reload and restore the registry afterward.
 
+The driver reads Parameters\\EndpointName0..3 when the device starts and puts
+each name in its topology pin's KSJACK_SINK_INFORMATION.SinkDescription; the
+endpoint builder copies that into the endpoint's description only when it
+first creates the endpoint. Windows keeps an existing endpoint's description
+across device restarts (a rename in the Sound control panel lives in the same
+property), so after a restart the check reads the sink descriptions straight
+from the KS topology filters (KsProbe.cs) and requires the endpoints to stay
+active with their descriptions unchanged.
+
     py endpoint_name_check.py --ssr-live ssr-live.exe --summary endpoint-name.json
 """
 
 import argparse
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -24,40 +34,72 @@ from endpoints import ENDPOINT_NUMBERS
 SHORT_NAME = "SSR name check 1"
 LONG_NAME = "SSR name check 2 " + "x" * 16
 POLL_SECONDS = 60
+# KsProbe.Run prints one line per jack property; the topology filters' reference
+# strings TopologyHdmi0..2 are the endpoint numbers (endpoints.ps1).
+SINK_LINE = re.compile(
+    r"^ks topologyhdmi([0-2]) pin \d+ JACK_SINK_INFO: .*? SinkDescription=(.*) PortId=LUID\(",
+    re.IGNORECASE)
 
 
 class PollError(RuntimeError):
-    def __init__(self, message, rows, document, attempts):
+    def __init__(self, message, rows, document, sinks, attempts):
         super().__init__(message)
         self.rows = rows
         self.document = document
+        self.sinks = sinks
         self.attempts = attempts
 
 
-def changed_name_problems(rows):
+def parse_sink_lines(lines):
+    """Sink description per endpoint number from KsProbe.Run's output lines."""
+    sinks = {}
+    for line in lines:
+        match = SINK_LINE.match(line.strip())
+        if not match:
+            continue
+        endpoint, name = int(match.group(1)), match.group(2)
+        if sinks.get(endpoint, name) != name:
+            raise ValueError(f"endpoint {endpoint}: two different sink descriptions")
+        sinks[endpoint] = name
+    return sinks
+
+
+def _descriptions(rows):
+    return {row.get("endpoint"): row.get("device_desc")
+            for row in rows if row.get("state") == "active"}
+
+
+def _unchanged_problems(rows, initial):
+    problems = []
+    now = _descriptions(rows)
+    for endpoint in (1, 2):
+        if endpoint in initial and endpoint in now and now[endpoint] != initial[endpoint]:
+            problems.append(
+                f"endpoint {endpoint}: device_desc changed from {initial[endpoint]!r} "
+                f"to {now[endpoint]!r}")
+    return problems
+
+
+def changed_name_problems(rows, sinks, initial):
     expected = {1: SHORT_NAME, 2: FALLBACK_NAMES[2]}
     problems = active_problems(rows, 0x7)
     for endpoint, name in expected.items():
-        matches = [row for row in rows
-                   if row.get("endpoint") == endpoint and row.get("state") == "active"]
-        if len(matches) == 1 and matches[0].get("device_desc") != name:
+        if sinks.get(endpoint) != name:
             problems.append(
-                f"endpoint {endpoint}: device_desc {matches[0].get('device_desc')!r}, "
+                f"endpoint {endpoint}: sink description {sinks.get(endpoint)!r}, "
                 f"expected {name!r} after restart")
-    return problems
+    return problems + _unchanged_problems(rows, initial)
 
 
-def restored_name_problems(rows, original):
+def restored_name_problems(rows, sinks, original, initial):
     problems = active_problems(rows, 0x7)
     for endpoint in (1, 2):
-        matches = [row for row in rows
-                   if row.get("endpoint") == endpoint and row.get("state") == "active"]
         expected = effective_name(original[endpoint], FALLBACK_NAMES[endpoint])
-        if len(matches) == 1 and matches[0].get("device_desc") != expected:
+        if sinks.get(endpoint) != expected:
             problems.append(
-                f"endpoint {endpoint}: restored device_desc {matches[0].get('device_desc')!r}, "
+                f"endpoint {endpoint}: restored sink description {sinks.get(endpoint)!r}, "
                 f"expected {expected!r}")
-    return problems
+    return problems + _unchanged_problems(rows, initial)
 
 
 def snapshot_values():
@@ -153,18 +195,52 @@ def restart_device(ssr_live):
     return [str(part) for part in command]
 
 
-def poll_formats(ssr_live, judge, timeout=POLL_SECONDS, interval=1.0):
+def read_formats(ssr_live):
+    document = run_json([ssr_live, "host", "formats"], timeout=30)
+    return parse_host_formats(document), document
+
+
+def _quote(path):
+    return "'" + str(path).replace("'", "''") + "'"
+
+
+def read_sinks(timeout=120):
+    """Run KsProbe.Run on every device with the package's hardware ID."""
+    here = Path(__file__).resolve().parent
+    script = (
+        "$ErrorActionPreference = 'Stop'; "
+        "[Console]::OutputEncoding = New-Object Text.UTF8Encoding($false); "
+        ". " + _quote(here / "package-identities.ps1") + "; "
+        "Add-Type -TypeDefinition (Get-Content -Raw " + _quote(here / "KsProbe.cs") + "); "
+        "$ids = @($SpatialPackage | ForEach-Object HardwareId); "
+        "Get-PnpDevice -PresentOnly | Where-Object { @($_.HardwareID | Where-Object { $_ -in $ids }).Count -gt 0 } | "
+        "ForEach-Object { [KsProbe]::Run(($_.InstanceId -replace '\\\\', '#').ToLowerInvariant()) }")
+    try:
+        completed = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+             "-Command", script],
+            check=False, capture_output=True, text=True, encoding="utf-8", timeout=timeout)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise RuntimeError(f"cannot run KsProbe: {error}") from error
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic output"
+        raise RuntimeError(f"KsProbe exited with {completed.returncode}: {detail}")
+    return parse_sink_lines(completed.stdout.splitlines())
+
+
+def poll_names(ssr_live, judge, timeout=POLL_SECONDS, interval=1.0):
     deadline = time.monotonic() + timeout
-    attempts, last_rows, last_document, last_error = 0, [], None, None
+    attempts, last_rows, last_document, last_sinks, last_error = 0, [], None, {}, None
     while time.monotonic() < deadline:
         attempts += 1
         try:
-            document = run_json([ssr_live, "host", "formats"], timeout=30)
-            rows = parse_host_formats(document)
-            last_rows, last_document, last_error = rows, document, None
-            problems = judge(rows)
+            rows, document = read_formats(ssr_live)
+            last_rows, last_document = rows, document
+            sinks = read_sinks()
+            last_sinks, last_error = sinks, None
+            problems = judge(rows, sinks)
             if not problems:
-                return rows, document, attempts
+                return rows, document, sinks, attempts
             last_error = "; ".join(problems)
         except (RuntimeError, ValueError) as error:
             last_error = str(error)
@@ -172,10 +248,10 @@ def poll_formats(ssr_live, judge, timeout=POLL_SECONDS, interval=1.0):
     detail = last_error or "no endpoint data"
     raise PollError(
         f"endpoints did not reach the expected names within {timeout} seconds: {detail}",
-        last_rows, last_document, attempts)
+        last_rows, last_document, last_sinks, attempts)
 
 
-def phase(rows, document, attempts=None):
+def phase(rows, document, sinks=None, attempts=None):
     return {
         "attempts": attempts,
         "endpoints": [
@@ -183,6 +259,7 @@ def phase(rows, document, attempts=None):
              "device_desc": row.get("device_desc"), "friendly_name": row.get("friendly_name")}
             for row in rows
         ],
+        "sink_descriptions": {str(endpoint): name for endpoint, name in sorted((sinks or {}).items())},
         "host_formats": document,
     }
 
@@ -193,15 +270,20 @@ def main(argv=None):
     parser.add_argument("--summary", required=True, type=Path)
     args = parser.parse_args(argv)
 
-    empty_phase = phase([], None, 0)
+    empty_phase = phase([], None, {}, 0)
     result = {
         "phases": {"changed": dict(empty_phase), "restored": dict(empty_phase)},
+        "initial_device_desc": {},
         "original_registry": {},
         "problems": [],
     }
     problems = result["problems"]
     original = None
+    initial = {}
     try:
+        rows, _ = read_formats(args.ssr_live)
+        initial = _descriptions(rows)
+        result["initial_device_desc"] = {str(endpoint): name for endpoint, name in sorted(initial.items())}
         original = snapshot_values()
         result["original_registry"] = json_registry_snapshot(original)
         write_values({
@@ -209,12 +291,13 @@ def main(argv=None):
             2: {"present": True, "type": REG_SZ, "value": LONG_NAME},
         })
         result["restart_changed"] = restart_device(args.ssr_live)
-        rows, document, attempts = poll_formats(args.ssr_live, changed_name_problems)
-        result["phases"]["changed"] = phase(rows, document, attempts)
+        rows, document, sinks, attempts = poll_names(
+            args.ssr_live, lambda value, found: changed_name_problems(value, found, initial))
+        result["phases"]["changed"] = phase(rows, document, sinks, attempts)
     except PollError as error:
-        result["phases"]["changed"] = phase(error.rows, error.document, error.attempts)
+        result["phases"]["changed"] = phase(error.rows, error.document, error.sinks, error.attempts)
         problems.append(f"change phase: {error}")
-    except RuntimeError as error:
+    except (RuntimeError, ValueError) as error:
         problems.append(f"change phase: {error}")
     finally:
         if original is not None:
@@ -223,12 +306,13 @@ def main(argv=None):
             try:
                 result["restart_restored"] = restart_device(args.ssr_live)
                 if not restoration_errors:
-                    rows, document, attempts = poll_formats(
-                        args.ssr_live, lambda value: restored_name_problems(value, original))
-                    result["phases"]["restored"] = phase(rows, document, attempts)
+                    rows, document, sinks, attempts = poll_names(
+                        args.ssr_live,
+                        lambda value, found: restored_name_problems(value, found, original, initial))
+                    result["phases"]["restored"] = phase(rows, document, sinks, attempts)
             except PollError as error:
                 result["phases"]["restored"] = phase(
-                    error.rows, error.document, error.attempts)
+                    error.rows, error.document, error.sinks, error.attempts)
                 problems.append(f"restoration phase: {error}")
             except RuntimeError as error:
                 problems.append(f"restoration phase: {error}")
