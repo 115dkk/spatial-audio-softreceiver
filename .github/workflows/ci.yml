@@ -662,7 +662,13 @@ jobs:
           $password = ConvertTo-SecureString ("Aa1!" + [guid]::NewGuid().ToString('N')) -AsPlainText -Force
           New-LocalUser -Name $user -Password $password -PasswordNeverExpires -UserMayNotChangePassword | Out-Null
           Add-LocalGroupMember -Group 'Users' -Member $user
+          # vpk writes each package in the runner account's temp folder and
+          # moves it here, so the files keep that folder's ACL; reset them to
+          # inherit from the cycle folder, then grant the account on it.
+          icacls $cycle /reset /T /C /Q | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "icacls /reset failed ($LASTEXITCODE)" }
           icacls $cycle /grant "${user}:(OI)(CI)M" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "icacls /grant failed ($LASTEXITCODE)" }
           $credential = [pscredential]::new("$env:COMPUTERNAME\$user", $password)
           $pwsh = (Get-Command pwsh).Source
           $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$cycle\installer_cycle.ps1",
