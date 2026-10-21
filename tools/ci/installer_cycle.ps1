@@ -143,7 +143,13 @@ try {
         if (-not $env:LOCALAPPDATA) { throw 'LOCALAPPDATA is missing' }
         $script:installRoot = Join-Path $env:LOCALAPPDATA 'SpatialSoftReceiver'
         $script:appLog = Join-Path $env:LOCALAPPDATA 'Spatial SoftReceiver\app.log'
-        $script:shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Spatial SoftReceiver.lnk'
+        # A disposable account's first profile may not have its Start Menu
+        # folder yet; GetFolderPath returns '' for a missing folder unless told
+        # not to verify it. Velopack creates the folder with the shortcut.
+        $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs,
+            [Environment+SpecialFolderOption]::DoNotVerify)
+        if (-not $programs) { throw 'The Start Menu Programs folder has no path for this account' }
+        $script:shortcut = Join-Path $programs 'Spatial SoftReceiver.lnk'
         foreach ($path in @($installRoot, $shortcut, $uninstallKey,
             (Join-Path $env:LOCALAPPDATA 'Spatial SoftReceiver\restore-point.json'))) {
             if (Test-Path -LiteralPath $path) { throw "Pre-existing installation or restore point: $path" }
