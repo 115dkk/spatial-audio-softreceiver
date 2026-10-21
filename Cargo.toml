@@ -30,6 +30,8 @@ ssr-i18n = { path = "crates/ssr-i18n" }
 ssr-abi = { path = "crates/ssr-abi" }
 bitstream = { path = "crates/bitstream" }
 streamring = { path = "crates/streamring" }
+asio-proto = { path = "crates/asio-proto" }
+asio-sys = { path = "crates/asio-sys" }
 decode = { path = "crates/decode" }
 render = { path = "crates/render" }
 convolver = { path = "crates/convolver" }

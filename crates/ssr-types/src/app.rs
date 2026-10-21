@@ -192,6 +192,10 @@ pub enum Intent {
     OpenPluginEditor(u16),
     /// Whether an output kind applies upmixing (ADR 0035); on by default.
     SetUpmixApply(UpmixApply),
+    SetAsioEnabled(bool),
+    SetAsioLayout(AsioLayout),
+    /// Attenuates the system path while ASIO runs; 60 dB mutes it.
+    SetAsioSystemAttenuation(f32),
     Enable,
     Disable,
     StartDiagnosticRecording,
@@ -237,6 +241,55 @@ pub enum ProfileKind {
     Headphones,
     /// The listener's speakers, each with an optional room-correction FIR.
     Speakers,
+}
+
+/// The input layouts a DAW may send (ADR 0025), independent of the output.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub enum AsioLayout {
+    #[serde(rename = "2.0")]
+    Stereo,
+    #[serde(rename = "5.1")]
+    Surround51,
+    #[serde(rename = "7.1")]
+    Surround71,
+    #[default]
+    #[serde(rename = "7.1.4")]
+    Surround714,
+    #[serde(rename = "9.1.6")]
+    Surround916,
+}
+
+/// Saved ASIO entrance settings. Missing fields keep the original defaults.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+#[serde(default)]
+pub struct AsioSettings {
+    pub enabled: bool,
+    pub layout: AsioLayout,
+    /// Applied only while ASIO runs; 0 mixes normally and 60 mutes the system path.
+    pub system_attenuation_db: f32,
+}
+
+impl Default for AsioSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            layout: AsioLayout::default(),
+            system_attenuation_db: 0.0,
+        }
+    }
+}
+
+impl AsioSettings {
+    pub const MAX_SYSTEM_ATTENUATION_DB: f32 = 60.0;
+
+    pub fn is_valid(&self) -> bool {
+        self.system_attenuation_db.is_finite()
+            && (0.0..=Self::MAX_SYSTEM_ATTENUATION_DB).contains(&self.system_attenuation_db)
+    }
 }
 
 /// The speaker layouts the app offers: standard layouts with a Windows
@@ -336,6 +389,26 @@ impl SpeakerLayout {
         OutputLayout {
             channels: self.speakers().len() as u16,
             channel_mask,
+        }
+    }
+}
+
+impl AsioLayout {
+    pub const ALL: [Self; 5] = [
+        Self::Stereo,
+        Self::Surround51,
+        Self::Surround71,
+        Self::Surround714,
+        Self::Surround916,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Stereo => "2.0",
+            Self::Surround51 => "5.1",
+            Self::Surround71 => "7.1",
+            Self::Surround714 => "7.1.4",
+            Self::Surround916 => "9.1.6",
         }
     }
 }
@@ -555,6 +628,8 @@ pub struct Snapshot {
     pub profile: ProfileView,
     pub upmix: UpmixView,
     pub routing: RoutingView,
+    #[serde(default)]
+    pub asio: AsioSettings,
     pub engine: Option<EngineStatus>,
     /// Outputs the user may choose: active, and never our own endpoints.
     pub outputs: Vec<OutputChoice>,

@@ -49,13 +49,14 @@ const appRows = () => $$<HTMLTableRowElement>('[aria-labelledby="routing-apps-ti
 const otherRows = () => $$<HTMLTableRowElement>('[aria-labelledby="routing-others-title"] tbody tr');
 
 describe('the settings panels', () => {
-  it('stand after the language and before the update', () => {
+  it('stand in order, the ASIO input after the input per app', () => {
     mounted(fixture('ready'));
     expect(panelTitles()).toEqual([
       ko.settings.startup,
       ko.settings.language,
       ko.settings.outputPath,
       ko.settings.routing,
+      ko.asio,
       ko.settings.update,
       ko.settings.diagnostics,
     ]);

@@ -21,6 +21,7 @@ pub mod scene;
 pub mod scene_layout;
 pub mod status;
 
+pub use app::{AsioLayout, AsioSettings};
 pub use feeds::Feeds;
 pub use format::{BitstreamCodec, BitstreamFormat, PcmFormat, SampleType, SourceFormat};
 pub use layout::{Direction, DirectionId, DirectionView, Layout, LayoutError};
@@ -60,8 +61,8 @@ pub use scene_layout::{
     SceneLogEndpoint, SceneLogLine, SceneLogObject, SceneSource,
 };
 pub use status::{
-    ChainErrorCounts, ChainErrorKind, ClockStatus, ENGINE_ENDPOINTS, EndpointStatus, EngineFault,
-    EngineStatus, LatencyStats, SceneObject, UnderrunSnapshot, UnsupportedReason,
+    AsioStatus, ChainErrorCounts, ChainErrorKind, ClockStatus, ENGINE_ENDPOINTS, EndpointStatus,
+    EngineFault, EngineStatus, LatencyStats, SceneObject, UnderrunSnapshot, UnsupportedReason,
 };
 
 /// The fixed scene sample rate every decoder produces.

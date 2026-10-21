@@ -154,6 +154,30 @@ fn dump_session_report_keeps_the_live_cli_key_contract() {
 }
 
 #[test]
+fn snapshot_keeps_the_asio_settings_used_at_start_without_a_client() {
+    let mut config = config();
+    config.engine.asio = ssr_types::AsioSettings {
+        enabled: false,
+        layout: ssr_types::AsioLayout::Surround916,
+        system_attenuation_db: 60.0,
+    };
+    let expected = config.engine.asio;
+    let session = Session::start(
+        config,
+        capture(),
+        NullOpener {
+            rate: 48_000,
+            period_frames: 480,
+        },
+        None,
+    )
+    .unwrap();
+    assert_eq!(session.snapshot().asio, expected);
+    assert!(session.snapshot().engine.unwrap().asio.is_none());
+    session.stop().unwrap();
+}
+
+#[test]
 fn snapshot_is_running_without_a_fault() {
     let session = Session::start(
         config(),

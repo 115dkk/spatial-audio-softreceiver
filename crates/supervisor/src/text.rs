@@ -37,6 +37,8 @@ pub enum Message {
     CorrectionUnsupported { channels: u16 },
     LayoutUnsupported { layout: String, channels: u16 },
     GainOutOfRange,
+    AsioSystemAttenuationOutOfRange,
+    AsioUnavailable { detail: String },
     DirectionMissing,
     StoredOutputMissing { name: String },
     ProfileFileReadFailed { detail: String },
@@ -87,6 +89,7 @@ impl Message {
         use ssr_i18n::supervisor as text;
 
         match self {
+            Self::AsioUnavailable { detail } => text::asio_unavailable(language, detail),
             Self::EngineStopped { detail } => text::engine_stopped(language, detail),
             Self::OutputDisconnected { detail } => text::output_disconnected(language, detail),
             Self::CaptureDisconnected => text::capture_disconnected(language).into(),
@@ -139,6 +142,9 @@ impl Message {
                 text::layout_unsupported(language, layout, channels)
             }
             Self::GainOutOfRange => text::gain_out_of_range(language).into(),
+            Self::AsioSystemAttenuationOutOfRange => {
+                text::asio_system_attenuation_out_of_range(language).into()
+            }
             Self::DirectionMissing => text::direction_missing(language).into(),
             Self::StoredOutputMissing { name } => text::stored_output_missing(language, name),
             Self::ProfileFileReadFailed { detail } => {

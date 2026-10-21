@@ -483,6 +483,11 @@ impl OutputSink for WasapiSink {
         self.format
     }
 
+    fn latency_frames(&self) -> u32 {
+        // Fixed for this opened stream; instantaneous padding is not a latency contract.
+        self.buffer_frames.min(u32::MAX as usize) as u32
+    }
+
     fn restarts(&self) -> u64 {
         self.restarts
     }
@@ -492,6 +497,13 @@ impl OutputSink for WasapiSink {
     }
 
     fn next_period(&mut self, fill: &mut dyn FnMut(&mut [f32])) -> Result<u64, OutputError> {
+        self.next_period_with_restarts(&mut |samples, _| fill(samples))
+    }
+
+    fn next_period_with_restarts(
+        &mut self,
+        fill: &mut dyn FnMut(&mut [f32], u64),
+    ) -> Result<u64, OutputError> {
         if !self.running {
             self.start()?;
         }
@@ -503,7 +515,7 @@ impl OutputSink for WasapiSink {
             self.wait_for_space()?;
         }
         self.samples.fill(0.0);
-        fill(&mut self.samples);
+        fill(&mut self.samples, self.restarts);
         self.encoding.convert(&self.samples, &mut self.bytes);
         let (position, clock_qpc) = self.clock.get_position().map_err(output_error)?;
         let played_frames = self.played_frames(position);

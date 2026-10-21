@@ -323,6 +323,15 @@ impl OutputState {
     }
 
     pub(super) fn fill(&mut self, buffer: &mut [f32]) {
+        self.fill_system(buffer);
+        self.apply_mute(buffer);
+        if let Some(frame) = buffer.chunks_exact(self.channels).last() {
+            self.last_output[..self.channels].copy_from_slice(frame);
+            self.have_last_output = frame.iter().any(|sample| *sample != 0.0);
+        }
+    }
+
+    pub(super) fn fill_system(&mut self, buffer: &mut [f32]) {
         // Read once, before anything about the ring: every block capture
         // published before it finished is then visible to this period, and
         // every decision about how the period ends uses this reading. Capture
@@ -342,7 +351,6 @@ impl OutputState {
         let scene_rate = self.shared.scene_rate.load(Ordering::Acquire);
         let mode = ClockMode::from_u32(self.shared.clock_mode.load(Ordering::Acquire));
         if scene_rate == 0 {
-            self.apply_mute(buffer);
             return;
         }
         if !self.scene_started {
@@ -364,7 +372,6 @@ impl OutputState {
                     ClockMode::Asrc => self.asrc.frames_needed(),
                 };
                 let Some(excess) = self.priming_excess(scene_rate, take) else {
-                    self.apply_mute(buffer);
                     return;
                 };
                 self.discard(excess);
@@ -477,7 +484,6 @@ impl OutputState {
         }
         self.crossing.refresh_markers();
         self.period_trough_frames = self.crossing.queued_frames(self.channels);
-        self.apply_mute(buffer);
         if let Some(frame) = buffer.chunks_exact(self.channels).last() {
             self.last_output[..self.channels].copy_from_slice(frame);
             self.have_last_output = frame.iter().any(|sample| *sample != 0.0);
@@ -653,7 +659,7 @@ impl OutputState {
         }
     }
 
-    fn apply_mute(&mut self, buffer: &mut [f32]) {
+    pub(super) fn apply_mute(&mut self, buffer: &mut [f32]) {
         let target = if self.shared.mute.load(Ordering::Acquire) {
             0.0_f32
         } else {
@@ -812,7 +818,18 @@ impl OutputState {
         self.asrc.flush(buffer);
         self.apply_drain_fade_in(buffer);
         self.apply_asrc_drain_fade(buffer);
-        self.apply_mute(buffer);
+    }
+
+    pub(super) fn fill_remaining_tail(&mut self, buffer: &mut [f32]) {
+        if self.asrc_tail_pending && self.tail_periods == 0 {
+            self.plan_sent_period_tail();
+        }
+        if self.tail_periods != 0 {
+            self.fill_tail_period(buffer);
+            self.tail_periods -= 1;
+        } else {
+            buffer.fill(0.0);
+        }
     }
 
     /// Writes what the resampler still holds once capture has ended, then
@@ -829,7 +846,10 @@ impl OutputState {
             self.plan_sent_period_tail();
         }
         for _ in 0..self.tail_periods {
-            sink.next_period(&mut |buffer| self.fill_tail_period(buffer))?;
+            sink.next_period(&mut |buffer| {
+                self.fill_tail_period(buffer);
+                self.apply_mute(buffer);
+            })?;
             self.shared.output_periods.fetch_add(1, Ordering::Relaxed);
             self.tail_periods -= 1;
         }
@@ -847,12 +867,16 @@ impl OutputState {
         self.tail_periods != 0
     }
 
+    #[cfg(test)]
     pub(super) fn write_reopen_tail_period<S: OutputSink>(
         &mut self,
         sink: &mut S,
     ) -> Result<bool, OutputError> {
         debug_assert!(self.tail_periods != 0);
-        sink.next_period(&mut |buffer| self.fill_tail_period(buffer))?;
+        sink.next_period(&mut |buffer| {
+            self.fill_tail_period(buffer);
+            self.apply_mute(buffer);
+        })?;
         self.shared.output_periods.fetch_add(1, Ordering::Relaxed);
         self.tail_periods = self.tail_periods.saturating_sub(1);
         Ok(self.tail_periods == 0)

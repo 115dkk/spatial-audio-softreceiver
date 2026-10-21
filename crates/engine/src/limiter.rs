@@ -72,6 +72,21 @@ impl Limiter {
     }
 
     pub(crate) fn process(&mut self, samples: &mut [f32], channels: usize, frames: usize) {
+        self.process_strided(samples, channels, frames, frames, 1);
+    }
+
+    pub(crate) fn process_interleaved(&mut self, samples: &mut [f32], channels: usize) {
+        self.process_strided(samples, channels, samples.len() / channels, 1, channels);
+    }
+
+    fn process_strided(
+        &mut self,
+        samples: &mut [f32],
+        channels: usize,
+        frames: usize,
+        channel_stride: usize,
+        frame_stride: usize,
+    ) {
         debug_assert_eq!(samples.len(), channels * frames);
         for frame in 0..frames {
             let output_gain = if self.gain_ramp_frames == 0 {
@@ -83,7 +98,7 @@ impl Limiter {
             };
             let mut peak = 0.0_f32;
             for channel in 0..channels {
-                let index = channel * frames + frame;
+                let index = channel * channel_stride + frame * frame_stride;
                 let gained = finite_or_zero(samples[index] * output_gain);
                 samples[index] = gained;
                 peak = peak.max(gained.abs());
@@ -110,16 +125,23 @@ impl Limiter {
             };
             if applied != 1.0 {
                 for channel in 0..channels {
-                    let index = channel * frames + frame;
+                    let index = channel * channel_stride + frame * frame_stride;
                     // The clamp only removes rounding above the ceiling.
                     samples[index] = (samples[index] * applied).clamp(-self.ceiling, self.ceiling);
                 }
             }
         }
         if self.gain_ramp_frames != 0 {
-            self.gain = self.gain_target;
-            self.gain_from = self.gain_target;
-            self.gain_ramp_frames = 0;
+            let advanced = frames.min(self.gain_ramp_frames);
+            self.gain = self.gain_from
+                + (self.gain_target - self.gain_from)
+                    * (advanced as f32 / self.gain_ramp_frames as f32);
+            self.gain_from = self.gain;
+            self.gain_ramp_frames -= advanced;
+            if self.gain_ramp_frames == 0 {
+                self.gain = self.gain_target;
+                self.gain_from = self.gain_target;
+            }
         }
     }
 }
@@ -161,6 +183,40 @@ mod tests {
             limiter.process(&mut samples, 2, frames);
             prop_assert!(samples.iter().all(|sample| sample.is_finite() && sample.abs() <= ceiling));
         }
+    }
+
+    #[test]
+    fn interleaved_frames_link_channels_not_adjacent_times() {
+        let mut interleaved = [2.0, 0.25, 0.125, -0.5, 0.25, 0.125];
+        let mut planar = [2.0, 0.125, 0.25, 0.25, -0.5, 0.125];
+        let mut a = Limiter::new();
+        let mut b = Limiter::new();
+        a.reset(96_000, 1.0, 0.9);
+        b.reset(96_000, 1.0, 0.9);
+        a.process_interleaved(&mut interleaved, 2);
+        b.process(&mut planar, 2, 3);
+        for frame in 0..3 {
+            assert_eq!(interleaved[frame * 2], planar[frame]);
+            assert_eq!(interleaved[frame * 2 + 1], planar[frame + 3]);
+        }
+    }
+
+    #[test]
+    fn gain_ramp_survives_short_partition_boundaries() {
+        let mut full = [0.25; 480];
+        let mut split = full;
+        let mut a = Limiter::new();
+        let mut b = Limiter::new();
+        a.reset(48_000, 1.0, 1.0);
+        b.reset(48_000, 1.0, 1.0);
+        a.set_gain(0.5, 480);
+        b.set_gain(0.5, 480);
+        a.process(&mut full, 1, 480);
+        for hop in split.chunks_mut(16) {
+            b.process(hop, 1, 16);
+        }
+        assert!(full.iter().zip(split).all(|(a, b)| (*a - b).abs() < 1e-6));
+        assert_eq!(a.gain, b.gain);
     }
 
     #[test]

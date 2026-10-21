@@ -23,6 +23,8 @@ pub mod driver_store;
 pub mod identities;
 pub mod removal;
 
+#[cfg(any(windows, test))]
+mod asio_registration;
 #[cfg(windows)]
 mod endpoints;
 #[cfg(windows)]

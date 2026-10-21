@@ -517,6 +517,91 @@ jobs:
           ./tools/ci/restart-stress.ps1 -SsrLive target/release/ssr-live.exe
           -Fixtures (Join-Path $env:RUNNER_TEMP 'fx') -Symbols (Resolve-Path target/release).Path
 
+      # The ASIO entrance (ADR 0025). asio_probe loads the DLL the release
+      # ships the way a DAW does (DllGetClassObject, IASIO, buffers, start)
+      # and counts its callbacks; tools/ci/asio_probe_check.py judges each run.
+      # 1. The DLL alone: its stand-in clock keeps the callbacks at the rate's
+      #    pace and nothing takes the frames.
+      # 2. ssr-live first, the DAW joining: the engine takes the frames on the
+      #    cable's clock, and the DLL never falls back to its own.
+      # 3. The DAW first, ssr-live joining and then killed: the callbacks keep
+      #    their pace throughout. The engine owns the shared control block, so
+      #    once it is killed the probe has no frame counters left to read.
+      # This runs last of the device stages, after the soaks, so the killed
+      # engine cannot disturb them.
+      - name: ASIO entrance (ssrasio.dll loaded as a DAW does, fed into ssr-live)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          status=0
+          asio="$RUNNER_TEMP/asio"
+          mkdir -p "$asio/dll"
+          # The probe's feature also builds the probe into the library, so the
+          # DLL under test is the plain build, copied aside first.
+          cargo build --locked --release -p ssr-asio || exit 1
+          cp target/release/ssrasio.dll "$asio/dll/ssrasio.dll"
+          cargo build --locked --release -p ssr-asio --features probe --example asio_probe || exit 1
+          dll="$asio/dll/ssrasio.dll"
+          probe=target/release/examples/asio_probe.exe
+          python -m pip install --quiet pefile==2024.8.26
+          python - "$dll" <<'EOF' || status=1
+          import sys
+          import pefile
+          pe = pefile.PE(sys.argv[1])
+          names = {symbol.name.decode() for symbol in pe.DIRECTORY_ENTRY_EXPORT.symbols if symbol.name}
+          print("exports:", ", ".join(sorted(names)))
+          missing = sorted({"DllGetClassObject", "DllCanUnloadNow"} - names)
+          sys.exit(f"ssrasio.dll does not export {missing}" if missing else 0)
+          EOF
+          # VB-CABLE holds no exclusive period under ~16 ms (soak.ps1): at its
+          # minimum the stall guard restarted the output 11 times a second, and
+          # each restart's new generation dropped the DAW's frames. 20 ms, as
+          # the loopbacks and soaks, against a 512-frame DAW buffer also keeps
+          # the two periods out of step.
+          live=(target/release/ssr-live.exe play --asio --silence --profile "$RUNNER_TEMP/fx/profile.toml" --output "VB-Audio Virtual Cable" --period-ms 20)
+
+          echo "::group::1. the DLL alone"
+          "$probe" "$dll" --seconds 3 --json "$asio/alone.json" || status=1
+          python tools/ci/asio_probe_check.py "$asio/alone.json" --engine absent || status=1
+          echo "::endgroup::"
+
+          echo "::group::2. ssr-live first, the DAW joining"
+          "${live[@]}" --seconds 12 --report "$asio/engine-first-report.json" > "$asio/engine-first.log" 2>&1 &
+          engine=$!
+          sleep 3
+          "$probe" "$dll" --seconds 5 --json "$asio/engine-first.json" || status=1
+          wait $engine || { echo "::error::ssr-live failed with the DAW attached"; cat "$asio/engine-first.log"; status=1; }
+          python tools/ci/asio_probe_check.py "$asio/engine-first.json" --engine attached --no-clock-fault \
+            --engine-report "$asio/engine-first-report.json" || status=1
+          echo "::endgroup::"
+
+          echo "::group::3. the DAW first, ssr-live joining and then killed"
+          "$probe" "$dll" --seconds 10 --json "$asio/daw-first.json" &
+          daw=$!
+          sleep 2
+          "${live[@]}" --seconds 60 > "$asio/daw-first.log" 2>&1 &
+          sleep 5
+          taskkill //F //IM ssr-live.exe || status=1
+          wait $daw || status=1
+          python tools/ci/asio_probe_check.py "$asio/daw-first.json" --engine any || status=1
+          echo "::endgroup::"
+
+          {
+            echo "## ASIO entrance (${{ matrix.os }})"
+            echo
+            echo "| run | accepted | callbacks | rate | frames | channels | loaded | completed | stand-in clock | resets |"
+            echo "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+            for run in alone engine-first daw-first; do
+              jq -r --arg run "$run" '"| \($run) | \(.accepted) | \(.callbacks) | \(.sample_rate) | \(.buffer_frames) | \(.output_channels) | \(.loaded_frames) | \(.completed_frames) | \(.clock_fault_observed) | \(.reset_requests) |"' "$asio/$run.json" 2>/dev/null \
+                || echo "| $run | no report | | | | | | | | |"
+            done
+            echo
+            jq -r '"engine-first output restarts: \(.output_restarts)"' "$asio/engine-first-report.json" 2>/dev/null \
+              || echo "engine-first: no engine report"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
       - name: Crash stacks (cdb on any dump)
         if: always()
         shell: pwsh
@@ -534,8 +619,11 @@ jobs:
             ${{ runner.temp }}/soak-*.json
             ${{ runner.temp }}/soak-*.log
             ${{ runner.temp }}/dumps
+            ${{ runner.temp }}/asio/*.json
+            ${{ runner.temp }}/asio/*.log
             target/release/ssr_live.pdb
             target/release/ssr_replay.pdb
+            target/release/ssrasio.pdb
           if-no-files-found: ignore
           retention-days: 14
 
@@ -616,7 +704,7 @@ jobs:
       - uses: ./.github/actions/ui-dist
 
       - name: Build the app, the guard, the setup tool and the plugin host
-        run: cargo build --release --locked -p spatial-softreceiver --features spatial-softreceiver/updater -p ssr-guard -p ssr-setup -p ssr-plughost
+        run: cargo build --release --locked -p spatial-softreceiver --features spatial-softreceiver/updater -p ssr-guard -p ssr-setup -p ssr-plughost -p ssr-asio
 
       - name: Stage the app folder
         shell: pwsh
@@ -624,6 +712,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force stage/profiles | Out-Null
           Copy-Item target/release/spatial-softreceiver.exe, target/release/ssr-guard.exe, target/release/ssr-setup.exe, target/release/ssr-plughost.exe, LICENSE stage/
+          # The same app folder as release.yml stages, the ASIO DLL included.
+          Copy-Item target/release/ssrasio.dll stage/
+          Copy-Item crates/asio-sys/LICENSE stage/LICENSE-GPL-3.0.txt
           Copy-Item apps/spatial-softreceiver/icons/icon.ico stage/spatial-softreceiver.ico
           Copy-Item docs/profiles/*.toml stage/profiles/
 
@@ -841,3 +932,23 @@ jobs:
 
       - name: cargo deny check
         run: cargo deny --all-features check
+
+  # asio-sys carries the SDK's definitions by hand (ADR 0025); the SDK itself
+  # never enters the repository. This downloads the pinned archive into an
+  # empty folder and compares those definitions with its headers without
+  # extracting or compiling anything (tools/ci/check-asio-sdk.py).
+  asio-sdk:
+    name: ASIO SDK definitions match the pinned SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download the pinned SDK and compare
+        run: |
+          set -euo pipefail
+          sdk="$RUNNER_TEMP/asio-sdk"
+          mkdir -p "$sdk"
+          url=$(python3 -I -c 'import ast, sys; tree = ast.parse(open(sys.argv[1], encoding="utf-8").read()); print(next(node.value.value for node in tree.body if isinstance(node, ast.Assign) and node.targets[0].id == "URL"))' tools/ci/check-asio-sdk.py)
+          sha=$(python3 -I -c 'import ast, sys; tree = ast.parse(open(sys.argv[1], encoding="utf-8").read()); print(next(node.value.value for node in tree.body if isinstance(node, ast.Assign) and node.targets[0].id == "SHA256"))' tools/ci/check-asio-sdk.py)
+          curl --fail --location --retry 4 --retry-delay 5 --max-filesize 33554432 -o "$sdk/sdk.zip" "$url"
+          python3 -I tools/ci/check-asio-sdk.py --archive "$sdk/sdk.zip" --sha256 "$sha"

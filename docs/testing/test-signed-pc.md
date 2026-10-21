@@ -903,6 +903,30 @@ pwsh -NoProfile -File .\tools\ci\installer_cycle.ps1 -Releases '<릴리스 산�
 - 6단계에서 재생 중인 앱마다 실행 파일과 지금 입구가 보임
 - 독점이나 비트스트림을 여는 앱이 이 설정을 따르지 않거나, 앱 안에서 장치를 직접 고르는 플레이어가 따르지 않으면 앱 이름과 그 앱의 출력 설정을 결과에 적습니다. "이 PC에서는 앱의 출력을 자동으로 정할 수 없습니다."가 뜨면 Windows 빌드 번호를 적습니다
 
+### 10-2-4. ASIO 입구 (ADR 0025)
+
+처음 설정 마법사의 드라이버 설치(관리자 작업 `ssr-setup install`)가 ASIO 장치 `Spatial SoftReceiver`도 등록합니다. DAW(Reaper, Cubase, Studio One 같은 음악 작업 프로그램)의 오디오 장치에서 이 ASIO 장치를 고르면, DAW의 출력이 이 앱의 헤드폰 또는 스피커 렌더를 거쳐 시스템 소리와 함께 재생됩니다. 64비트 DAW만 됩니다. 샘플레이트는 지금 출력 장치의 레이트 하나만, 버퍼는 64~2048프레임의 2의 거듭제곱만 받습니다.
+
+1. 10-1의 처음 설정을 마친 뒤 관리자 PowerShell에서 `reg query "HKLM\SOFTWARE\ASIO\Spatial SoftReceiver"`와 `Test-Path "$env:ProgramFiles\Spatial SoftReceiver\ASIO\ssrasio.dll"`을 돌립니다.
+2. 앱을 켜고, 설정 화면의 'ASIO 입구' 패널에서 켜져 있는지 확인하고 DAW 출력 배치를 고릅니다(기본 7.1.4).
+3. DAW의 오디오 설정에서 ASIO 장치 `Spatial SoftReceiver`를 고르고, 버퍼를 128, 256, 512프레임으로 바꿔 가며 프로젝트를 재생합니다. 채널마다 따로 소리를 보내 봅니다. 상태 화면의 ASIO 줄을 봅니다.
+4. DAW가 재생하는 동안 브라우저나 게임의 소리도 재생합니다. 'ASIO 입구' 패널에서 시스템 소리를 줄이는 슬라이더를 움직여 봅니다.
+5. 재생 중에 패널에서 배치를 바꿉니다.
+6. 재생 중에 앱을 트레이의 '종료'로 끝냈다가 다시 실행합니다. 이어서 앱을 끈 채로 DAW만 열어 둡니다.
+7. 출력 장치와 다른 레이트(예: 출력이 48 kHz일 때 44.1 kHz)의 프로젝트를 엽니다.
+8. 같은 ASIO 장치를 고른 DAW를 하나 더 엽니다(DAW가 하나뿐이면 같은 DAW를 두 번 실행할 수 있는지 봅니다).
+9. DAW를 모두 닫고, 관리자 PowerShell에서 도구 zip의 `ssr-live.exe asio-probe --dll "$env:ProgramFiles\Spatial SoftReceiver\ASIO\ssrasio.dll" --seconds 5 --json asio-probe.json`을 앱을 켠 채로 한 번, 끈 채로 한 번 돌립니다.
+
+**합격 기준**
+- 1단계에서 레지스트리 키의 `CLSID`가 보이고 DLL 파일이 있음. 없으면 `%LOCALAPPDATA%\Spatial SoftReceiver\setup-result.json`의 `asio_registration`과 `asio_error`를 결과에 적습니다
+- 3단계에서 DAW가 장치를 열고 배치의 채널 수(7.1.4면 12개)를 보이며, 각 채널의 소리가 그 방향에서 들림. 버퍼를 바꿔도 끊기지 않고, 상태 화면에 DAW 실행 파일, 샘플레이트, 버퍼, 배치가 보이며 언더런 수가 늘지 않음. DAW가 보고하는 출력 지연을 결과에 적습니다
+- 4단계에서 두 소리가 함께 들리고, 슬라이더를 끝까지 올리면 시스템 소리만 들리지 않음
+- 5단계에서 DAW가 장치를 다시 열어 새 채널 수로 이어 재생함(DAW가 다시 열기 요청을 무시하면 DAW 이름을 적습니다)
+- 6단계에서 앱이 끝나도 DAW가 멈추거나 죽지 않음(소리만 끊김). 앱을 다시 실행하면 몇 초 안에 소리가 다시 남. 앱이 꺼져 있는 동안에도 DAW가 장치를 열 수 있음
+- 7단계에서 DAW가 그 레이트를 쓸 수 없다고 알리거나 출력 장치의 레이트로 바꿈. DAW가 멈추지 않음
+- 8단계에서 둘째 DAW는 장치를 열지 못하고 `Another app is using the ASIO input.`을 보임(ASIO 오류 문장은 영어만 됩니다). 첫째 DAW는 그대로 재생함
+- 9단계의 두 번 모두 `"accepted":true`이고, 앱을 켠 쪽은 `loaded_frames`가 0보다 큼. 결과에 두 `asio-probe.json`을 붙입니다
+
 ### 10-3. 끄기와 종료가 역할을 돌려주는지
 
 - 상태 화면의 '끄기': 세 역할이 켜기 전의 장치로 돌아가고 소리가 그 장치로 바로 남.

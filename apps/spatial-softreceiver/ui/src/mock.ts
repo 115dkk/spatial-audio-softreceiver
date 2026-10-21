@@ -38,7 +38,7 @@ import type {
 } from './bindings';
 import { en as catalogEn, ko as catalogKo } from './catalog';
 import { fixture, fixtureNames } from './fixtures';
-import { ENTRANCES, isAppExecutable } from './guard';
+import { ASIO_ATTENUATION_MAX, ASIO_DEFAULTS, ENTRANCES, isAppExecutable } from './guard';
 import { text } from './text';
 
 /** What the app shell reads from the OS: login autostart and the updater. */
@@ -130,6 +130,10 @@ const say = {
   correctionReadFailed: (detail: string): Message =>
     message(catalogKo.supervisor.correction_read_failed(detail), catalogEn.supervisor.correction_read_failed(detail)),
   gainOutOfRange: message(catalogKo.supervisor.gain_out_of_range, catalogEn.supervisor.gain_out_of_range),
+  asioSystemAttenuationOutOfRange: message(
+    catalogKo.supervisor.asio_system_attenuation_out_of_range,
+    catalogEn.supervisor.asio_system_attenuation_out_of_range,
+  ),
   directionMissing: message(catalogKo.supervisor.direction_missing, catalogEn.supervisor.direction_missing),
   storedOutputMissing: (name: string): Message =>
     message(catalogKo.supervisor.stored_output_missing(name), catalogEn.supervisor.stored_output_missing(name)),
@@ -998,6 +1002,24 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
         return profileOpen ? clearCorrection() : refused();
       case 'set_gain':
         return profileOpen ? setGain(intent.value) : refused();
+      case 'set_asio_enabled':
+        if (!profileOpen) return refused();
+        state.asio ??= { ...ASIO_DEFAULTS };
+        state.asio.enabled = intent.value;
+        return done;
+      case 'set_asio_layout':
+        if (!profileOpen) return refused();
+        state.asio ??= { ...ASIO_DEFAULTS };
+        state.asio.layout = intent.value;
+        return done;
+      case 'set_asio_system_attenuation':
+        if (!profileOpen) return refused();
+        if (!Number.isFinite(intent.value) || intent.value < 0 || intent.value > ASIO_ATTENUATION_MAX) {
+          return failed(say.asioSystemAttenuationOutOfRange, 'none');
+        }
+        state.asio ??= { ...ASIO_DEFAULTS };
+        state.asio.system_attenuation_db = intent.value;
+        return done;
       case 'set_upmixer':
         return profileOpen ? setUpmixer(intent.value) : refused();
       case 'choose_plugin':

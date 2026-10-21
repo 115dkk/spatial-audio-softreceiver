@@ -211,6 +211,9 @@ pub struct TaskResult {
     pub error: Option<String>,
     /// The failing step's HRESULT, CONFIGRET or exit code.
     pub code: Option<i32>,
+    /// Optional ASIO step: registered, skipped_no_dll, failed, or removed.
+    pub asio_registration: Option<String>,
+    pub asio_error: Option<String>,
 }
 
 impl TaskResult {
@@ -221,6 +224,8 @@ impl TaskResult {
             message: message.into(),
             error: None,
             code: None,
+            asio_registration: None,
+            asio_error: None,
         }
     }
 
@@ -231,6 +236,8 @@ impl TaskResult {
             message: String::new(),
             error: Some(error.into()),
             code,
+            asio_registration: None,
+            asio_error: None,
         }
     }
 
@@ -253,6 +260,14 @@ impl TaskResult {
         if let Some(code) = self.code {
             let _ = write!(line, ",\"code\":{code}");
         }
+        if let Some(status) = &self.asio_registration {
+            line.push_str(",\"asio_registration\":");
+            push_json_string(&mut line, status);
+        }
+        if let Some(error) = &self.asio_error {
+            line.push_str(",\"asio_error\":");
+            push_json_string(&mut line, error);
+        }
         line.push('}');
         line
     }
@@ -271,6 +286,10 @@ impl TaskResult {
                 "message" => result.message = value.string("message")?,
                 "error" => result.error = value.optional_string("error")?,
                 "code" => result.code = value.optional_code()?,
+                "asio_registration" => {
+                    result.asio_registration = value.optional_string("asio_registration")?
+                }
+                "asio_error" => result.asio_error = value.optional_string("asio_error")?,
                 _ => {}
             }
         }
@@ -756,6 +775,8 @@ mod tests {
                     "SetupDiCallClassInstaller(DIF_REMOVE): 0x800F0203 공간 소프트리시버 🎧".into(),
                 ),
                 code: Some(0x800F_0203_u32 as i32),
+                asio_registration: Some("failed".into()),
+                asio_error: Some("asio_copy: sharing violation".into()),
             },
             TaskResult::failure("no device", None),
             TaskResult::failure("ctrl \u{1} \u{7f}", Some(i32::MAX)),

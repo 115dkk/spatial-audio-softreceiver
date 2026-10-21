@@ -40,6 +40,10 @@ const NAMES: &[&str] = &[
     "ready-start-failed",
     "ready-kernel-streaming",
     "ready-routing-unavailable",
+    "running-asio",
+    "running-asio-clock-fault",
+    "running-asio-fault",
+    "ready-asio-off",
     "quit",
 ];
 
@@ -70,6 +74,7 @@ fn expected(name: &str, output_name: &str) -> Expected {
         | "ready"
         | "ready-kernel-streaming"
         | "ready-routing-unavailable"
+        | "ready-asio-off"
         | "quit" => none(),
         "setup-unsupported" => Expected {
             error: Some((
@@ -121,7 +126,17 @@ fn expected(name: &str, output_name: &str) -> Expected {
             default_profile: false,
             ..none()
         },
-        "running-reconnecting" => Expected {
+        "running-reconnecting" | "running-asio" | "running-asio-clock-fault" => Expected {
+            default_profile: false,
+            ..none()
+        },
+        // What tick() notes once when the engine's ASIO input reports a
+        // fault: the transport's error as the engine words it.
+        "running-asio-fault" => Expected {
+            notes: vec![Message::AsioUnavailable {
+                detail: engine::asio::AsioTransportError::Transport("owner_exists".into())
+                    .to_string(),
+            }],
             default_profile: false,
             ..none()
         },

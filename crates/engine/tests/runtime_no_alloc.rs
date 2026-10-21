@@ -283,6 +283,7 @@ fn run_no_alloc(
             let armed = match section {
                 RtSection::Capture => hook_processed.load(Ordering::Acquire) >= WARMUP,
                 RtSection::Output => hook_periods.load(Ordering::Acquire) >= WARMUP,
+                RtSection::Asio => true,
             };
             if armed {
                 assert_no_alloc::assert_no_alloc(work);
@@ -565,6 +566,7 @@ fn ddp_capture_section_does_not_allocate() {
             let armed = match section {
                 RtSection::Capture => hook_processed.load(Ordering::Acquire) >= 1,
                 RtSection::Output => hook_periods.load(Ordering::Acquire) >= WARMUP,
+                RtSection::Asio => true,
             };
             if armed {
                 assert_no_alloc::assert_no_alloc(work);
@@ -677,6 +679,7 @@ fn scene_and_test_tone_realtime_paths_do_not_allocate() {
                 let armed = match section {
                     RtSection::Capture => hook_processed.load(Ordering::Acquire) >= 1,
                     RtSection::Output => hook_periods.load(Ordering::Acquire) >= WARMUP,
+                    RtSection::Asio => true,
                 };
                 if armed {
                     assert_no_alloc::assert_no_alloc(work);
@@ -783,6 +786,7 @@ fn upmixer_changes_are_drained_without_allocating() {
             let armed = match section {
                 RtSection::Capture => hook_processed.load(Ordering::Acquire) >= 1,
                 RtSection::Output => hook_periods.load(Ordering::Acquire) >= WARMUP,
+                RtSection::Asio => true,
             };
             if armed {
                 assert_no_alloc::assert_no_alloc(work);

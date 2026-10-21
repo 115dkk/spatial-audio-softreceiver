@@ -264,7 +264,13 @@
       }
     ]
   },
+  "asio": {
+    "enabled": true,
+    "layout": "7.1.4",
+    "system_attenuation_db": 0.0
+  },
   "engine": {
+    "asio": null,
     "directions": [
       {
         "id": 0,

@@ -25,6 +25,7 @@ use windows::Win32::Foundation::PROPERTYKEY;
 use windows::Win32::Media::Audio::IMMDevice;
 use windows::core::GUID;
 
+use crate::asio_registration::{self, Bundle, MachineRegistry};
 use crate::driver_store::{self, DriverPackage};
 use crate::endpoints::{OurEndpoint, our_endpoints};
 use crate::identities::{self, CURRENT, Package};
@@ -171,6 +172,53 @@ fn endpoint_list(endpoints: &[u16]) -> String {
 
 // ---------------------------------------------------------------- install, repair
 
+fn asio_destination() -> Result<std::path::PathBuf, Failure> {
+    let root = std::env::var_os("ProgramFiles")
+        .ok_or_else(|| Failure::new("asio_program_files_missing"))?;
+    let root = Path::new(&root);
+    if !root.is_absolute() {
+        return Err(Failure::new("asio_program_files_relative"));
+    }
+    Ok(asio_registration::installed_path(root))
+}
+
+fn install_asio(result: &mut TaskResult) {
+    let attempt = || -> Result<bool, Failure> {
+        let setup = std::env::current_exe()
+            .map_err(|error| Failure::new(format!("asio_bundle: {error}")))?;
+        let source = match Bundle::from_setup_exe(&setup) {
+            Ok(bundle) => bundle,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(Failure::new(format!("asio_bundle: {error}"))),
+        };
+        let installed = source
+            .copy_to(&asio_destination()?)
+            .map_err(|error| Failure::new(format!("asio_copy: {error}")))?;
+        register_asio(&installed)?;
+        Ok(true)
+    };
+    match attempt() {
+        Ok(true) => result.asio_registration = Some("registered".into()),
+        Ok(false) => result.asio_registration = Some("skipped_no_dll".into()),
+        Err(error) => {
+            result.asio_registration = Some("failed".into());
+            result.asio_error = Some(error.error);
+        }
+    }
+}
+
+fn register_asio(bundle: &Bundle) -> Result<(), Failure> {
+    asio_registration::register(&mut MachineRegistry, bundle).map_err(|error| {
+        let mut failure = Failure::from(error.cause).context("asio_registration");
+        for rollback in error.rollback {
+            failure
+                .error
+                .push_str(&format!("; asio_rollback: {rollback}"));
+        }
+        failure
+    })
+}
+
 fn install(inf: &Path, cert: Option<&Path>) -> Result<TaskResult, Failure> {
     if let Some(node) = devnodes(true)?.first() {
         return Err(Failure::new(format!(
@@ -190,12 +238,11 @@ fn install(inf: &Path, cert: Option<&Path>) -> Result<TaskResult, Failure> {
     if !reboot_required {
         apply_policy_to_installed(&node)?;
     }
-    // Until the reboot the endpoints do not exist; the host then reports the
-    // policy missing and the supervisor asks for a repair, which applies it.
-    Ok(TaskResult::success(
-        format!("installed {}", node.instance_id),
-        reboot_required,
-    ))
+    // ASIO is optional in driver-only bundles and cannot roll back driver success.
+    let mut result =
+        TaskResult::success(format!("installed {}", node.instance_id), reboot_required);
+    install_asio(&mut result);
+    Ok(result)
 }
 
 /// Reinstalls the driver on the current device node (trusting the
@@ -219,7 +266,9 @@ fn repair(inf: &Path, cert: Option<&Path>) -> Result<TaskResult, Failure> {
             endpoint_list(&applied)
         ));
     }
-    Ok(TaskResult::success(message, reboot_required))
+    let mut result = TaskResult::success(message, reboot_required);
+    install_asio(&mut result);
+    Ok(result)
 }
 
 /// After an install or repair without a reboot: refuses a device with a
@@ -417,6 +466,23 @@ fn uninstall() -> TaskResult {
     let mut removed = Vec::new();
     let mut pending = Vec::new();
     let mut failures = Vec::new();
+    let asio_removal = (|| -> Result<(), Failure> {
+        let destination = asio_destination()?;
+        if !asio_registration::unregister(&mut MachineRegistry, &destination)
+            .map_err(|error| Failure::from(error).context("asio_unregister"))?
+        {
+            return Err(Failure::new("asio_registration_not_owned"));
+        }
+        match fs::remove_file(destination) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(Failure::new(format!("asio_remove_copy: {error}"))),
+        }
+    })();
+    let asio_error = asio_removal.as_ref().err().map(|error| error.error.clone());
+    if let Err(error) = asio_removal {
+        failures.push(error);
+    }
 
     // Devices.
     let nodes = devnodes(true).unwrap_or_else(|failure| {
@@ -541,7 +607,9 @@ fn uninstall() -> TaskResult {
     }
     let reboot_required = !pending.is_empty();
     if failures.is_empty() && !remaining.failed() {
-        return TaskResult::success(message, reboot_required);
+        let mut result = TaskResult::success(message, reboot_required);
+        result.asio_registration = Some("removed".into());
+        return result;
     }
     let error = if failures.is_empty() {
         format!("uninstall: something stayed ({})", remaining.summary())
@@ -558,6 +626,15 @@ fn uninstall() -> TaskResult {
         message,
         error: Some(error),
         code: failures.iter().find_map(|failure| failure.code),
+        asio_registration: Some(
+            if asio_error.is_some() {
+                "failed"
+            } else {
+                "removed"
+            }
+            .into(),
+        ),
+        asio_error,
     }
 }
 

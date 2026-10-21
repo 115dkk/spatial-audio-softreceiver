@@ -45,6 +45,11 @@ function uiOnly(snapshot: Snapshot): Snapshot {
   }
   if (clean.engine !== null) {
     if (clean.engine.fault !== null) clean.engine.fault.value = 'SOURCE_FAULT';
+    const asio = clean.engine.asio;
+    if (asio != null) {
+      if (asio.client_exe !== '') asio.client_exe = 'SOURCE_DAW.exe';
+      if (asio.fault_reason !== null) asio.fault_reason = 'SOURCE_ASIO_FAULT';
+    }
     clean.engine.directions.forEach((direction) => { direction.name = `SOURCE_DIRECTION_${direction.id}`; });
   }
   return clean;
@@ -97,6 +102,8 @@ describe('i18n catalog contract', () => {
       'profile.mapObjectsMany': [[0], [1], [8]],
       'status.upmix': [['Example Upmixer']],
       'status.upmixFallback': [['Example Upmixer']],
+      'status.asioBuffer': [['256', '5.3'], ['2,048', '-']],
+      'status.asioUnderruns': [[0], ['1,204']],
       'upmix.latency': [['12.5']],
       'upmix.outputs': [['L R C LFE Ls Rs']],
       'upmix.delayHint': [['23.3']],
@@ -104,6 +111,7 @@ describe('i18n catalog contract', () => {
       'settings.updateReady': [['0.14.0']],
       'settings.routingHint': [['Spatial SoftReceiver PASS', 'Spatial SoftReceiver']],
       'settings.routingBuiltInWas': [['Spatial SoftReceiver PASS']],
+      'settings.asioHint': [['Spatial SoftReceiver']],
     } satisfies Record<FunctionPaths<typeof ko>, unknown[][]>;
     const functions = leaves(ko).filter(([, value]) => typeof value === 'function');
     expect(functions.map(([path]) => path).sort()).toEqual(Object.keys(cases).sort());
@@ -155,8 +163,10 @@ describe('i18n catalog contract', () => {
       ...settings,
       outputPathLocked: catalog.supervisor.disable_before_changing_output,
       routingUnavailable: catalog.supervisor.entrance_routing_unavailable,
+      // The ASIO driver's name, as every DAW lists it: English in both.
+      asioDevice: catalogEn.names.product,
     });
-    for (const key of ['outputPathLocked', 'routingUnavailable']) expect(settings).not.toHaveProperty(key);
+    for (const key of ['outputPathLocked', 'routingUnavailable', 'asioDevice']) expect(settings).not.toHaveProperty(key);
     for (const key of ['powerOn', 'powerOff']) expect(status).not.toHaveProperty(key);
     for (const key of ['fromFile', 'testOff', 'needsBrir']) expect(profile).not.toHaveProperty(key);
     expect(product).toBe(catalog.names.product);

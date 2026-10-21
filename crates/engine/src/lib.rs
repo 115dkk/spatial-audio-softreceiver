@@ -16,6 +16,7 @@
 //!   upmixers (ADR 0021, ADR 0035).
 
 pub mod adapters;
+pub mod asio;
 pub mod chain;
 pub mod decode_thread;
 mod limiter;

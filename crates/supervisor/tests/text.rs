@@ -62,6 +62,7 @@ fn every_message_renders_nonempty_and_distinct_in_both_languages() {
             channels: 12,
         },
         Message::GainOutOfRange,
+        Message::AsioSystemAttenuationOutOfRange,
         Message::DirectionMissing,
         Message::StoredOutputMissing { name: "DAC".into() },
         Message::ProfileFileReadFailed {

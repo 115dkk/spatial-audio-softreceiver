@@ -30,5 +30,9 @@
   "ready-start-failed",
   "ready-kernel-streaming",
   "ready-routing-unavailable",
+  "running-asio",
+  "running-asio-clock-fault",
+  "running-asio-fault",
+  "ready-asio-off",
   "quit"
 ]

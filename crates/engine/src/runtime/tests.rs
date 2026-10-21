@@ -719,6 +719,7 @@ fn target_change_rejects_values_outside_crossing_capacity() {
         qpc_frequency: DEFAULT_QPC_FREQUENCY,
         capture_thread: None,
         output_thread: None,
+        asio_available: false,
     };
 
     assert!(engine.apply(LiveChange::TargetMs(0.0)).is_ok());
@@ -745,6 +746,7 @@ fn lfe_gain_change_rejects_values_outside_the_supported_range() {
         qpc_frequency: DEFAULT_QPC_FREQUENCY,
         capture_thread: None,
         output_thread: None,
+        asio_available: false,
     };
 
     assert!(engine.apply(LiveChange::LfeGain(-40.0)).is_ok());
@@ -2863,6 +2865,7 @@ fn queue_engine(directions: Option<usize>) -> (Engine, Consumer<LiveChange>) {
         qpc_frequency: DEFAULT_QPC_FREQUENCY,
         capture_thread: None,
         output_thread: None,
+        asio_available: false,
     };
     (engine, consumer)
 }

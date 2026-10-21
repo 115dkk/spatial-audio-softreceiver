@@ -24,7 +24,10 @@ missing_safety_doc = "deny"
 dbg_macro = "deny"
 
 [dependencies]
+asio-proto.workspace = true
 ssr-abi.workspace = true
+ssr-i18n.workspace = true
+ssr-types.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]

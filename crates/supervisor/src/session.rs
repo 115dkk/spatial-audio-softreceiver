@@ -93,6 +93,7 @@ pub struct Session {
     /// built for.
     qpc_frequency: u64,
     profile: OutputProfile,
+    asio: ssr_types::app::AsioSettings,
     pending_prepared: bool,
     output_kind: engine::OutputKind,
     output_channels: usize,
@@ -183,8 +184,13 @@ impl Session {
             (tee, None)
         };
         let qpc_frequency = config.qpc_frequency;
+        let asio = config.engine.asio;
+        let mut engine_config = config.engine;
+        if let Some(runtime) = &mut engine_config.asio_runtime {
+            runtime.profile = config.profile.clone();
+        }
         let engine = engine::start_with(
-            config.engine,
+            engine_config,
             capture,
             output,
             StartOptions {
@@ -201,6 +207,7 @@ impl Session {
             engine,
             qpc_frequency,
             profile: config.profile,
+            asio,
             pending_prepared: false,
             output_kind,
             output_channels,
@@ -346,6 +353,7 @@ impl Session {
             profile: crate::machine::default_profile_view(),
             upmix: crate::upmix::default_upmix_view(),
             routing: ssr_types::app::RoutingView::default(),
+            asio: self.asio,
             engine: Some(status),
             outputs: Vec::new(),
             chosen_output: None,
@@ -387,6 +395,10 @@ impl Session {
             LiveChange::Gain(db) => Some(db),
             _ => None,
         };
+        let asio = match change {
+            LiveChange::AsioSettings(settings) => Some(settings),
+            _ => None,
+        };
         self.engine
             .apply_retaining(change)
             .map_err(|(engine::Rejected, change)| (SessionError::Rejected, change))?;
@@ -398,6 +410,9 @@ impl Session {
         }
         if let Some(db) = gain {
             set_gain_db(&mut self.profile, db);
+        }
+        if let Some(settings) = asio {
+            self.asio = settings;
         }
         Ok(())
     }

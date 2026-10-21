@@ -25,10 +25,10 @@ use std::time::{Duration, Instant};
 use engine::{CorrectionProfile, LiveChange, OutputProfile, Prepared, UpmixStatus};
 use speakers::SpeakerProfile;
 use ssr_types::app::{
-    CorrectionView, HeadphonesView, Intent, Language, NextAction, OutputChoice, OutputPath, Phase,
-    PluginChoice, PluginFormat, ProfileKind, ProfileView, RoutingSettings, SetupStep, Snapshot,
-    SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply, UpmixerChoice, UpmixerSetting,
-    UserError,
+    AsioSettings, CorrectionView, HeadphonesView, Intent, Language, NextAction, OutputChoice,
+    OutputPath, Phase, PluginChoice, PluginFormat, ProfileKind, ProfileView, RoutingSettings,
+    SetupStep, Snapshot, SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply,
+    UpmixerChoice, UpmixerSetting, UserError,
 };
 use ssr_types::ports::PolicyState;
 use ssr_types::{
@@ -110,6 +110,18 @@ impl EngineHandle for Session {
 }
 
 /// Starts the engine for the state machine.
+/// What a launch asks for besides the output and the profile.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LaunchOptions<'a> {
+    /// The settings ask for kernel streaming (ADR 0037).
+    pub kernel_streaming: bool,
+    /// The output's render pin; `None` when kernel streaming was not asked
+    /// for or discovery failed (the launcher then records the fallback).
+    pub ks_target: Option<&'a KsTarget>,
+    /// The ASIO entrance (ADR 0025).
+    pub asio: AsioSettings,
+}
+
 pub trait Launcher {
     /// Starts the engine on `output` (an active device that is not ours) with
     /// `profile`, which the supervisor resolved ([`Supervisor::output_profile`])
@@ -121,13 +133,16 @@ pub trait Launcher {
         profile: &OutputProfile,
     ) -> Result<Box<dyn EngineHandle>, SessionError>;
 
-    fn launch_with_ks(
+    /// Starts with what the settings ask for besides the output and the
+    /// profile. Launchers that support neither kernel streaming nor ASIO keep
+    /// this default, which refuses a KS target and ignores ASIO.
+    fn launch_with(
         &mut self,
         output: &OutputDevice,
         profile: &OutputProfile,
-        ks_target: Option<&KsTarget>,
+        options: LaunchOptions<'_>,
     ) -> Result<Box<dyn EngineHandle>, SessionError> {
-        if ks_target.is_some() {
+        if options.ks_target.is_some() {
             return Err(SessionError::Rejected);
         }
         self.launch(output, profile)
@@ -284,6 +299,9 @@ pub struct Settings {
     /// Portable per-application entrance policy (ADR 0028).
     #[serde(default)]
     pub routing: RoutingSettings,
+    /// ASIO entrance settings (ADR 0025); older files keep the defaults.
+    #[serde(default)]
+    pub asio: AsioSettings,
 }
 
 /// What this build needs from the PC.
@@ -360,6 +378,7 @@ pub struct Supervisor<H: Host, L: Launcher> {
     error_message: Option<LocalizedError>,
     notes: Vec<Message>,
     shell_notes: Vec<String>,
+    asio_fault_seen: Option<String>,
     /// The resolved profile as the screen sees it, cached: it changes only
     /// when a profile intent succeeds or the engine starts, so a snapshot
     /// never reads the disk for it.
@@ -410,6 +429,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             error_message: None,
             notes: Vec::new(),
             shell_notes: Vec::new(),
+            asio_fault_seen: None,
             profile: default_profile_view_for(language),
             upmix: Upmixers::new(plugins),
             routing: Routing::new(),
@@ -482,6 +502,19 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         let Some(running) = self.engine.as_mut() else {
             return Vec::new();
         };
+        let fault = running
+            .handle
+            .status()
+            .asio
+            .and_then(|status| status.fault_reason);
+        if fault != self.asio_fault_seen {
+            if let Some(detail) = &fault {
+                self.notes.push(Message::AsioUnavailable {
+                    detail: detail.clone(),
+                });
+            }
+            self.asio_fault_seen = fault;
+        }
         let notices = match running.handle.poll() {
             Ok(notices) => notices,
             Err(error) => {
@@ -685,6 +718,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                 language,
             ),
             routing: self.routing.view(&self.settings.routing),
+            asio: self.settings.asio,
             engine: self.engine_status(),
             outputs,
             chosen_output: self.settings.output.clone(),
@@ -798,6 +832,27 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             },
             Intent::SetGain(db) => match self.phase {
                 Phase::Ready | Phase::Running | Phase::Faulted => self.set_gain(db),
+                _ => return self.refused(),
+            },
+            Intent::SetAsioEnabled(enabled) => match self.phase {
+                Phase::Ready | Phase::Running | Phase::Faulted => self.set_asio(AsioSettings {
+                    enabled,
+                    ..self.settings.asio
+                }),
+                _ => return self.refused(),
+            },
+            Intent::SetAsioLayout(layout) => match self.phase {
+                Phase::Ready | Phase::Running | Phase::Faulted => self.set_asio(AsioSettings {
+                    layout,
+                    ..self.settings.asio
+                }),
+                _ => return self.refused(),
+            },
+            Intent::SetAsioSystemAttenuation(system_attenuation_db) => match self.phase {
+                Phase::Ready | Phase::Running | Phase::Faulted => self.set_asio(AsioSettings {
+                    system_attenuation_db,
+                    ..self.settings.asio
+                }),
                 _ => return self.refused(),
             },
             // A profile.toml locks none of the upmix intents (ADR 0035).
@@ -1070,6 +1125,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     /// back and the phase stays where it was (or returns to ChooseOutput when
     /// the chosen output is gone).
     fn enable(&mut self) -> Result<(), UserError> {
+        self.validate_asio(self.settings.asio)?;
         self.notes.clear();
         // Ready is only a cached conclusion. Refresh the driver before any
         // profile work, restore-point write, role mutation, or engine launch.
@@ -1130,12 +1186,15 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             output.id.clone(),
             ks_target.as_ref().map(|_| output.id.clone()),
         )?;
-        let launch = if self.settings.output_path == OutputPath::KernelStreaming {
-            self.launcher
-                .launch_with_ks(&output, &resolved.profile, ks_target.as_ref())
-        } else {
-            self.launcher.launch(&output, &resolved.profile)
-        };
+        let launch = self.launcher.launch_with(
+            &output,
+            &resolved.profile,
+            LaunchOptions {
+                kernel_streaming: self.settings.output_path == OutputPath::KernelStreaming,
+                ks_target: ks_target.as_ref(),
+                asio: self.settings.asio,
+            },
+        );
         match launch {
             Ok(handle) => {
                 self.engine = Some(Running {
@@ -1552,6 +1611,29 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             let on = self.settings.upmix.applies(self.profile.kind);
             self.upmix.set_apply(running.handle.as_mut(), on);
         }
+        Ok(())
+    }
+
+    fn validate_asio(&mut self, settings: AsioSettings) -> Result<(), UserError> {
+        if !settings.is_valid() {
+            return Err(
+                self.message_error(Message::AsioSystemAttenuationOutOfRange, NextAction::None)
+            );
+        }
+        Ok(())
+    }
+
+    /// The engine takes the complete settings atomically; rejected changes
+    /// leave the persisted settings and snapshot as they were.
+    fn set_asio(&mut self, settings: AsioSettings) -> Result<(), UserError> {
+        self.validate_asio(settings)?;
+        if let Some(running) = self.engine.as_mut() {
+            running
+                .handle
+                .apply(LiveChange::AsioSettings(settings))
+                .map_err(|error| self.localized_error(live_error(error)))?;
+        }
+        self.settings.asio = settings;
         Ok(())
     }
 

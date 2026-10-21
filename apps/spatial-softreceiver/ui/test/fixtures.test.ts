@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import intents from '../fixtures/intents.json';
 import { fixture, fixtureNames, rawFixture } from '../src/fixtures';
-import { ShapeError, assertIntent, assertSnapshot } from '../src/guard';
+import { ASIO_DEFAULTS, ASIO_LAYOUTS, ShapeError, assertIntent, assertSnapshot } from '../src/guard';
+import { createMockApi } from '../src/mock';
 
 describe('fixtures match bindings.ts', () => {
   it('lists every fixture file', () => {
@@ -42,12 +43,74 @@ describe('fixtures match bindings.ts', () => {
         'choose_plugin',
         'open_plugin_editor',
         'set_upmix_apply',
+        'set_asio_enabled',
+        'set_asio_layout',
+        'set_asio_system_attenuation',
         'enable',
         'disable',
         'start_diagnostic_recording',
         'quit',
       ]),
     );
+  });
+});
+
+describe('ASIO contract wiring', () => {
+  /** The fixtures of the ASIO input's own states; every other one keeps the defaults and no client. */
+  const asioFixtures = ['running-asio', 'running-asio-clock-fault', 'running-asio-fault', 'ready-asio-off'];
+
+  it('keeps ASIO settings in every snapshot without inventing a client', () => {
+    expect(asioFixtures.filter((name) => !fixtureNames.includes(name)), 'ASIO fixtures Rust no longer writes').toEqual([]);
+    for (const language of ['ko', 'en'] as const) {
+      for (const name of fixtureNames.filter((candidate) => !asioFixtures.includes(candidate))) {
+        const snapshot = fixture(name, language);
+        expect(snapshot.asio, name).toEqual(ASIO_DEFAULTS);
+        if (snapshot.engine !== null) expect(snapshot.engine.asio, name).toBeNull();
+      }
+    }
+  });
+
+  it.each(['ko', 'en'] as const)('has a fixture for each state of the ASIO input (%s)', (language) => {
+    const attached = fixture('running-asio', language);
+    expect(attached.asio).toEqual({ enabled: true, layout: '7.1.4', system_attenuation_db: 12 });
+    expect(attached.engine?.asio).toMatchObject({ client_exe: 'reaper.exe', layout: '7.1.4', channels: 12, clock_fault: false, fault_reason: null });
+    expect(fixture('running-asio-clock-fault', language).engine?.asio).toMatchObject({ clock_fault: true, fault_reason: null });
+    const failed = fixture('running-asio-fault', language);
+    expect(failed.engine?.asio).toMatchObject({ client_exe: '', fault_reason: 'ASIO transport failed: owner_exists' });
+    expect(failed.notes).toHaveLength(1);
+    expect(fixture('ready-asio-off', language).asio?.enabled).toBe(false);
+  });
+
+  it('accepts the five layouts and the complete client status', () => {
+    expect(Object.keys(ASIO_LAYOUTS)).toEqual(['2.0', '5.1', '7.1', '7.1.4', '9.1.6']);
+    for (const layout of Object.keys(ASIO_LAYOUTS)) {
+      expect(assertIntent({ kind: 'set_asio_layout', value: layout })).toEqual({ kind: 'set_asio_layout', value: layout });
+      const value = structuredClone(rawFixture('running')) as { engine: Record<string, unknown> };
+      value.engine.asio = {
+        client_pid: 42, client_exe: 'test-daw.exe', sample_rate: 48000, buffer_frames: 256,
+        channels: 12, layout, underruns: 2, generation: 3, clock_fault: true, fault_reason: 'owner_exists',
+      };
+      expect(assertSnapshot(value).engine?.asio?.layout).toBe(layout);
+      delete (value.engine.asio as Record<string, unknown>).client_pid;
+      expect(() => assertSnapshot(value)).toThrow('snapshot.engine.asio.client_pid');
+    }
+    expect(() => assertIntent({ kind: 'set_asio_layout', value: '5.1.4' })).toThrow('intent.value');
+    expect(() => assertIntent({ kind: 'set_asio_enabled', value: 1 })).toThrow('intent.value');
+    expect(() => assertIntent({ kind: 'set_asio_system_attenuation', value: Number.NaN })).toThrow('intent.value');
+  });
+
+  it('mock settings dispatch preserves the absent client and rejects invalid attenuation', async () => {
+    const api = createMockApi(fixture('running'), { meters: false });
+    await api.dispatch({ kind: 'set_asio_enabled', value: false });
+    await api.dispatch({ kind: 'set_asio_layout', value: '9.1.6' });
+    await api.dispatch({ kind: 'set_asio_system_attenuation', value: 60 });
+    const expected = { enabled: false, layout: '9.1.6', system_attenuation_db: 60 };
+    expect((await api.snapshot()).asio).toEqual(expected);
+    expect((await api.snapshot()).engine?.asio).toBeNull();
+    for (const value of [-1, 61, Number.NaN, Number.POSITIVE_INFINITY]) {
+      await expect(api.dispatch({ kind: 'set_asio_system_attenuation', value })).rejects.toBeDefined();
+      expect((await api.snapshot()).asio).toEqual(expected);
+    }
   });
 });
 

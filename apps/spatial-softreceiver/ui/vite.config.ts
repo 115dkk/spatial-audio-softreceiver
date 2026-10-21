@@ -18,5 +18,9 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     include: ['test/**/*.test.ts'],
+    // test/i18n.test.ts renders every fixture's screens in English in one
+    // file, and happy-dom keeps about 150 MB per fixture until the file ends
+    // (3.7 GB at 25 fixtures), past Node's default heap on a 16 GB runner.
+    execArgv: ['--max-old-space-size=8192'],
   },
 });

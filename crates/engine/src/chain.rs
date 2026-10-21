@@ -142,7 +142,7 @@ pub struct CorrectionProfile {
     pub limiter_ceiling_dbfs: f32,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum OutputProfile {
     Headphones(brir::Profile),
     Speakers(speakers::SpeakerProfile),
@@ -152,14 +152,25 @@ pub enum OutputProfile {
 impl OutputProfile {
     /// Prepares this profile for the fixed 48 kHz, 480-frame mix timeline.
     pub fn prepare(&self) -> Result<Prepared, PrepareError> {
-        match self {
+        self.prepare_at(MIX_RATE, MIX_FRAMES, MIX_FRAMES)
+    }
+
+    /// Prepares an independent output back at `rate`. ASIO uses this at the DAC
+    /// rate with a small fixed partition while the system chain stays at 48 kHz.
+    pub(crate) fn prepare_at(
+        &self,
+        rate: u32,
+        partition: usize,
+        max_block: usize,
+    ) -> Result<Prepared, PrepareError> {
+        let mut prepared = match self {
             Self::Headphones(profile) => {
-                let prepared = brir::prepare(profile, MIX_RATE, MIX_FRAMES)?;
-                Prepared::new(Arc::new(prepared), MIX_FRAMES)
+                let prepared = brir::prepare(profile, rate, partition)?;
+                Prepared::new(Arc::new(prepared), max_block)
             }
             Self::Speakers(profile) => {
-                let prepared = speakers::prepare(profile, MIX_RATE, MIX_FRAMES)?;
-                Prepared::speakers(Arc::new(prepared), MIX_FRAMES)
+                let prepared = speakers::prepare(profile, rate, partition)?;
+                Prepared::speakers(Arc::new(prepared), max_block)
             }
             Self::Correction(profile) => {
                 let correction = correction::load(&profile.path)?;
@@ -170,7 +181,7 @@ impl OutputProfile {
                     channels: correction.device_channels as u16,
                     channel_mask: correction.channel_mask,
                 };
-                let prepared = correction.prepare(MIX_RATE, MIX_FRAMES)?;
+                let prepared = correction.prepare(rate, partition)?;
                 Prepared::correction(
                     Arc::new(prepared),
                     layout,
@@ -179,10 +190,12 @@ impl OutputProfile {
                     output_layout,
                     profile.gain_db,
                     profile.limiter_ceiling_dbfs,
-                    MIX_FRAMES,
+                    max_block,
                 )
             }
-        }
+        }?;
+        prepared.source_profile = Some(self.clone());
+        Ok(prepared)
     }
 }
 
@@ -273,6 +286,7 @@ enum PreparedOutput {
 
 #[derive(Debug)]
 pub struct Prepared {
+    source_profile: Option<OutputProfile>,
     output: PreparedOutput,
     geometry: Arc<PanGeometry>,
     max_block: usize,
@@ -298,6 +312,7 @@ impl Prepared {
         let lfe_route = brir.lfe;
         let binauralizer = Binauralizer::new(Arc::clone(&brir.bank), max_block);
         Ok(Self {
+            source_profile: None,
             output: PreparedOutput::Headphones {
                 brir,
                 lfe_route,
@@ -330,6 +345,7 @@ impl Prepared {
         let state = SpeakerOutput::new(&speakers, max_block);
         let samples = vec![0.0; speakers.device_channels * max_block];
         Ok(Self {
+            source_profile: None,
             output: PreparedOutput::Speakers { speakers, state },
             geometry,
             max_block,
@@ -378,6 +394,7 @@ impl Prepared {
             );
         }
         Ok(Self {
+            source_profile: None,
             output: PreparedOutput::Correction {
                 correction,
                 state,
@@ -466,6 +483,18 @@ impl Prepared {
         }
     }
 
+    pub(crate) fn source_profile(&self) -> Option<&OutputProfile> {
+        self.source_profile.as_ref()
+    }
+
+    pub(crate) fn sample_rate(&self) -> u32 {
+        self.rate()
+    }
+
+    pub(crate) fn algorithm_latency_frames(&self) -> usize {
+        self.partition()
+    }
+
     fn partition(&self) -> usize {
         match &self.output {
             PreparedOutput::Headphones { brir, .. } => brir.partition,
@@ -474,7 +503,7 @@ impl Prepared {
         }
     }
 
-    fn gain_and_ceiling(&self) -> (f32, f32) {
+    pub(crate) fn gain_and_ceiling(&self) -> (f32, f32) {
         match &self.output {
             PreparedOutput::Headphones { brir, .. } => (brir.gain, brir.limiter_ceiling),
             PreparedOutput::Speakers { speakers, .. } => (speakers.gain, speakers.limiter_ceiling),
@@ -492,6 +521,93 @@ impl Prepared {
             PreparedOutput::Speakers { state, .. } => state.reset(),
             PreparedOutput::Correction { state, .. } => state.reset(),
         }
+    }
+
+    pub(crate) fn reset_state(&mut self) {
+        self.reset();
+        self.samples.fill(0.0);
+    }
+
+    /// Runs a bed directly through this independent back. The caller provides
+    /// the exact profile rate and partition-sized block.
+    pub(crate) fn process_bed(&mut self, bed: &BedBlock<'_>, output: &mut [f32]) {
+        debug_assert_eq!(bed.rate, self.rate());
+        debug_assert!(bed.frames <= self.max_block);
+        debug_assert!(bed.frames.is_multiple_of(self.partition()));
+        debug_assert_eq!(bed.directions, self.feeds.directions());
+        self.feeds.set_frames(bed.frames);
+        for direction in 0..bed.directions {
+            let start = direction * bed.frames;
+            self.feeds
+                .channel_mut(direction)
+                .copy_from_slice(&bed.channels[start..start + bed.frames]);
+        }
+        let active = self.channels() * bed.frames;
+        let samples = &mut self.samples[..active];
+        match &mut self.output {
+            PreparedOutput::Headphones {
+                lfe_route,
+                binauralizer,
+                ..
+            } => {
+                if let (Some((route, gain)), Some(lfe)) = (*lfe_route, bed.lfe) {
+                    for (destination, sample) in
+                        self.feeds.channel_mut(route.index()).iter_mut().zip(lfe)
+                    {
+                        *destination += *sample * gain;
+                    }
+                }
+                let (left, right) = samples.split_at_mut(bed.frames);
+                if !bed.silent {
+                    binauralizer.note_active_input();
+                }
+                binauralizer.process(&self.feeds, left, right);
+                if bed.silent {
+                    binauralizer.note_silent_input(bed.frames);
+                }
+            }
+            PreparedOutput::Speakers { speakers, state } => {
+                state.process(speakers, &self.feeds, bed.lfe, bed.frames, samples, &|_| {
+                    1.0
+                })
+            }
+            PreparedOutput::Correction {
+                correction,
+                state,
+                inputs,
+                lfe_input,
+                lfe_targets,
+                ..
+            } => {
+                let mut direction = 0;
+                for (input_index, input) in inputs.iter().enumerate() {
+                    if input.angles.is_some() {
+                        state
+                            .input(input_index, bed.frames)
+                            .copy_from_slice(self.feeds.channel(direction));
+                        direction += 1;
+                    }
+                }
+                if let Some(lfe) = bed.lfe {
+                    if let Some(input_index) = *lfe_input {
+                        let destination = state.input(input_index, bed.frames);
+                        for (output, sample) in destination.iter_mut().zip(lfe) {
+                            *output += *sample;
+                        }
+                    } else {
+                        let share = 10.0_f32.powf(10.0 / 20.0) / lfe_targets.len().max(1) as f32;
+                        for &input_index in lfe_targets.iter() {
+                            let destination = state.input(input_index, bed.frames);
+                            for (output, sample) in destination.iter_mut().zip(lfe) {
+                                *output += *sample * share;
+                            }
+                        }
+                    }
+                }
+                state.run(correction, bed.frames, samples);
+            }
+        }
+        output[..active].copy_from_slice(samples);
     }
 }
 

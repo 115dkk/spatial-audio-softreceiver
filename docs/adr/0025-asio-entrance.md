@@ -101,3 +101,19 @@ DAW는 DAC가 소비하는 속도로 불리므로 드리프트가 없고 ASRC도
 - DAW의 ASIO 출력이 Spatial SoftReceiver를 거칩니다. 커널과 무관하므로 동결 대상이 아니고, 언제든 앱 업데이트로 고칩니다.
 - 시스템 경로와 ASIO 경로가 함께 돌면 컨볼버가 둘이라 CPU를 더 씁니다.
 - 앱을 업데이트할 때 DAW가 DLL을 쥐고 있으면 파일을 바꿀 수 없습니다. 버전별 폴더에 두고 등록을 새 경로로 바꾸는 방식을 Velopack과 함께 확인합니다.
+
+## 2026-10-21 고침: 첫 구현에서 바꾼 것
+
+첫 구현을 감사한 뒤 위 결정의 몇 군데를 바꿨습니다. 바꾼 까닭은 모두 같습니다. DAW 프로세스 안의 DLL이 할 일을 줄이고, 바뀌는 값을 DAW가 다시 열 때만 바꾸려는 것입니다.
+
+- **DLL은 앱을 띄우지 않습니다.** '기동과 소유권'의 `createBuffers` 기동을 뺐습니다. 앱이 없으면 DLL은 QPC 대체 클럭으로 콜백을 부르고 소리는 버립니다. 앱이 뜨면 임대와 세대를 맞춘 뒤 DAC 클럭으로 넘어갑니다. 사용자별 실행 파일 경로를 기계 전체 등록에 적을 까닭이 없어지므로 `ApplicationPath` 같은 값은 등록하지 않습니다.
+- **DLL은 기계 전체 위치에 둡니다.** `ssr-setup install`과 `repair`가 앱 폴더 옆의 `ssrasio.dll`을 `%ProgramFiles%\Spatial SoftReceiver\ASIO\ssrasio.dll`로 복사하고, `HKLM`의 `InprocServer32`는 그 경로(`\\?\` 없는 보통 Win32 경로)를 가리킵니다. DAW가 쥐고 있어 바꾸지 못하면 결과 JSON에 그 사실을 남깁니다. 앱 폴더에 DLL이 없으면 ASIO 등록만 건너뜁니다. 결과 JSON(`ssr_abi::setup_contract`)의 `asio_registration`은 `registered`, `skipped_no_dll`, `failed`, `removed` 가운데 하나이고 실패하면 `asio_error`에 이유를 적습니다. `ssr-setup uninstall`이 등록과 복사본을 지우며, CLSID와 서버 경로가 우리가 설치한 값일 때만 지웁니다. 앱(Velopack)을 지우면 드라이버처럼 ASIO 등록은 남습니다. 앱 업데이트는 복사본을 바꾸지 않으므로, 아래 규약 판이 바뀌는 업데이트 뒤에는 '고치기'(`repair`)가 복사본을 새로 둡니다. 판이 다른 DLL과 앱은 서로를 거절할 뿐 섞여 돌지 않습니다.
+- **레이트는 DAC의 지금 레이트 하나입니다.** 첫 판의 `setSampleRate`는 DAC를 다시 열지 않습니다. 같은 레이트만 받고 다른 레이트에는 `ASE_NoClock`으로 답하며, `canSampleRate`도 같습니다.
+- **버퍼는 64~2048프레임의 2의 거듭제곱입니다.** `getBufferSize`의 granularity는 -1입니다.
+- **reset과 지연을 나눴습니다.** `kAsioResetRequest`는 레이트, 배치, 버퍼 주기처럼 버퍼를 다시 만들어야 하는 변경에만 보냅니다. 출력 지연은 출력 스트림을 열 때 정해 그 세대 동안 바꾸지 않고, 바뀌면 `kAsioLatenciesChanged`로 알립니다. 세대는 실제 DAC 재시작, 재연결, 규약 변경에서만 올립니다.
+- **ASIO가 실패해도 시스템 소리는 계속 재생합니다.** 설정에서 ASIO를 끄면 엔진은 ASIO 전달을 열지 않습니다. 켜져 있는데 준비가 실패하면 ASIO 입구만 결함 상태로 두고, 상태(`AsioStatus.fault_reason`)에 이유를 실으며 감독자가 한 번 알립니다. 실패 뒤의 무거운 준비는 1초에서 10초까지 늘어나는 간격으로만 다시 시도합니다.
+- **규약은 제어 블록 v2입니다.** 192바이트이고 오프셋 72는 비워 둡니다. 쓰이지 않던 요청 레이트 필드를 뺐습니다. 출시 전이므로 판을 올리지 않고 v2 안에서 정리했습니다.
+- **DLL 언로드.** worker는 끝날 때까지 모듈 참조를 쥐고 마지막에 놓습니다. `DllCanUnloadNow`는 살아 있는 객체와 worker가 없을 때만 `S_OK`입니다. 콜백 안에서 들어온 `stop`, `disposeBuffers`, `Release`는 멈춤 표시만 세우고 콜백이 돌아온 뒤에 마무리합니다.
+- **x64만 싣습니다.** ARM64용 빌드도 컴파일은 되지만(작업 공간 전체를 그 대상으로 검사하므로) 릴리스에는 x64 DLL만 넣습니다.
+
+시험은 이렇게 합니다. Linux에서는 규약, 클럭, 대기열, 판정 함수를 시험합니다. Windows 러너(`ci.yml`의 `audio` 잡)에서는 `asio_probe`가 릴리스와 같은 DLL을 DAW처럼 적재해 세 경우를 봅니다. DLL만 있을 때, `ssr-live play --asio`가 먼저 돌 때, DAW가 먼저 열고 `ssr-live`가 붙었다가 죽을 때이고, 판정은 `tools/ci/asio_probe_check.py`가 합니다. `ssr-live`가 먼저 도는 경우에는 콜백이 만든 프레임의 80% 이상을 엔진이 가져가야 하고, 그동안 엔진이 출력 장치를 다시 시작하지 않아야 합니다. 다시 시작할 때마다 세대가 바뀌어 DAW의 프레임을 버리기 때문입니다. VB-CABLE은 배타 모드 최소 주기를 지키지 못하므로 이 시험은 다른 장치 시험처럼 주기를 20 ms로 정합니다. `asio-sdk` 잡은 고정한 SDK를 받아 `asio-sys`의 손으로 옮긴 정의와 대조합니다(`tools/ci/check-asio-sdk.py`). 실제 DAW(Reaper, Cubase)에서 듣는 확인은 시험서명 PC에서 합니다(`docs/testing/test-signed-pc.md`).

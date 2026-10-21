@@ -13,6 +13,7 @@
     { "id": "status", "title": "상태" },
     { "id": "profile", "title": "프로필" },
     { "id": "upmix", "title": "업믹스" },
+    { "id": "asio", "title": "ASIO 입구" },
     { "id": "settings", "title": "설정" },
     { "id": "quit", "title": "종료" },
     { "id": "window", "title": "작은 창" }
@@ -115,6 +116,13 @@
     { "name": "running-upmix-720x480", "group": "upmix", "title": "업믹스, 720×480", "fixture": "running-upmix", "tab": "upmix", "size": [720, 480] },
     { "name": "running-upmix-fallback-status", "group": "upmix", "title": "상태 화면의 업믹스 줄, 원래 스테레오", "fixture": "running-upmix-fallback", "tab": "status" },
     { "name": "running-upmix-native-surround-status", "group": "upmix", "title": "상태 화면의 업믹스 줄, 모노·스테레오가 아니라 업믹스하지 않음", "fixture": "running-upmix-native-surround", "tab": "status" },
+
+    { "name": "running-asio-status", "group": "asio", "title": "상태 화면의 ASIO 줄, DAW가 7.1.4로 연결됨", "fixture": "running-asio", "tab": "status" },
+    { "name": "running-asio-clock-fault-status", "group": "asio", "title": "출력 장치 클럭이 멈춰 대체 클럭이 DAW를 구동함", "fixture": "running-asio-clock-fault", "tab": "status" },
+    { "name": "running-asio-fault-status", "group": "asio", "title": "ASIO 입구를 시작하지 못함(이유는 엔진 문장 그대로)", "fixture": "running-asio-fault", "tab": "status" },
+    { "name": "running-asio-settings", "group": "asio", "title": "설정의 ASIO 패널, 켜짐(7.1.4, 시스템 소리 12 dB 줄임)", "fixture": "running-asio", "tab": "settings" },
+    { "name": "ready-asio-off-settings", "group": "asio", "title": "설정의 ASIO 패널, 꺼짐(배치와 슬라이더 잠김)", "fixture": "ready-asio-off", "tab": "settings" },
+    { "name": "running-asio-720x480", "group": "asio", "title": "상태 화면의 ASIO 줄, 720×480", "fixture": "running-asio", "tab": "status", "size": [720, 480], "schemes": ["light"] },
 
     { "name": "ready-settings", "group": "settings", "title": "설정(WASAPI 독점, 재생 중인 앱 둘, 업데이트 없음)", "fixture": "ready", "tab": "settings" },
     { "name": "ready-settings-kernel-streaming", "group": "settings", "title": "커널 스트리밍을 고름, 재생 중인 앱 없음", "fixture": "ready-kernel-streaming", "tab": "settings" },
