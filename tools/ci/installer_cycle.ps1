@@ -141,29 +141,37 @@ try {
             }
         } finally { $identity.Dispose() }
         # Start-Process -Credential hands this process the caller's environment,
-        # so TEMP and LOCALAPPDATA still name the runner account's folders and
-        # Velopack's Setup is refused there. Take this account's own folders
-        # from its token before anything, Setup included, reads them.
-        $verify = [Environment+SpecialFolderOption]::DoNotVerify
-        $own = [ordered]@{
-            USERPROFILE = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile, $verify)
-            APPDATA = [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData, $verify)
-            LOCALAPPDATA = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData, $verify)
+        # so USERPROFILE, TEMP and LOCALAPPDATA still name the runner account's
+        # folders; the known-folder API expands %USERPROFILE% from that block
+        # too, and Velopack's Setup is refused there. Read this account's
+        # profile from ProfileList by its SID, which -LoadUserProfile created,
+        # and rebuild the variables before anything, Setup included, reads them.
+        $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $profileKey = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$sid"
+        $userProfile = [Environment]::ExpandEnvironmentVariables((Get-ItemProperty -LiteralPath $profileKey).ProfileImagePath)
+        if (-not $userProfile -or -not (Test-Path -LiteralPath $userProfile -PathType Container)) {
+            throw "No loaded profile for $sid"
         }
-        foreach ($name in @($own.Keys)) { if (-not $own[$name]) { throw "$name has no path for this account" } }
+        $own = [ordered]@{
+            USERPROFILE = $userProfile
+            APPDATA = Join-Path $userProfile 'AppData\Roaming'
+            LOCALAPPDATA = Join-Path $userProfile 'AppData\Local'
+        }
         $own.TEMP = Join-Path $own.LOCALAPPDATA 'Temp'
         $own.TMP = $own.TEMP
-        New-Item -ItemType Directory -Force -Path $own.TEMP | Out-Null
+        $own.HOMEDRIVE = Split-Path -Qualifier $userProfile
+        $own.HOMEPATH = $userProfile.Substring($own.HOMEDRIVE.Length)
+        $own.USERNAME = [Environment]::UserName
+        foreach ($folder in $own.APPDATA, $own.LOCALAPPDATA, $own.TEMP) {
+            New-Item -ItemType Directory -Force -Path $folder | Out-Null
+        }
         foreach ($name in @($own.Keys)) { [Environment]::SetEnvironmentVariable($name, $own[$name], 'Process') }
         if (-not $env:LOCALAPPDATA) { throw 'LOCALAPPDATA is missing' }
         $script:installRoot = Join-Path $env:LOCALAPPDATA 'SpatialSoftReceiver'
         $script:appLog = Join-Path $env:LOCALAPPDATA 'Spatial SoftReceiver\app.log'
-        # A disposable account's first profile may not have its Start Menu
-        # folder yet; GetFolderPath returns '' for a missing folder unless told
-        # not to verify it. Velopack creates the folder with the shortcut.
-        $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs,
-            [Environment+SpecialFolderOption]::DoNotVerify)
-        if (-not $programs) { throw 'The Start Menu Programs folder has no path for this account' }
+        # The per-user Start Menu Programs folder, where Velopack puts the
+        # StartMenuRoot shortcut; a fresh profile may not have it yet.
+        $programs = Join-Path $own.APPDATA 'Microsoft\Windows\Start Menu\Programs'
         $script:shortcut = Join-Path $programs 'Spatial SoftReceiver.lnk'
         foreach ($path in @($installRoot, $shortcut, $uninstallKey,
             (Join-Path $env:LOCALAPPDATA 'Spatial SoftReceiver\restore-point.json'))) {
