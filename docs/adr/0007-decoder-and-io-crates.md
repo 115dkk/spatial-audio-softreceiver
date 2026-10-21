@@ -34,3 +34,12 @@ E-AC-3 JOC와 TrueHD 디코더를 맨바닥부터 쓰는 데는 몇 달이 듭�
 ## 2026-10-15 고침
 
 - 위 '2026-10-14 고침'의 알려진 한계를 지웁니다. 업스트림이 활발한 것을 확인하고(마지막 커밋 2026-10-14, 고정 커밋 뒤 나흘에 24건) 가르지 않는 결정은 그대로 두되, 할당하는 업스트림 호출을 디코드 스레드로 옮겼습니다(ADR 0031). 캡처 스레드는 버스트를 복사해 넘기고 돌아온 프레임으로 장면만 씁니다.
+
+## 2026-10-18 고침: TrueHD
+
+- TrueHD는 `truehdd` 저장소의 `truehd` 크레이트(Apache-2.0)를 씁니다. 처음 정할 때 적은 harletty-bridge 안의 크레이트 대신, 같은 저자가 따로 둔 포크 `https://github.com/harletty/truehdd`를 커밋 `5c8b880405946e7ff1aee884cf9988415fe2c3a9`로 고정해 git 의존성으로 들이고 `deny.toml`의 `allow-git`에 이 저장소를 더합니다(해석된 판 `truehd 0.7.2`). harletty-bridge의 GPL 디렉터리(`bridge`, `bridge-common`, `bridge-family-*`, `plugin-*`)는 읽지도 들이지도 않습니다.
+- DD+와 같은 방식으로, 할당하는 업스트림 호출은 디코드 스레드에서 하고(ADR 0031) 캡처 스레드는 버스트를 복사해 넘깁니다. 48 kHz 5.1 픽스처를 release 빌드에서 실시간의 약 125배로 디코드합니다.
+- MAT 2.x 버스트(IEC 61937 data type 22)는 61,424바이트 묶음의 시작·중간·끝 고정 레코드를 확인하고 그 사이 61,376바이트를 꺼냅니다(`decode::mat_frame`). 꺼낸 내용이 TrueHD(MLP major sync)면 위 경로로 디코드하고, 아니면 `Unsupported { "MAT 2.x", "PCM inside MAT is not decoded yet" }`로 거절합니다. Windows 공간 음향이 보내는 MAT 안의 PCM 배치는 공개된 문서가 없어, 시험서명 PC의 덤프로 블랙박스 관찰을 한 뒤에 정합니다(`decode.mat`는 '일부').
+- 객체(OAMD) 경로는 DD+와 공용 타임라인(`decode::timeline`)을 씁니다. 객체가 든 실제 TrueHD 표본으로 확인하기 전까지 `decode.truehd_objects`는 '일부'입니다. 채널 기반 TrueHD(`decode.truehd`)는 ffmpeg로 만든 픽스처를 정수 표본까지 원본과 대조하므로 '구현됨'입니다.
+- 패스스루 엔드포인트(2)의 기본 코덱 마스크는 `0x7c`로 TrueHD를 켭니다. 주 입구와 음악 입구(0, 1)는 `0x6c` 그대로입니다(ADR 0024, 0027).
+

@@ -14,8 +14,9 @@ use std::mem::{offset_of, size_of};
 use std::path::Path;
 
 use ssr_abi::{
-    AbiInfo, DEFAULT_ENABLED_CODECS, DriverStats, DumpHeader, EndpointFormats, EndpointStats,
-    OverrunPayload, PcmFormats, RateTrim, ReadRequest, RecordHeader, VolumePayload,
+    AbiInfo, DEFAULT_ENABLED_CODECS, DEFAULT_ENABLED_CODECS_BY_ENDPOINT, DriverStats, DumpHeader,
+    EndpointFormats, EndpointStats, OverrunPayload, PcmFormats, RateTrim, ReadRequest,
+    RecordHeader, VolumePayload,
 };
 
 const RENAMES: [(&str, &str); 11] = [
@@ -226,7 +227,11 @@ fn generate() -> String {
     generated
         .lines()
         .map(|line| {
-            if let Some(values) = line.strip_prefix("#define SSR_PCM_RATES ") {
+            if let Some(values) =
+                line.strip_prefix("#define SSR_DEFAULT_ENABLED_CODECS_BY_ENDPOINT ")
+            {
+                format!("#define SSR_DEFAULT_ENABLED_CODECS_BY_ENDPOINT {values}")
+            } else if let Some(values) = line.strip_prefix("#define SSR_PCM_RATES ") {
                 format!("static const uint32_t SSR_PCM_RATES[SSR_PCM_RATE_COUNT] = {values};")
             } else if line.starts_with("#define SSR_DEFAULT_PCM ")
                 || line.starts_with("#define SSR_COMPILED_PCM ")
@@ -258,6 +263,28 @@ fn parse_c_decimal_define(header: &str, name: &str) -> u64 {
         .unwrap_or_else(|| panic!("header lacks {name}"))
         .parse()
         .unwrap_or_else(|e| panic!("invalid {name}: {e}"))
+}
+
+fn parse_c_decimal_array_define(header: &str, name: &str) -> Vec<u64> {
+    let prefix = format!("#define {name} ");
+    header
+        .lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .unwrap_or_else(|| panic!("header lacks {name}"))
+        .trim()
+        .strip_prefix('{')
+        .and_then(|value| value.trim().strip_suffix('}'))
+        .unwrap_or_else(|| panic!("invalid {name} array"))
+        .split(',')
+        .filter_map(|value| {
+            let value = value.trim();
+            (!value.is_empty()).then(|| {
+                value
+                    .parse()
+                    .unwrap_or_else(|e| panic!("invalid {name} element: {e}"))
+            })
+        })
+        .collect()
 }
 
 fn parse_inf_qword(inf: &str, name: &str) -> u64 {
@@ -295,6 +322,10 @@ fn default_capabilities_match_header_and_inf() {
         DEFAULT_ENABLED_CODECS
     );
     assert_eq!(
+        parse_c_decimal_array_define(&header, "SSR_DEFAULT_ENABLED_CODECS_BY_ENDPOINT"),
+        DEFAULT_ENABLED_CODECS_BY_ENDPOINT
+    );
+    assert_eq!(
         parse_c_decimal_define(&header, "SSR_DEFAULT_ENDPOINT_MASK"),
         u64::from(ssr_abi::DEFAULT_ENDPOINT_MASK)
     );
@@ -320,9 +351,9 @@ fn default_capabilities_match_header_and_inf() {
         parse_c_decimal_define(&header, "SSR_PCM_RATE_COUNT"),
         ssr_abi::PCM_RATES.len() as u64
     );
-    for index in 0..4 {
+    for (index, default_codecs) in DEFAULT_ENABLED_CODECS_BY_ENDPOINT.iter().enumerate() {
         let name = format!("CodecMask{index}");
-        assert_eq!(parse_inf_qword(&inf, &name), DEFAULT_ENABLED_CODECS);
+        assert_eq!(parse_inf_qword(&inf, &name), *default_codecs);
         for (field, expected) in [
             ("PcmRateMask", ssr_abi::DEFAULT_PCM.rates),
             ("PcmShapeMask", ssr_abi::DEFAULT_PCM.shapes),

@@ -22,6 +22,7 @@ engine.workspace = true
 speakers.workspace = true
 sha2.workspace = true
 hound.workspace = true
+bitstream.workspace = true
+decode.workspace = true
 
 [dev-dependencies]
-bitstream.workspace = true

@@ -497,6 +497,8 @@ impl<H: Host, L: Launcher, E: Emitter, S: SettingsStore> ControlThread<H, L, E, 
                         ssr_types::SceneSource::Ddp => "ddp",
                         ssr_types::SceneSource::DdpJoc => "ddp_joc",
                         ssr_types::SceneSource::Upmix => "upmix",
+                        ssr_types::SceneSource::TrueHd => "true_hd",
+                        ssr_types::SceneSource::TrueHdObjects => "truehd_objects",
                     };
                     (source, layout.bed.len(), layout.lfe, layout.dynamic.len())
                 });

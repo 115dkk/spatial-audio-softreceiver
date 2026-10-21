@@ -101,6 +101,7 @@ proptest = "1.12.0"
 # and release-mode tests must check real-time paths too.
 assert_no_alloc = { version = "1.1.2", default-features = false }
 eac3 = { git = "https://github.com/harletty/harletty-bridge", rev = "639f0f10f5399755578158bfa598dcea6f60577d" }
+truehd = { git = "https://github.com/harletty/truehdd", rev = "5c8b880405946e7ff1aee884cf9988415fe2c3a9" }
 # The app's shell (ADR 0001). Only apps/spatial-softreceiver uses them, and only
 # on Windows; tauri-build runs from its build script.
 tauri = "2.12.4"

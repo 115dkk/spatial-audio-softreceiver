@@ -360,6 +360,12 @@ fn constants(out: &mut String) {
         WAVEFORMATEXTENSIBLE_BYTES,
         IEC61937_FORMAT_BYTES,
     );
+    writeln!(
+        out,
+        "DEFAULT_ENABLED_CODECS_BY_ENDPOINT = {:?}",
+        ssr_abi::DEFAULT_ENABLED_CODECS_BY_ENDPOINT
+    )
+    .unwrap();
     for (name, value) in [
         ("FILE_DEVICE_UNKNOWN", 0x22),
         ("METHOD_BUFFERED", 0),

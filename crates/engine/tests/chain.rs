@@ -3098,7 +3098,7 @@ fn unknown_encoded_rates_reach_the_selected_bitstream_decoders() {
 }
 
 #[test]
-fn unavailable_mat_is_unsupported_on_the_format_event_and_ignores_data() {
+fn malformed_mat_is_accepted_at_format_change_and_reported_from_the_decode_thread() {
     let format = bitstream_format(BitstreamCodec::Mat21, 0);
     let mut chain = Chain::new(ChainConfig::default());
     let mut reason = None;
@@ -3117,8 +3117,8 @@ fn unavailable_mat_is_unsupported_on_the_format_event_and_ignores_data() {
             _ => {}
         },
     );
-    assert_eq!(reason, Some(ssr_types::UnsupportedReason::Format));
-    assert_eq!(errors, 1);
+    assert_eq!(reason, None);
+    assert_eq!(errors, 0);
 
     let mut burst = Vec::new();
     bitstream::frame_burst(bitstream::DataType::Mat, &[], 8, &mut burst);
@@ -3443,6 +3443,21 @@ fn endpoint_format_and_overrun_reset_only_their_front() {
 fn format_decode_error_overrun_and_discontinuity_do_not_change_the_other_lane() {
     let mut corrupt = Vec::new();
     bitstream::frame_burst(bitstream::DataType::Eac3, &[0; 7], 24_576, &mut corrupt);
+    let mut unknown_mat_payload = vec![0; decode::mat_frame::MAT_PAYLOAD_BYTES];
+    unknown_mat_payload[..decode::mat_frame::START_MARKER.len()]
+        .copy_from_slice(&decode::mat_frame::START_MARKER);
+    let middle = decode::mat_frame::MIDDLE_MARKER_OFFSET;
+    unknown_mat_payload[middle..middle + decode::mat_frame::MIDDLE_MARKER.len()]
+        .copy_from_slice(&decode::mat_frame::MIDDLE_MARKER);
+    let end = decode::mat_frame::END_MARKER_OFFSET;
+    unknown_mat_payload[end..].copy_from_slice(&decode::mat_frame::END_MARKER);
+    let mut unknown_mat = Vec::new();
+    bitstream::frame_burst(
+        bitstream::DataType::Mat,
+        &unknown_mat_payload,
+        61_440,
+        &mut unknown_mat,
+    );
 
     let render = |disturbance: Option<&str>| {
         let mut stream = vec![0; 300_000];
@@ -3475,6 +3490,14 @@ fn format_decode_error_overrun_and_discontinuity_do_not_change_the_other_lane() 
                             &wave_format_bytes(&bitstream_format(BitstreamCodec::Eac3, 48_000))
                         ));
                         assert!(writer.data(3, 0, 132_000, &corrupt));
+                    }
+                    Some("MAT unknown") => {
+                        assert!(writer.format_change(
+                            3,
+                            100_000,
+                            &wave_format_bytes(&bitstream_format(BitstreamCodec::Mat21, 0))
+                        ));
+                        assert!(writer.data(3, 0, 300_000, &unknown_mat));
                     }
                     Some("overrun") => assert!(writer.overrun(48 * 4 * 100, 100_000, 99)),
                     Some("discontinuity") => assert!(writer.push(
@@ -3540,7 +3563,13 @@ fn format_decode_error_overrun_and_discontinuity_do_not_change_the_other_lane() 
 
     let (solo, _, _, _, solo_drops) = render(None);
     assert_eq!(solo_drops, 0);
-    for disturbance in ["format change", "decode error", "overrun", "discontinuity"] {
+    for disturbance in [
+        "format change",
+        "decode error",
+        "MAT unknown",
+        "overrun",
+        "discontinuity",
+    ] {
         let (mixed, formats, overruns, errors, drops) = render(Some(disturbance));
         // Separated impulse responses expose every sample of the unchanged
         // right-hand lane while the disturbed left-hand lane is genuinely audible.
@@ -3562,10 +3591,17 @@ fn format_decode_error_overrun_and_discontinuity_do_not_change_the_other_lane() 
         }
         assert_eq!(
             formats,
-            1 + usize::from(matches!(disturbance, "format change" | "decode error"))
+            1 + usize::from(matches!(
+                disturbance,
+                "format change" | "decode error" | "MAT unknown"
+            ))
         );
         assert_eq!(overruns, usize::from(disturbance == "overrun"));
-        assert_eq!(errors, usize::from(disturbance == "decode error"));
+        assert_eq!(
+            errors,
+            usize::from(matches!(disturbance, "decode error" | "MAT unknown")),
+            "{disturbance} errors"
+        );
         // Each event cuts the old primary generation after its 64-frame fade:
         // the one interval it had placed but not yet emitted, less the fade.
         // The exact right-hand solo comparison above proves lane isolation.
@@ -3925,6 +3961,28 @@ fn ddp_bursts() -> Vec<Vec<u8>> {
         .collect()
 }
 
+fn truehd_mat_periods() -> Vec<Vec<u8>> {
+    std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../decode/tests/fixtures/truehd/tones-5.1-48k.spdif"),
+    )
+    .unwrap()
+    .chunks(61_440)
+    .map(<[u8]>::to_vec)
+    .collect()
+}
+
+fn truehd_raw_bursts() -> Vec<Vec<u8>> {
+    let fixture = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../decode/tests/fixtures/truehd/tones-5.1-48k.thd"),
+    )
+    .unwrap();
+    let mut burst = Vec::new();
+    bitstream::frame_burst(bitstream::DataType::Mat, &fixture, 61_440, &mut burst);
+    vec![burst]
+}
+
 fn ddp_format_change() -> Record<'static> {
     Record::FormatChange {
         endpoint: ENDPOINT_PRIMARY,
@@ -3936,6 +3994,34 @@ fn ddp_format_change() -> Record<'static> {
 }
 
 /// One whole burst ends `index + 1` burst periods (32 ms at 10 MHz) in.
+fn truehd_format_change(codec: BitstreamCodec) -> Record<'static> {
+    Record::FormatChange {
+        endpoint: ENDPOINT_PRIMARY,
+        epoch: 1,
+        repeat: false,
+        qpc: 1,
+        format: SourceFormat::Bitstream(BitstreamFormat {
+            codec,
+            container_rate: 192_000,
+            container_channels: 8,
+            encoded_rate: 48_000,
+            encoded_channels: 6,
+        }),
+    }
+}
+
+fn truehd_data(bytes: &[u8], index: u64) -> Record<'_> {
+    Record::Data {
+        endpoint: ENDPOINT_PRIMARY,
+        epoch: 1,
+        flags: 0,
+        pos: index * 61_440,
+        qpc: (index + 1) * 200_000,
+        qpc_written: 0,
+        bytes,
+    }
+}
+
 fn ddp_data(bytes: &[u8], index: u64, flags: u16) -> Record<'_> {
     Record::Data {
         endpoint: ENDPOINT_PRIMARY,
@@ -4026,6 +4112,66 @@ fn find_samples(haystack: &[f32], needle: &[f32]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle.as_slice())
+}
+
+#[test]
+fn raw_truehd_and_mat_use_the_same_deferred_scene_path() {
+    for (codec, bursts) in [
+        (BitstreamCodec::TrueHd, truehd_raw_bursts()),
+        (BitstreamCodec::Mat21, truehd_mat_periods()),
+    ] {
+        let mut chain = Chain::new(ChainConfig::default());
+        chain.set_prepared(identity_prepared("truehd-deferred"));
+        let mut worker = chain.take_decode_worker().unwrap();
+        let mut rendered = Rendered::default();
+        chain.push_record(truehd_format_change(codec), &mut |event| {
+            rendered.event(event)
+        });
+        for (index, burst) in bursts.iter().enumerate() {
+            chain.push_record(truehd_data(burst, index as u64), &mut |event| {
+                rendered.event(event)
+            });
+            while worker.run_one() {}
+            chain.idle((index as u64 + 1) * 200_000, &mut |event| {
+                rendered.event(event)
+            });
+        }
+        chain.finish(&mut |event| rendered.event(event));
+
+        assert!(
+            rendered.errors.is_empty(),
+            "{codec:?}: {:?}",
+            rendered.errors
+        );
+        assert!(
+            rendered.audible() > 0,
+            "{codec:?} produced no audible scene"
+        );
+        let layout = chain.layout(ENDPOINT_PRIMARY).unwrap();
+        assert_eq!(layout.source, SceneSource::TrueHd);
+        assert_eq!(layout.bed_count(), 5);
+        assert!(layout.lfe);
+    }
+}
+
+#[test]
+fn truehd_routes_reject_non_mat_iec_bursts() {
+    let mut wrong = Vec::new();
+    bitstream::frame_burst(bitstream::DataType::Eac3, &[0; 8], 61_440, &mut wrong);
+    for codec in [BitstreamCodec::TrueHd, BitstreamCodec::Mat21] {
+        let mut chain = Chain::new(ChainConfig::default());
+        let mut errors = Vec::new();
+        chain.push_record(truehd_format_change(codec), &mut |_| {});
+        chain.push_record(truehd_data(&wrong, 0), &mut |event| {
+            if let ChainEvent::Error { error, .. } = event {
+                errors.push(error);
+            }
+        });
+        assert!(matches!(
+            errors.as_slice(),
+            [ChainError::Decode(decode::DecodeError::WrongRoute(_))]
+        ));
+    }
 }
 
 #[test]

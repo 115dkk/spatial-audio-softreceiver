@@ -323,7 +323,7 @@ footer.sources ul { padding-left: 1.2em; }
         <li><strong>서명:</strong> EV 인증서(SSL.com 개인사업자, $359)를 한 번 사서 Microsoft 증명 서명을 받습니다. 드라이버는 최소로 만들어 얼립니다.</li>
         <li><strong>클린룸:</strong> SpatialAudioLab에는 라이선스가 없으므로 구현자는 그 소스를 보지 않습니다. SAL과 Omniphony는 블랙박스로 돌려 얻은 출력만 골든으로 씁니다.</li>
         <li><strong>컨볼버:</strong> EqualizerAPO-XT의 MultiConvolution(115dkk 작성)을 Rust와 MIT로 새로 씁니다. libHybridConv, FFTW, IrCache는 들이지 않습니다.</li>
-        <li><strong>디코더와 입출력:</strong> E-AC-3 JOC와 TrueHD는 harletty-bridge의 <code>eac3</code>·<code>truehd</code> 크레이트(Apache-2.0)를 쓰고, 출력은 <code>wasapi</code>, 리샘플링은 <code>rubato</code>, 실시간 링은 <code>rtrb</code>를 씁니다.</li>
+        <li><strong>디코더와 입출력:</strong> E-AC-3 JOC는 harletty-bridge의 <code>eac3</code>, TrueHD는 같은 저자의 포크 <code>truehdd</code>의 <code>truehd</code> 크레이트(둘 다 Apache-2.0, 커밋 고정)를 쓰고, 출력은 <code>wasapi</code>, 리샘플링은 <code>rubato</code>, 실시간 링은 <code>rtrb</code>를 씁니다.</li>
         <li><strong>원작자 동의:</strong> 구축기 작성자는 자기가 쓴 코드와 문서에 대해 MIT와 (L)(A)GPL 사용에 동의했습니다.</li>
       </ul>
       <p>아래 심화 후보는 이 문서가 새로 제안하는 결정입니다. 합의되면 같은 방식으로 ADR이 됩니다.</p>
@@ -922,7 +922,7 @@ impl&lt;H: Host&gt; Supervisor&lt;H&gt; {
           <tr><td>M3 드라이버</td><td>spatialsoftreceiver.sys(렌더 엔드포인트 셋), ABI v1 초안, 쓰기 패킷 알림 측정</td><td>호스트 러너가 할 수 있는 서명 전 검사 통과(동결은 M5로, ADR 0027 고침)</td><td>시험서명</td></tr>
           <tr><td>M4 앱</td><td>supervisor, 화면, ssr-setup, Velopack, 커널 스트리밍 출력(ADR 0037), 앱별 입구 배정(ADR 0038)</td><td>새 PC에서 마법사만으로 설치와 청취</td><td>시험서명</td></tr>
           <tr><td>M5 서명·출시</td><td>ABI v1 동결, EV 구입, Partner Center 등록, 증명 제출</td><td>Secure Boot를 켠 PC에서 설치</td><td>증명 서명</td></tr>
-          <tr><td>M6 베타 뒤 확장</td><td>TrueHD 디코더, ASIO 입구, 자체 업믹서</td><td>기능마다 따로</td><td>증명 서명</td></tr>
+          <tr><td>M6 베타 뒤 확장</td><td>ASIO 입구, 자체 업믹서</td><td>기능마다 따로</td><td>증명 서명</td></tr>
         </tbody>
       </table>
     </div>

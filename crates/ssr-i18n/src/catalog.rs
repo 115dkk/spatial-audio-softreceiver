@@ -2075,6 +2075,22 @@ pub mod live {
         }
     }
 
+    #[doc = "TrueHD"]
+    pub fn scene_source_truehd(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "TrueHD",
+            Language::En => "TrueHD",
+        }
+    }
+
+    #[doc = "TrueHD (위치 포함)"]
+    pub fn scene_source_truehd_objects(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "TrueHD (위치 포함)",
+            Language::En => "TrueHD objects",
+        }
+    }
+
     #[doc = "업믹스"]
     pub fn scene_source_upmix(language: Language) -> &'static str {
         match language {

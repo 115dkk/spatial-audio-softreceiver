@@ -528,7 +528,7 @@ export type SceneLayout = { source: SceneSource; lfe: boolean; bed: SceneBedChan
 
 export type SceneObject = { lane: number; index: number; x: number; y: number; z: number; level_dbfs: number }
 
-export type SceneSource = "none" | "pcm" | "ddp" | "ddp_joc" | "upmix"
+export type SceneSource = "none" | "pcm" | "ddp" | "ddp_joc" | "upmix" | "true_hd" | "truehd_objects"
 
 export type SecureBoot = "enabled" | "disabled" |
 /**

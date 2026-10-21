@@ -60,7 +60,7 @@ static void RegistryName(HANDLE key, ULONG endpoint) {
 }
 static void LoadSettings() {
     PAGED_CODE();
-    Settings = {SSR_DEFAULT_ENDPOINT_MASK, {SsrDefaultFormats, SsrDefaultFormats, SsrDefaultFormats, SsrDefaultFormats}, FALSE, {}};
+    Settings = {SSR_DEFAULT_ENDPOINT_MASK, {SsrDefaultFormats[0], SsrDefaultFormats[1], SsrDefaultFormats[2], SsrDefaultFormats[3]}, FALSE, {}};
     for (ULONG i = 0; i < SSR_MAX_ENDPOINTS; ++i)
         ssr::EndpointName<WCHAR>(i, false, nullptr, 0, Settings.EndpointName[i]);
     UNICODE_STRING parameters; RtlInitUnicodeString(&parameters, L"Parameters");

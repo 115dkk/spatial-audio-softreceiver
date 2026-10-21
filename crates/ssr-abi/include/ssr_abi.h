@@ -419,6 +419,8 @@ static const SSR_PCM_FORMATS SSR_DEFAULT_PCM = SSR_DEFAULT_PCM_INIT;
 
 static const SSR_PCM_FORMATS SSR_COMPILED_PCM = SSR_COMPILED_PCM_INIT;
 
+#define SSR_DEFAULT_ENABLED_CODECS_BY_ENDPOINT { 108, 108, 124, 108, }
+
 #define SSR_CONTROL_DEVICE_PATH "\\\\.\\SpatialSoftReceiver"
 
 #if defined(__cplusplus)

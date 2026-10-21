@@ -261,6 +261,7 @@ pub const FORMAT_DTS_HD: u64 = 1 << 8;
 
 pub const COMPILED_CODECS: u64 = 0x1fe;
 pub const DEFAULT_ENABLED_CODECS: u64 = 0x6c;
+pub const DEFAULT_ENABLED_CODECS_BY_ENDPOINT: [u64; MAX_ENDPOINTS] = [0x6c, 0x6c, 0x7c, 0x6c];
 
 /// Feature bits for [`AbiInfo::features`].
 pub const FEATURE_PENDING_READ: u64 = 1 << 0;
@@ -408,6 +409,10 @@ const _: () = {
     assert!(core::mem::align_of::<AbiInfo>() == 8);
     assert!(COMPILED_CODECS == 0x1fe);
     assert!(DEFAULT_ENABLED_CODECS == 0x6c);
+    assert!(DEFAULT_ENABLED_CODECS_BY_ENDPOINT[0] == 0x6c);
+    assert!(DEFAULT_ENABLED_CODECS_BY_ENDPOINT[1] == 0x6c);
+    assert!(DEFAULT_ENABLED_CODECS_BY_ENDPOINT[2] == 0x7c);
+    assert!(DEFAULT_ENABLED_CODECS_BY_ENDPOINT[3] == 0x6c);
 };
 
 #[cfg(test)]
@@ -511,7 +516,22 @@ mod tests {
             formats.len()
         );
         assert_eq!(formats.iter().fold(0, |acc, f| acc | f), COMPILED_CODECS);
-        assert_eq!(DEFAULT_ENABLED_CODECS & 1, 0);
+        assert_eq!(DEFAULT_ENABLED_CODECS & !COMPILED_CODECS, 0);
+        assert!(
+            DEFAULT_ENABLED_CODECS_BY_ENDPOINT
+                .iter()
+                .all(|codecs| codecs & !COMPILED_CODECS == 0)
+        );
+        assert_eq!(
+            DEFAULT_ENABLED_CODECS_BY_ENDPOINT[ENDPOINT_PASSTHROUGH as usize] & FORMAT_TRUEHD,
+            FORMAT_TRUEHD
+        );
+        assert!(
+            DEFAULT_ENABLED_CODECS_BY_ENDPOINT.iter().enumerate().all(
+                |(endpoint, codecs)| endpoint == ENDPOINT_PASSTHROUGH as usize
+                    || codecs & FORMAT_TRUEHD == 0
+            )
+        );
     }
 
     #[test]

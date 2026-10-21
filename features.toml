@@ -18,7 +18,8 @@ tests = [
   "ssr-live::scene_layout_lines_localize_sources_and_lfe",
   "ssr-live::scene_log_options_enforce_interval_bounds",
   "ssr-replay::scene_log_uses_output_frame_time_and_inspect_reports_pcm_layout",
-  "ssr-replay::inspect_decodes_ddp_bed_and_omits_undecodable_mat",
+  "ssr-replay::inspect_decodes_ddp_bed_and_reports_unknown_mat_without_a_scene",
+  "ssr-replay::inspect_decodes_raw_truehd_and_mat_with_the_normal_scene_summary",
   "ssr-replay::render_scene_log_interval_bounds_are_enforced",
   "ssr-replay::dynamic_measurements_preserve_rooms_and_rendered_angle_ranges",
   "ssr-replay::replay_scene_log_keeps_intervals_ignores_motion_and_coalesces_change",
@@ -232,9 +233,18 @@ tests = [
 id = "decode.mat"
 kind = "pipeline"
 milestone = "M1"
-status = "planned"
-tests = []
-note = "clean room: the implementer never reads SpatialAudioLab sources; goldens come from black-box SAL output only"
+status = "partial"
+tests = [
+  "decode::ffmpeg_spdif_fixture_has_published_markers_after_deframing",
+  "decode::extracts_both_content_spans_in_codec_byte_order",
+  "decode::rejects_each_invalid_fixed_record",
+  "decode::content_without_fba_sync_is_unknown",
+  "decode::arbitrary_payload_bytes_never_panic",
+  "decode::mat_content_uses_the_same_front_without_marker_bytes",
+  "decode::mat_without_mlp_is_rejected_on_the_decode_thread",
+  "ssr-replay::inspect_decodes_ddp_bed_and_reports_unknown_mat_without_a_scene",
+]
+note = "MLP inside MAT decodes through the TrueHD adapter; the uncompressed MAT PCM layout remains unknown and awaits clean-room black-box dumps. Burst payload markers are validated in codec byte order before extraction."
 
 [[feature]]
 id = "decode.ddp"
@@ -290,9 +300,33 @@ note = "BS.2127-1 section 10.1 room-to-direction conversion; ETSI TS 103 420 OAM
 [[feature]]
 id = "decode.truehd"
 kind = "pipeline"
-milestone = "M6"
-status = "planned"
-tests = []
+milestone = "M1"
+status = "implemented"
+tests = [
+  "decode::raw_fixtures_preserve_rate_channels_samples_and_positions",
+  "decode::decoded_pcm_matches_the_generated_source_sample_for_sample",
+  "decode::fragmented_front_back_matches_offline_and_splits_max_frames",
+  "decode::placement_and_reset_do_not_allocate",
+  "decode::integer_accessor_matches_scene_normalization",
+  "decode::frames_at_mix_rate_rounds_runs_not_each_access_unit",
+  "decode::two_lfe_channels_sum_and_surround_direct_is_explicitly_unsupported",
+  "engine::raw_truehd_and_mat_use_the_same_deferred_scene_path",
+  "engine::truehd_mat_burst_placement_does_not_allocate_on_the_capture_path",
+  "ssr-replay::render_raw_truehd_and_mat_fixtures_through_the_production_chain",
+]
+note = "Pinned Apache-2.0 truehd fork; raw TrueHD and MLP inside validated IEC 61937-9 MAT share the deferred decode adapter. Synthetic 48 kHz 5.1 and 96 kHz stereo fixtures are checked losslessly against their generated 24-bit PCM sources."
+
+[[feature]]
+id = "decode.truehd_objects"
+kind = "pipeline"
+milestone = "M1"
+status = "partial"
+tests = [
+  "decode::oamd_offsets_resolved_deltas_ramps_and_raw_layout_cross_access_units",
+  "decode::object_placement_and_failure_paths_do_not_allocate",
+  "ssr-replay::truehd_object_room_changes_count_as_oamd_updates",
+]
+note = "TrueHD OAMD uses the codec-neutral timeline shared with DD+ and is covered by synthetic metadata tests. No object-bearing TrueHD sample with established redistribution rights is available; truehd_external_object_sample_has_positioned_objects remains ignored pending SSR_TRUEHD_ATMOS_SAMPLE."
 
 [[feature]]
 id = "render.vbap"
@@ -404,8 +438,8 @@ tests = [
   "engine::pcm_dump_renders_pans_convolves_and_applies_gain",
   "engine::ddp_burst_produces_a_nonzero_binaural_block",
   "engine::unknown_encoded_rates_reach_the_selected_bitstream_decoders",
-  "engine::unavailable_mat_is_unsupported_on_the_format_event_and_ignores_data",
-  "decode::unavailable_mat_selection_is_unsupported_and_leaves_no_active_adapter",
+  "engine::malformed_mat_is_accepted_at_format_change_and_reported_from_the_decode_thread",
+  "decode::mat_and_raw_truehd_select_the_deferred_truehd_adapter",
   "engine::filtered_malformed_records_are_attributed_and_out_of_range_records_are_skipped",
   "engine::identical_errors_are_marked_repeat_until_the_epoch_changes",
   "engine::decode_error_clears_ddp_recut_remainder_before_recovery",
@@ -485,7 +519,7 @@ tests = [
   "engine::a_stopped_source_lets_the_brir_tail_play_and_counts_no_underrun",
   "engine::format_seqlock_round_trips_formats",
   "engine::endpoint_format_support_and_volume_share_one_seqlock_generation",
-  "engine::format_events_carry_mat_unsupported_reason_and_pcm_support",
+  "engine::format_events_carry_mat_and_pcm_support",
   "engine::idle_blocks_are_dropped_silently_when_the_ring_is_full",
   "engine::a_full_ring_counts_overflowed_frames",
   "engine::an_overflow_burst_reports_its_frames_without_flooding_the_event_queue",
@@ -1122,6 +1156,8 @@ milestone = "M3"
 status = "implemented"
 tests = [
   "engine::deferred_ddp_places_scenes_only_after_the_worker_runs",
+  "engine::raw_truehd_and_mat_use_the_same_deferred_scene_path",
+  "engine::truehd_mat_burst_placement_does_not_allocate_on_the_capture_path",
   "engine::a_decode_thread_that_falls_behind_refuses_bursts_and_the_lane_recovers",
   "engine::a_reset_job_follows_the_bursts_queued_before_it",
   "engine::in_flight_deliveries_are_waited_for_at_finish",
@@ -1141,7 +1177,7 @@ tests = [
   "engine::finish_step_never_emits_more_than_its_budget_after_a_backlog",
   "engine::waiting_for_one_lane_does_not_cut_a_late_lane_ahead_of_it",
 ]
-note = "ADR 0031: the capture thread copies each complete E-AC-3 burst into one of 16 preallocated jobs (bitstream::MAX_PAYLOAD bytes each) and the ssr-decode thread runs the allocating upstream decoders; results come back through a second rtrb ring and are placed at the start of the next capture step, so the lane delay grows by one capture step. An interval a settled lane has not filled while it has current-generation bursts on the decode thread waits for them past the arrival slack, up to MAX_DELAY_FRAMES behind now, so a READ that brings several bursts at once leaves no empty place and does not grow the lane delay (ADR 0036). Reset jobs follow the bursts queued before them and are queued only for fronts that decoded since the last reset; a full queue refuses the burst with DecodeError::DecoderBehind (ChainErrorKind::DecoderBehind, counted as decode_refused). Each job carries the lane generation and the lane clock at submit: the chain discards a delivery from an earlier generation (a lane restart) or one later than MAX_DELAY_FRAMES of lane transport, counting its frames as dropped without an error event, so the mixer lane delay stays uncapped and a paused or zero-padded lane resumes from the frontier. A stop with deliveries in flight runs when the last one returns; a panic in the upstream decoder ends that job as a Corrupt error and the thread keeps running. Chains built by tests and offline tools keep the worker inline and run each job at the submit point, so offline rendering is unchanged; the runtime takes the worker with Chain::take_decode_worker"
+note = "ADR 0031: the capture thread copies each complete E-AC-3 or TrueHD/MAT burst into one of 16 preallocated jobs (bitstream::MAX_PAYLOAD bytes each); full MAT payloads are copied intact and fixed records are removed on the ssr-decode thread. Results come back through a second rtrb ring and are placed at the start of the next capture step, so the lane delay grows by one capture step. An interval a settled lane has not filled while it has current-generation bursts on the decode thread waits for them past the arrival slack, up to MAX_DELAY_FRAMES behind now, so a READ that brings several bursts at once leaves no empty place and does not grow the lane delay (ADR 0036). Reset jobs follow the bursts queued before them and are queued only for fronts that decoded since the last reset; a full queue refuses the burst with DecodeError::DecoderBehind (ChainErrorKind::DecoderBehind, counted as decode_refused). Each job carries the lane generation and the lane clock at submit: the chain discards a delivery from an earlier generation (a lane restart) or one later than MAX_DELAY_FRAMES of lane transport, counting its frames as dropped without an error event, so the mixer lane delay stays uncapped and a paused or zero-padded lane resumes from the frontier. A stop with deliveries in flight runs when the last one returns; a panic in an upstream decoder ends that job as a Corrupt error and the thread keeps running. Chains built by tests and offline tools keep the worker inline and run each job at the submit point, so offline rendering is unchanged; the runtime takes the worker with Chain::take_decode_worker"
 
 [[feature]]
 id = "engine.no_drop"
@@ -1208,7 +1244,7 @@ kind = "driver"
 milestone = "M3"
 status = "partial"
 tests = ["ssr-abi::driver_core_dump_matches_expectations"]
-note = "Spatial SoftReceiver PASS (Korean: 공간 소프트리시버 PASS) WaveRT/topology minipair and hardware volume/mute implemented; default mask 0x7, CodecMask2 and the PCM rules (PcmRateMask2/PcmShapeMask2/PcmMaxMaskedChannels2/PcmDirectChannels2) default like endpoint 0 (0x6c; 0x3f/0x1f/18/0xffffffff), OEM stereo 48 kHz. Native PassthroughStateAndIsolation and tools/ci/test_exclusive_policy.py verify contracts; tools/ci/test_ring_stats.py checks the shared three-tone statistics and strict gap, overrun, 100 ppm, -60 dBFS and -6.02±1 dB limits used by driver_flow_check.py. Windows load, endpoint-mask restart, exclusive PCM/bitstreams and spatial audio still need test-signed validation. Exclusive-only is a routing policy, not a shared-mode prohibition."
+note = "Spatial SoftReceiver PASS (Korean: 공간 소프트리시버 PASS) WaveRT/topology minipair and hardware volume/mute implemented; default endpoint mask 0x7. CodecMask2 defaults to 0x7c so endpoint 2 alone enables TrueHD by default; CodecMask0/1/3 remain 0x6c. The PCM rules (PcmRateMask2/PcmShapeMask2/PcmMaxMaskedChannels2/PcmDirectChannels2) default like endpoint 0 (0x3f/0x1f/18/0xffffffff), OEM stereo 48 kHz. Native PassthroughStateAndIsolation and tools/ci/test_exclusive_policy.py verify contracts; tools/ci/test_ring_stats.py checks the shared three-tone statistics and strict gap, overrun, 100 ppm, -60 dBFS and -6.02±1 dB limits used by driver_flow_check.py. Windows load, endpoint-mask restart, exclusive PCM/bitstreams and spatial audio still need test-signed validation. Exclusive-only is a routing policy, not a shared-mode prohibition."
 
 [[feature]]
 id = "sys.exclusive_policy"

@@ -31,10 +31,13 @@
 //! JOC payload on an expanded bed still require information upstream omits.
 
 use bitstream::{Burst, DataType};
-use eac3::{BedChannel, CorePcmFrame, ObjectPcmFrame, ParsedEmdfPayloadData, StreamType, Vec3};
+#[cfg(test)]
+use eac3::Vec3;
+use eac3::{BedChannel, CorePcmFrame, ObjectPcmFrame, ParsedEmdfPayloadData, StreamType};
+#[cfg(test)]
+use ssr_types::room_to_direction;
 use ssr_types::{
     MAX_OBJECTS, ObjectRole, Position, SceneBlock, SceneLayoutTable, SceneSource, Speaker,
-    room_to_direction,
 };
 
 use crate::{DecodeConfig, DecodeError, SceneBuffers};
@@ -44,29 +47,6 @@ mod timeline;
 use timeline::Timeline;
 
 const FRAMES: usize = 1536;
-
-#[derive(Clone, Copy, Debug)]
-struct ObjectMeta {
-    position: Position,
-    room: Vec3,
-    is_room: bool,
-    gain: f32,
-    spread: f32,
-    known: bool,
-}
-
-const EMPTY_META: ObjectMeta = ObjectMeta {
-    position: Position::new(0.0, 0.0, 0.0),
-    room: Vec3 {
-        x: 0.5,
-        y: 0.5,
-        z: 0.0,
-    },
-    is_room: true,
-    gain: 1.0,
-    spread: 0.0,
-    known: false,
-};
 
 /// Decode-thread half: the upstream decoders. Allocates; never runs on a
 /// real-time thread.
@@ -649,6 +629,7 @@ fn write_objects(
 /// Thus x'=2x-1, y'=1-2y, z'=z. Screen anchoring uses the same axes here;
 /// no screen dimensions exist in SceneBlock. Reject nonfinite values, clamp
 /// quantization overshoot to the room. Speaker anchors use bed_position.
+#[cfg(test)]
 fn oamd_position(p: Vec3) -> Option<Position> {
     if !p.x.is_finite() || !p.y.is_finite() || !p.z.is_finite() {
         return None;
@@ -1546,6 +1527,7 @@ mod tests {
         let delivery = |sequence, metadata| Decoded {
             codec: Some(DeferredCodec::Ddp),
             ddp: objects_delivery(sequence, metadata),
+            ..Decoded::new()
         };
         let known = (room_to_direction(-0.5, 1.0, 0.5), 0.3);
         let unknown = (Position::default(), 1.0);

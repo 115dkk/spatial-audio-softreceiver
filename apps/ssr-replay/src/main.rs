@@ -111,6 +111,10 @@ struct EndpointSummary {
     records: u64,
     data_bytes: u64,
     arrival: Option<ArrivalSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mat_payload: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mat_head: Option<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     scene: BTreeMap<u32, scene_inspect::SceneSummary>,
 }
@@ -540,13 +544,19 @@ fn inspect(bytes: &[u8]) -> Result<Summary, String> {
     for (endpoint, arrival) in arrivals {
         summary.endpoints.entry(endpoint).or_default().arrival = Some(arrival.finish());
     }
-    for ((endpoint, epoch), scene) in scene_inspect::inspect(stream, header.qpc_frequency) {
+    let inspection = scene_inspect::inspect(stream, header.qpc_frequency);
+    for ((endpoint, epoch), scene) in inspection.scenes {
         summary
             .endpoints
             .entry(endpoint)
             .or_default()
             .scene
             .insert(epoch, scene);
+    }
+    for (endpoint, diagnostic) in inspection.mat {
+        let summary = summary.endpoints.entry(endpoint).or_default();
+        summary.mat_payload = diagnostic.payload;
+        summary.mat_head = diagnostic.head;
     }
     Ok(summary)
 }
@@ -1003,7 +1013,52 @@ mod tests {
     }
 
     #[test]
-    fn inspect_decodes_ddp_bed_and_omits_undecodable_mat() {
+    fn inspect_decodes_raw_truehd_and_mat_with_the_normal_scene_summary() {
+        use ssr_types::{BitstreamCodec, BitstreamFormat};
+        let raw = include_bytes!("../../../crates/decode/tests/fixtures/truehd/tones-5.1-48k.thd");
+        let mat =
+            include_bytes!("../../../crates/decode/tests/fixtures/truehd/tones-5.1-48k.spdif");
+        let mut raw_burst = Vec::new();
+        bitstream::frame_burst(bitstream::DataType::Mat, raw, 61_440, &mut raw_burst);
+        let mut stream = vec![0; 300_000];
+        let mut writer = RecordWriter::new(&mut stream);
+        for (endpoint, codec, periods) in [
+            (0, BitstreamCodec::TrueHd, raw_burst.as_slice()),
+            (1, BitstreamCodec::Mat21, mat.as_slice()),
+        ] {
+            writer.set_endpoint(endpoint);
+            let format = SourceFormat::Bitstream(BitstreamFormat {
+                codec,
+                container_rate: 192_000,
+                container_channels: 8,
+                encoded_rate: 48_000,
+                encoded_channels: 6,
+            });
+            assert!(writer.format_change(1, 0, &wave_format_bytes(&format)));
+            for (index, period) in periods.chunks(61_440).enumerate() {
+                assert!(writer.data(
+                    1,
+                    (index * period.len()) as u64,
+                    (index as u64 + 1) * 200_000,
+                    period,
+                ));
+            }
+        }
+        let length = writer.len();
+        let mut dump = dump_header_bytes(10_000_000);
+        dump.extend_from_slice(&stream[..length]);
+
+        let summary = serde_json::to_value(inspect(&dump).unwrap()).unwrap();
+        for endpoint in ["0", "1"] {
+            let scene = &summary["endpoints"][endpoint]["scene"]["1"];
+            assert_eq!(scene["source"], "true_hd", "endpoint {endpoint}");
+            assert_eq!(scene["bed"], serde_json::json!(["L", "R", "C", "Ls", "Rs"]));
+            assert_eq!(scene["lfe"], true);
+        }
+    }
+
+    #[test]
+    fn inspect_decodes_ddp_bed_and_reports_unknown_mat_without_a_scene() {
         use ssr_types::{BitstreamCodec, BitstreamFormat};
         let fixture = include_bytes!("../../../crates/decode/tests/fixtures/ddp/tones-5.1.eac3");
         let size = (((usize::from(fixture[2] & 7) << 8) | usize::from(fixture[3])) + 1) * 2;
@@ -1021,7 +1076,7 @@ mod tests {
             encoded_rate: 48_000,
             encoded_channels: 6,
         });
-        let mut stream = vec![0; 60_000];
+        let mut stream = vec![0; 130_000];
         let mut writer = RecordWriter::new(&mut stream);
         assert!(writer.format_change(1, 0, &wave_format_bytes(&format)));
         assert!(writer.data(1, 0, 320_000, &burst));
@@ -1029,8 +1084,28 @@ mod tests {
             unreachable!()
         };
         mat.codec = BitstreamCodec::Mat21;
+        mat.container_channels = 8;
         writer.set_endpoint(1);
         assert!(writer.format_change(2, 0, &wave_format_bytes(&SourceFormat::Bitstream(mat))));
+        let mut payload = vec![0; decode::mat_frame::MAT_PAYLOAD_BYTES];
+        payload[..decode::mat_frame::START_MARKER.len()]
+            .copy_from_slice(&decode::mat_frame::START_MARKER);
+        let middle = decode::mat_frame::MIDDLE_MARKER_OFFSET;
+        payload[middle..middle + decode::mat_frame::MIDDLE_MARKER.len()]
+            .copy_from_slice(&decode::mat_frame::MIDDLE_MARKER);
+        let end = decode::mat_frame::END_MARKER_OFFSET;
+        payload[end..].copy_from_slice(&decode::mat_frame::END_MARKER);
+        for (index, byte) in payload
+            [decode::mat_frame::START_MARKER.len()..decode::mat_frame::MIDDLE_MARKER_OFFSET]
+            .iter_mut()
+            .take(64)
+            .enumerate()
+        {
+            *byte = index as u8;
+        }
+        let mut mat_burst = Vec::new();
+        bitstream::frame_burst(bitstream::DataType::Mat, &payload, 61_440, &mut mat_burst);
+        assert!(writer.data(2, 0, 640_000, &mat_burst));
         let length = writer.len();
         let mut dump = dump_header_bytes(10_000_000);
         dump.extend_from_slice(&stream[..length]);
@@ -1039,7 +1114,13 @@ mod tests {
         assert_eq!(scene["source"], "ddp");
         assert_eq!(scene["bed"], serde_json::json!(["L", "C", "R", "Ls", "Rs"]));
         assert_eq!(scene["lfe"], true);
-        assert!(summary["endpoints"]["1"].get("scene").is_none());
+        let mat = &summary["endpoints"]["1"];
+        assert_eq!(mat["mat_payload"], "unknown");
+        assert_eq!(
+            mat["mat_head"],
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+        );
+        assert!(mat.get("scene").is_none());
     }
 
     #[test]

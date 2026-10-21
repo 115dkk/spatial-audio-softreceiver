@@ -1087,7 +1087,16 @@ impl LayoutShared {
         let next = self.sequence.load(Ordering::Relaxed).wrapping_add(1);
         let buffer = &self.buffers[(next & 1) as usize];
         std::sync::atomic::fence(Ordering::Release);
-        buffer.source.store(layout.source as u32, Ordering::Relaxed);
+        let source = match layout.source {
+            ssr_types::SceneSource::None => 0,
+            ssr_types::SceneSource::Pcm => 1,
+            ssr_types::SceneSource::Ddp => 2,
+            ssr_types::SceneSource::DdpJoc => 3,
+            ssr_types::SceneSource::Upmix => 4,
+            ssr_types::SceneSource::TrueHd => 5,
+            ssr_types::SceneSource::TrueHdObjects => 6,
+        };
+        buffer.source.store(source, Ordering::Relaxed);
         buffer.lfe_objects.store(
             u32::from(layout.lfe) | u32::from(layout.objects) << 8,
             Ordering::Relaxed,
@@ -1121,6 +1130,8 @@ impl LayoutShared {
                 2 => ssr_types::SceneSource::Ddp,
                 3 => ssr_types::SceneSource::DdpJoc,
                 4 => ssr_types::SceneSource::Upmix,
+                5 => ssr_types::SceneSource::TrueHd,
+                6 => ssr_types::SceneSource::TrueHdObjects,
                 _ => ssr_types::SceneSource::None,
             };
             let shape = buffer.lfe_objects.load(Ordering::Relaxed);

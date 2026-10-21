@@ -213,11 +213,17 @@ mod endpoint_tests {
     #[test]
     fn scene_layout_lines_localize_sources_and_lfe() {
         use ssr_types::{SceneBedChannel, SceneDynamicObject, SceneLayout, SceneSource};
-        for (source, label) in [
-            (SceneSource::Pcm, "PCM"),
-            (SceneSource::Ddp, "E-AC-3"),
-            (SceneSource::DdpJoc, "E-AC-3 JOC"),
-            (SceneSource::Upmix, "upmix"),
+        for (source, english_label, korean_label) in [
+            (SceneSource::Pcm, "PCM", "PCM"),
+            (SceneSource::Ddp, "E-AC-3", "E-AC-3"),
+            (SceneSource::DdpJoc, "E-AC-3 JOC", "E-AC-3 JOC"),
+            (SceneSource::Upmix, "upmix", "업믹스"),
+            (SceneSource::TrueHd, "TrueHD", "TrueHD"),
+            (
+                SceneSource::TrueHdObjects,
+                "TrueHD objects",
+                "TrueHD (위치 포함)",
+            ),
         ] {
             let mut layout = SceneLayout {
                 source,
@@ -232,16 +238,32 @@ mod endpoint_tests {
                     .map(|index| SceneDynamicObject { index, room: None })
                     .collect(),
             };
-            assert_eq!(
-                scene_layout_line(Language::En, 1, Some(&layout)),
-                format!("endpoint 1: {label}, bed 7 channels + LFE, dynamic objects 7")
-            );
-            let korean = scene_layout_line(Language::Ko, 1, Some(&layout));
-            assert!(korean.contains("고정 채널 7개"));
-            assert!(korean.contains("움직이는 소리 7개"));
-            assert!(!korean.contains("객체") && !korean.contains("베드"));
-            layout.lfe = false;
-            assert!(!scene_layout_line(Language::En, 1, Some(&layout)).contains("LFE"));
+            for (lfe, suffix) in [(true, " + LFE"), (false, "")] {
+                layout.lfe = lfe;
+                assert_eq!(
+                    scene_layout_line(Language::En, 1, Some(&layout)),
+                    format!(
+                        "endpoint 1: {english_label}, bed 7 channels{suffix}, dynamic objects 7"
+                    )
+                );
+                assert_eq!(
+                    scene_layout_line(Language::Ko, 1, Some(&layout)),
+                    format!(
+                        "엔드포인트 1: {korean_label}, 고정 채널 7개{suffix}, 움직이는 소리 7개"
+                    )
+                );
+            }
+        }
+        for (language, expected) in [
+            (Language::En, "endpoint 1: scene layout unavailable"),
+            (Language::Ko, "엔드포인트 1: 소리 배치 정보 없음"),
+        ] {
+            assert_eq!(scene_layout_line(language, 1, None), expected);
+            let layout = SceneLayout {
+                source: SceneSource::None,
+                ..Default::default()
+            };
+            assert_eq!(scene_layout_line(language, 1, Some(&layout)), expected);
         }
     }
 
@@ -1008,6 +1030,8 @@ fn scene_layout_line(
         SceneSource::Ddp => live::scene_source_ddp(language),
         SceneSource::DdpJoc => live::scene_source_ddp_joc(language),
         SceneSource::Upmix => live::scene_source_upmix(language),
+        SceneSource::TrueHd => live::scene_source_truehd(language),
+        SceneSource::TrueHdObjects => live::scene_source_truehd_objects(language),
     };
     live::scene_layout(
         language,

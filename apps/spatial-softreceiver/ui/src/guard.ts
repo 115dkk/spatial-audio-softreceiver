@@ -312,6 +312,8 @@ export const SCENE_SOURCES: Record<SceneSource, true> = {
   ddp: true,
   ddp_joc: true,
   upmix: true,
+  true_hd: true,
+  truehd_objects: true,
 };
 
 const room: Guard<[number, number, number]> = (value, path) => {
