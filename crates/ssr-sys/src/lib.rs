@@ -65,6 +65,8 @@ pub mod output;
 pub mod qpc;
 #[cfg(windows)]
 pub mod sal;
+#[cfg(windows)]
+pub mod spatial;
 
 #[cfg(windows)]
 pub use host::WindowsHost;

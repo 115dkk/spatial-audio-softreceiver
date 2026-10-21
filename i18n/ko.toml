@@ -108,6 +108,16 @@ parse_error = "명령줄을 읽지 못했습니다. --help로 사용법을 보�
 
 # ssr-live 도움말과 사람이 읽는 출력입니다. JSON 계약은 번역하지 않습니다.
 [live]
+mat_probe_about = "공간 음향 입력을 관찰하고 MAT 버스트와 원래 신호 정보를 기록합니다."
+mat_endpoint_help = "드라이버 엔드포인트 번호(KS 필터 식별자로 찾음)."
+mat_seconds_help = "공간 음향 신호를 보낼 시간(초, 최대 3600)."
+mat_truth_help = "원래 신호 정보를 저장할 JSON 파일."
+mat_enable_spatial = "소리 설정에서 이 엔드포인트의 공간 음향을 Dolby Atmos for home theater로 켠 뒤 다시 실행하십시오. Dolby와 Dolby Atmos는 Dolby Laboratories의 상표입니다. 상세: {detail}"
+mat_invalid = "관찰 매개변수나 소리 개수가 지원 범위를 벗어났거나 출력 파일이 이미 있습니다."
+mat_capacity = "미리 확보한 관찰 버퍼가 찼습니다. 그때까지의 원래 신호 정보를 저장합니다."
+mat_capture_failed = "녹화 스레드가 실패했습니다."
+mat_finished = "덤프: {dump}; 원래 신호: {truth}; MAT 버스트: {bursts}; 형식: {formats}; 녹화 손실 바이트: {lost}"
+mat_short = "모든 소리의 단독 재생과 움직임을 관찰하기에는 시간이 짧습니다. --seconds {seconds} 이상으로 다시 실행하십시오."
 scene_layout = "엔드포인트 {endpoint}: {source}, 고정 채널 {bed}개{lfe}, 움직이는 소리 {dynamic}개"
 scene_unavailable = "엔드포인트 {endpoint}: 소리 배치 정보 없음"
 scene_lfe = " + LFE"
@@ -254,6 +264,20 @@ asio_driver_panicked = "ASIO 드라이버에서 내부 오류가 발생했습니
 
 # ssr-replay 도움말과 사람이 읽는 출력입니다. 보고서 JSON은 번역하지 않습니다.
 [replay]
+mat_about = "MAT 관찰 결과와 원래 공간 음향 신호를 비교합니다(디코더 아님)."
+mat_truth_help = "mat-probe가 기록한 원래 신호 JSON."
+mat_json_help = "분석 후보를 JSON으로 저장합니다."
+mat_invalid_truth = "원래 신호 JSON이나 QPC 주파수가 유효하지 않거나 덤프와 맞지 않습니다."
+mat_truehd = "이 스트림은 TrueHD입니다(MLP major sync 발견). PCM 배치 분석을 중단했습니다."
+mat_summary = "MAT 프레임: {frames}; 내용물 크기: {sizes}; 무음 프레임: {silence}"
+mat_ranges_heading = "바이트 범위(끝 제외) | 무음 중 값 유지 여부"
+mat_samples_heading = "소리 | 오프셋 | 표본 형식/바이트 순서 | 보폭 | 상관값 | 지연(표본) | 확신"
+mat_constant = "일정"
+mat_varying = "변함"
+mat_low = "낮은 확신"
+mat_candidate = "관찰 후보"
+mat_missing = "신뢰할 후보 없음 / 단독 재생 구간 없음"
+mat_caution = "관찰 후보이며 MAT 규격이 아닙니다. 표본 폭, 바이트 순서, 위상이 달라도 같은 상관값이 나올 수 있습니다. 움직임이나 무음 구간이 없으면 필드를 식별할 수 없습니다. JSON의 경고와 근거를 확인하십시오."
 about = "공간 소프트리시버 드라이버 기록 덤프를 읽는 오프라인 도구"
 inspect_about = "덤프의 엔드포인트·에포크별 형식, 기록 수와 손실을 JSON으로 요약합니다."
 render_about = "진단 덤프를 결정적인 32비트 부동소수점 WAV로 렌더합니다."

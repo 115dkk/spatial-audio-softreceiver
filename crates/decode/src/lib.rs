@@ -24,6 +24,7 @@ pub mod ddp;
 pub mod direct;
 pub mod mat;
 pub mod mat_frame;
+pub mod mat_probe;
 pub mod pcm;
 mod scene;
 mod timeline;

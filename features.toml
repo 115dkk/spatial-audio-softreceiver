@@ -38,6 +38,21 @@ tests = [
 ]
 note = "Inspect samples scene metadata at record boundaries; OAMD update counts and unobserved intra-record positions are not inferred."
 
+[[feature]]
+id = "tool.mat_probe"
+kind = "tool"
+milestone = "M1"
+status = "partial"
+tests = [
+  "decode::lfsr_has_maximal_period_and_exact_integer_samples",
+  "decode::silence_solos_motion_and_volume_are_deterministic",
+  "ssr-replay::synthetic_be24_planar_layout_and_fields",
+  "ssr-replay::synthetic_le16_interleaved_layout_and_fields",
+  "ssr-replay::synthetic_delay_over_half_mls_period_is_unwrapped",
+  "ssr-replay::truehd_and_missing_intervals_are_not_layout_claims",
+]
+note = "Linux synthetic analyzer tests only; no real MAT dump or Windows spatial capture validation. Candidates are not a decoder or a wire specification."
+
 # ---- Policy (M0) ----
 
 [[feature]]
