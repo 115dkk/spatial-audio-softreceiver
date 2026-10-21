@@ -11,6 +11,10 @@
 //! (every 0.x is one): the newest release that carries `releases.win.json`.
 //! A downloaded update is applied when the user asks (the settings screen),
 //! or at the next plain launch, never behind a running session.
+//! `SSR_UPDATE_SOURCE` is a test-only override: when present it selects a local
+//! release directory, never an HTTP URL. `--update-once --result <file>` is a
+//! headless CI probe; `applied` means the updater accepted the exit-wait request,
+//! not that the replacement has already completed.
 //!
 //! The real module needs the `updater` feature (see Cargo.toml); without it
 //! the same names are stubs.
@@ -22,6 +26,77 @@ use ssr_types::app::{Language, NextAction, UserError};
 use crate::log;
 
 pub use real::*;
+
+#[cfg(any(test, all(windows, feature = "updater")))]
+#[derive(Debug, PartialEq, Eq)]
+enum Source {
+    Github,
+    Local(std::path::PathBuf),
+}
+
+#[cfg(any(test, all(windows, feature = "updater")))]
+impl Source {
+    fn select(value: Option<std::ffi::OsString>) -> Result<Self, String> {
+        match value {
+            None => Ok(Self::Github),
+            Some(value) if value.is_empty() => Err("SSR_UPDATE_SOURCE is empty".to_owned()),
+            Some(value) => Ok(Self::Local(value.into())),
+        }
+    }
+}
+
+#[derive(Default, Debug, serde::Serialize)]
+struct OnceResult {
+    checked: bool,
+    found: Option<String>,
+    applied: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+impl OnceResult {
+    fn write(&self, path: &std::path::Path) -> Result<(), String> {
+        use std::io::Write as _;
+        // std::fs::rename replaces an existing file on Windows too. Keep the
+        // temporary file on the same volume, sync it and close it before rename.
+        let mut name = path
+            .file_name()
+            .ok_or("result path has no file name")?
+            .to_os_string();
+        name.push(format!(".{}.tmp", std::process::id()));
+        let temporary = path.with_file_name(name);
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|error| format!("result temporary file: {error}"))?;
+        let written = (|| -> Result<(), String> {
+            serde_json::to_writer(&mut file, self).map_err(|error| error.to_string())?;
+            file.write_all(b"\n").map_err(|error| error.to_string())?;
+            file.sync_all().map_err(|error| error.to_string())?;
+            drop(file);
+            std::fs::rename(&temporary, path).map_err(|error| error.to_string())
+        })();
+        if written.is_err() {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        written.map_err(|error| format!("result {}: {error}", path.display()))
+    }
+}
+
+/// Check, download and request apply, then let main exit immediately. No guard,
+/// Tauri, background polling or wait for the replacement process is involved.
+pub fn run_once(path: &std::path::Path) -> Result<(), String> {
+    let mut result = OnceResult::default();
+    // Fail before requesting an update if the report cannot be written.
+    result.write(path)?;
+    let outcome = real::check_once(&mut result);
+    if let Err(error) = &outcome {
+        result.error = Some(error.clone());
+    }
+    result.write(path)?;
+    outcome
+}
 
 /// What the shell's `apply_update` command does once Tauri handed over its
 /// state: without a downloaded update, or when the updater does not start,
@@ -85,14 +160,14 @@ impl ApplyError {
     }
 }
 
-#[cfg(feature = "updater")]
+#[cfg(all(windows, feature = "updater"))]
 mod real {
     use std::path::{Path, PathBuf};
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Duration;
 
-    use velopack::sources::{GithubSource, NoneSource};
+    use velopack::sources::{FileSource, GithubSource, NoneSource};
     use velopack::{UpdateCheck, UpdateManager, VelopackApp, VelopackAsset};
 
     use crate::log;
@@ -106,6 +181,47 @@ mod real {
     const FIRST_CHECK: Duration = Duration::from_secs(20);
     const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
+    fn manager() -> Result<UpdateManager, String> {
+        let manager = match super::Source::select(std::env::var_os("SSR_UPDATE_SOURCE"))? {
+            super::Source::Github => {
+                UpdateManager::new(GithubSource::new(REPO_URL, None, true), None, None)
+            }
+            super::Source::Local(path) => {
+                if !path.is_dir() {
+                    return Err(format!(
+                        "SSR_UPDATE_SOURCE is not a directory: {}",
+                        path.display()
+                    ));
+                }
+                UpdateManager::new(FileSource::new(path), None, None)
+            }
+        };
+        manager.map_err(|error| format!("update manager: {error}"))
+    }
+
+    pub(super) fn check_once(result: &mut super::OnceResult) -> Result<(), String> {
+        let manager = manager()?;
+        let update = manager
+            .check_for_updates()
+            .map_err(|error| format!("check: {error}"))?;
+        result.checked = true;
+        if let UpdateCheck::UpdateAvailable(update) = update {
+            result.found = Some(update.TargetFullRelease.Version.clone());
+            manager
+                .download_updates(&update, None)
+                .map_err(|error| format!("download: {error}"))?;
+            let pending = Pending {
+                manager,
+                asset: update.TargetFullRelease,
+            };
+            pending
+                .apply_after_exit()
+                .map_err(|error| format!("apply: {error:?}"))?;
+            result.applied = true;
+        }
+        Ok(())
+    }
+
     /// Velopack's startup: the hooks (the process exits inside for those) and
     /// the process AUMID. The first thing `main` does. The uninstall hook gives
     /// the default roles back from the restore point, so an app being removed
@@ -116,6 +232,9 @@ mod real {
             .set_auto_apply_on_startup(false)
             .set_app_user_model_id(APP_USER_MODEL_ID)
             .on_before_uninstall_fast_callback(move |_| {
+                // Hooks run before the shell opens its log.
+                log::Log::open(&restore_dir);
+                log::line("update: before-uninstall hook");
                 // On a thread of its own: the host's COM calls want one.
                 let _ =
                     thread::spawn(move || drop(crate::shell::last_resort_restore(&restore_dir)))
@@ -229,16 +348,15 @@ mod real {
 
         fn check_loop(&self, notify: impl Fn(&UpdateState)) {
             thread::sleep(FIRST_CHECK);
-            let manager =
-                match UpdateManager::new(GithubSource::new(REPO_URL, None, true), None, None) {
-                    Ok(manager) => manager,
-                    Err(error) => {
-                        log::line(&format!(
-                            "update: not an installed app ({error}); no update checks"
-                        ));
-                        return;
-                    }
-                };
+            let manager = match manager() {
+                Ok(manager) => manager,
+                Err(error) => {
+                    log::line(&format!(
+                        "update: not an installed app ({error}); no update checks"
+                    ));
+                    return;
+                }
+            };
             loop {
                 match manager.check_for_updates() {
                     Ok(UpdateCheck::UpdateAvailable(update)) => {
@@ -273,7 +391,7 @@ mod real {
     }
 }
 
-#[cfg(not(feature = "updater"))]
+#[cfg(not(all(windows, feature = "updater")))]
 mod real {
     use std::path::{Path, PathBuf};
 
@@ -283,6 +401,10 @@ mod real {
     pub const REPO_URL: &str = "https://github.com/115dkk/spatial-audio-softreceiver";
     /// The Application User Model ID of the app, its shortcut and the toasts.
     pub const APP_USER_MODEL_ID: &str = "io.github.115dkk.spatial-softreceiver";
+
+    pub(super) fn check_once(_result: &mut super::OnceResult) -> Result<(), String> {
+        Err("updater unavailable: requires Windows and the updater feature".to_owned())
+    }
 
     /// Nothing: this build has no updater.
     pub fn startup(_state_dir: &Path) {}
@@ -345,6 +467,75 @@ mod real {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_selection_never_falls_back_from_an_override() {
+        assert_eq!(Source::select(None), Ok(Source::Github));
+        assert_eq!(
+            Source::select(Some("local releases".into())),
+            Ok(Source::Local("local releases".into()))
+        );
+        assert!(Source::select(Some("".into())).is_err());
+    }
+
+    #[test]
+    fn once_result_json_covers_success_absence_and_failure() {
+        let mut result = OnceResult {
+            checked: true,
+            ..OnceResult::default()
+        };
+        assert_eq!(
+            serde_json::to_string(&result).unwrap(),
+            r#"{"checked":true,"found":null,"applied":false}"#
+        );
+        result.found = Some("0.0.2".into());
+        result.applied = true;
+        assert_eq!(
+            serde_json::to_string(&result).unwrap(),
+            r#"{"checked":true,"found":"0.0.2","applied":true}"#
+        );
+        result.applied = false;
+        result.error = Some("download: failed\nquoted \"detail\"".into());
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(!json.contains('\n'));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&json).unwrap()["applied"],
+            false
+        );
+    }
+
+    #[test]
+    fn result_replaces_previous_content_with_one_line() {
+        let path =
+            std::env::temp_dir().join(format!("ssr-update-result-{}.json", std::process::id()));
+        std::fs::write(
+            &path,
+            "old content that is much longer than the new report\nold line\n",
+        )
+        .unwrap();
+        let result = OnceResult::default();
+        result.write(&path).unwrap();
+        result.write(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            text,
+            "{\"checked\":false,\"found\":null,\"applied\":false}\n"
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(not(all(windows, feature = "updater")))]
+    #[test]
+    fn unavailable_updater_reports_failure() {
+        let mut result = OnceResult::default();
+        assert!(
+            real::check_once(&mut result)
+                .unwrap_err()
+                .contains("updater unavailable")
+        );
+        assert!(!result.checked);
+        assert!(!result.applied);
+    }
 
     #[test]
     fn apply_errors_render_in_both_languages_and_keep_the_detail() {

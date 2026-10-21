@@ -27,5 +27,4 @@ pub mod tray;
 pub mod launcher;
 #[cfg(windows)]
 pub mod shell;
-#[cfg(windows)]
 pub mod update;

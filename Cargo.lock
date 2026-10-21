@@ -4126,6 +4126,7 @@ name = "ssr-live"
 version = "0.21.0"
 dependencies = [
  "assert_no_alloc",
+ "bitstream",
  "brir",
  "clap",
  "engine",

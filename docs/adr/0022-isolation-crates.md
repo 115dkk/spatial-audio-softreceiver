@@ -51,3 +51,13 @@ ADR 0035가 `hostvst` 계열의 이름을 `plughost` 계열로 바꿨습니다. 
   - `plughost-sys`는 `plughost`와 시험용 플러그인만 링크합니다.
   - `plughost`는 앱만 링크합니다.
   - `streamring`과 `plughost-*`는 `ssr-*`에 의존하지 않습니다.
+
+## 2026-10-18 덧붙임: `ssr-sys` 134
+
+ADR 0037(74)과 0038(107)에 이어, 시험서명 PC에서만 볼 수 있던 것을 러너에서 확인하는 도구 둘이 `ssr-sys`에 27을 더합니다. 숫자는 `unsafe-budget.toml`의 셈법(주석·문자열을 뺀 `unsafe` 낱말 수)입니다.
+
+- **엔드포인트 속성 읽기(8):** `ssr-live host formats`가 우리 엔드포인트의 속성 저장소에서 설명(`PKEY_Device_DeviceDesc`), 친숙한 이름, 장치 형식(`PKEY_AudioEngine_DeviceFormat`, VT_BLOB)을 읽습니다. `PROPVARIANT` 접근과 해제입니다. 형식 해석은 `ssr_abi::wave`에서 Linux로 시험합니다.
+- **독점 비트스트림(19):** `ssr-live bitstream probe`와 `play`가 IEC 61937 형식으로 `IsFormatSupported`와 이벤트 구동 `Initialize`를 부르고, PASS에 E-AC-3 버스트를 씁니다(`IAudioClient`, `IAudioRenderClient`, `IAudioClock`, 이벤트 핸들, MMCSS). 실시간 쓰기 고리에는 할당, 잠금, 파일 입출력이 없습니다.
+
+이 도구들은 `driver.yml`의 시험서명 설치 잡이 부릅니다(`endpoint_format_check.py`, `bitstream_check.py`, `endpoint_name_check.py`).
+

@@ -75,9 +75,13 @@ try {
 foreach ($name in 'install.ps1', 'uninstall.ps1', 'collect.ps1', 'strings.psd1') {
     Copy-Item (Join-Path $repo "tools\testkit\$name") $kit
 }
-foreach ($name in 'RootDevice.cs', 'endpoints.ps1', 'endpoints.py', 'package-identities.ps1', 'driver_flow_check.py', 'ring_record.py', 'volume_check.py', 'volume_check.ps1', 'endpoint-volume.ps1', 'exclusive-policy.ps1', 'exclusive_policy_check.ps1', 'ioctl_fuzz.py', 'ssr_abi.py', 'ssr_control.py', 'ring_stats.py', 'numpy_compat.py', 'report_check.py') {
+foreach ($name in 'RootDevice.cs', 'endpoints.ps1', 'endpoints.py', 'package-identities.ps1', 'driver_flow_check.py', 'ring_record.py', 'volume_check.py', 'volume_check.ps1', 'endpoint-volume.ps1', 'exclusive-policy.ps1', 'exclusive_policy_check.ps1', 'ioctl_fuzz.py', 'ssr_abi.py', 'ssr_control.py', 'ring_stats.py', 'numpy_compat.py', 'report_check.py', 'endpoint_format_check.py', 'endpoint_name_check.py', 'bitstream_check.py') {
     Copy-Item (Join-Path $repo "tools\ci\$name") $kit
 }
+# bitstream_check.py resolves this synthetic fixture relative to its own directory.
+$fixtures = Join-Path $kit 'fixtures'
+New-Item -ItemType Directory -Force -Path $fixtures | Out-Null
+Copy-Item (Join-Path $repo 'crates\decode\tests\fixtures\ddp\tones-5.1.eac3') (Join-Path $fixtures 'tones-5.1.eac3')
 # The kit needs only numpy; CI's requirements.txt adds the loopback tools.
 Copy-Item (Join-Path $repo 'tools\ci\requirements-kit.txt') (Join-Path $kit 'requirements.txt')
 # The commit checked out, not GITHUB_SHA: the release job checks out the

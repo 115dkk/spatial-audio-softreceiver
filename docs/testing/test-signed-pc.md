@@ -75,7 +75,7 @@ SAL이 없는 PC라면 M2 부분은 건너뜁니다. 둘 다 할 수 있으면 *
 
 1. 릴리스 페이지에서 다음을 받습니다.
    - `spatial-softreceiver-driver-test-<버전>-x64.zip` (M3)
-   - `spatial-softreceiver-tools-<버전>-windows-x86_64.zip` (M2. `ssr-live.exe`, `ssr-replay.exe`)
+   - `spatial-softreceiver-tools-<버전>-windows-x86_64.zip` (M2와 M3의 명령줄 검사. `ssr-live.exe`, `ssr-replay.exe`)
    - `SHA256SUMS.txt`
 2. 해시를 확인합니다:
 
@@ -98,6 +98,10 @@ SAL이 없는 PC라면 M2 부분은 건너뜁니다. 둘 다 할 수 있으면 *
    ```
 
 `kit.json`에 이 묶음의 버전, 커밋, 서명 인증서의 지문, 파일 해시가 있습니다.
+
+M3의 아래 명령은 드라이버 묶음 폴더에서 실행합니다. 도구 zip의 `ssr-live.exe`와 `ssr-replay.exe`를 그 폴더에 복사하십시오. `endpoint_format_check.py`, `endpoint_name_check.py`, `bitstream_check.py`와 이들이 가져오는 Python 모듈은 드라이버 묶음에 들어 있습니다. 비트스트림 검사용 합성 음원은 `fixtures\tones-5.1.eac3`에 있으므로 이 하위 폴더도 그대로 두십시오. 검사기는 현재 작업 폴더가 아니라 자기 스크립트 위치를 기준으로 음원을 찾고 SHA-256을 확인합니다.
+
+이름 검사(`endpoint_name_check.py`)는 장치를 다시 시작하는 `ssr-setup.exe`도 필요합니다. 이 실행 파일은 드라이버 묶음과 도구 zip에는 없습니다. 같은 버전의 앱 설치본을 설치한 뒤 `%LOCALAPPDATA%\SpatialSoftReceiver\current\ssr-setup.exe`를 위 `ssr-live.exe` 옆에 복사하거나, 같은 커밋의 Windows 저장소 체크아웃에서 `cargo build --release -p ssr-setup`으로 만든 `target\release\ssr-setup.exe`를 복사하십시오. 앱의 드라이버 설치는 실행하지 말고, 실행 중인 앱과 링 판독기는 닫은 뒤 검사합니다. 설정 도구를 준비하지 못했다면 이름 검사는 미실시로 기록하고 통과한 것으로 보지 않습니다.
 
 명령줄 도구(`ssr-live`, `ssr-replay`, `ssr-setup`)와 묶음 스크립트(`install.ps1`, `uninstall.ps1`, `collect.ps1`)는 Windows 표시 언어가 한국어면 도움말과 출력을 한국어로, 그 밖에는 영어로 냅니다. 이 문서는 영어 출력을 인용하고, 한국어로 다른 곳은 그 문장도 함께 적습니다. 한 언어로 고정하려면 PowerShell에서 먼저 `$env:SSR_LANG = 'en'`(또는 `'ko'`)를 설정합니다. JSON 보고서와 결과 파일의 키와 값, 장치 이름, 경로, Windows가 돌려준 오류 상세는 언어와 관계없이 그대로입니다.
 
@@ -280,7 +284,21 @@ py .\report_check.py --preset sal --min-dynamic-objects 1 play-music.json
 
 `powershell -NoProfile -ExecutionPolicy Bypass -File .\endpoints.ps1`의 JSON에 `endpoint`, `id`, `name`, `state`가 나옵니다. 이름을 한국어 또는 다른 별칭으로 바꾼 뒤에도 0/1/2 대응과 기본 흐름·볼륨·독점 정책 시험이 그대로 통과해야 합니다.
 
-**시험서명 PC에서 확인할 이름 계약:** 한국어 Windows의 새 설치에서 한국어 이름이 보이는지 확인하십시오. 서비스 `HKLM\SYSTEM\CurrentControlSet\Services\SpatialSoftReceiver\Parameters`의 `EndpointName0` REG_SZ를 1~31 UTF-16 코드 단위의 시험 이름으로 바꾼 뒤 해당 PnP 장치만 다시 시작하여 HDMI 싱크 설명이 그 이름을 쓰는지 확인합니다. 원래 레지스트리 값을 기록하고 시험 후 복원·장치 재시작하십시오. 누락·빈 값·32자·비 REG_SZ는 영어 기본값으로 돌아가야 합니다. Windows가 저장한 사용자 별칭과 싱크 설명은 구별해서 기록합니다. 서명 패키지 자체를 편집하지 마십시오.
+CI는 설치된 엔드포인트의 싱크 설명·친숙한 이름·실제 `PKEY_AudioEngine_DeviceFormat`을 고정 KS 필터 식별자로 읽고, 레지스트리 이름을 짧은 값과 32자 값으로 바꿨다가 복원하여 드라이버의 이름 계약도 검사합니다. 시험서명 PC에서 사람이 더 확인할 것은 **한국어 Windows의 새 설치에서 표의 한국어 이름이 보이는지**와 Windows가 저장한 사용자 별칭이 싱크 설명과 구별되는지뿐입니다.
+
+설치된 값을 직접 볼 때는 다음 명령을 씁니다. `host formats`는 JSON 문서 하나를 표준 출력에 씁니다.
+
+```powershell
+.\ssr-live.exe host formats > endpoint-formats.json
+py .\endpoint_format_check.py --ssr-live .\ssr-live.exe --summary endpoint-format.json --expect-mask 0x7
+py .\endpoint_name_check.py --ssr-live .\ssr-live.exe --summary endpoint-name.json
+```
+
+**합격 기준**
+- `host formats`에 기대 마스크의 엔드포인트가 하나씩 있고 모두 `active`; `device_format_error`는 `null`
+- 0은 extensible IEEE float 48 kHz, 8채널, 32/32비트, 채널 마스크 `0x63f`; 1과 2는 같은 형식의 2채널, 채널 마스크 `0x3`
+- `device_desc`가 서비스 Parameters의 `EndpointName<N>`과 같고, 값이 없으면 표의 영어 이름을 씀
+- 이름 검사가 1번의 짧은 이름을 그대로 쓰고 2번의 32자 값을 `Spatial SoftReceiver PASS`로 물린 뒤 원래 값과 이름을 모두 복원함
 
 기본 `EndpointMask`는 `0x7`입니다. 비트 0은 **Spatial SoftReceiver**(기본 장치·시스템 소리·공간음향), 비트 1은 **Spatial SoftReceiver Music**(공유 음악), 비트 2는 **Spatial SoftReceiver PASS**(독점 비트스트림·PCM)를 켭니다. 미니페어가 없는 비트 3은 무시합니다. 비트 2를 끈 0x3으로 장치를 다시 시작하면 활성 패스스루 엔드포인트가 없어야 하고 QUERY_INFO도 0x3이어야 합니다. 이때 검사 명령의 기대 마스크도 3으로 바꿉니다. 0은 '전부 끔'이 아니라 기본값 0x7로 돌아갑니다.
 
@@ -369,7 +387,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\volume_check.ps1 -Summary 
 
 ## 4. 비트스트림 패스스루 형식
 
-재생기가 압축 오디오를 그대로(독점 모드로) 보낼 때 드라이버가 그 형식을 받아들이는지 봅니다. MPC-HC와 LAV Filters를 예로 듭니다.
+CI는 코덱 비트 1~8을 세 엔드포인트에 독점 형식으로 질의하고, PASS에서 지원된 형식을 실제로 초기화합니다. 이어 공개 E-AC-3 자료를 IEC 61937 burst로 재생하면서 드라이버 링을 녹화해, 192 kHz·2채널 E-AC-3 형식과 원본 sync frame의 순서·바이트가 90% 이상 그대로 도착하는지 검사합니다.
+
+```powershell
+.\ssr-live.exe bitstream probe --json
+py .\bitstream_check.py --ssr-live .\ssr-live.exe --ssr-replay .\ssr-replay.exe --summary bitstream.json
+```
+
+`bitstream probe --json`은 JSON 문서 하나를 표준 출력에 씁니다. **합격 기준**은 0과 1이 모든 코덱의 독점 열기를 거절하고, 2는 `codec_mask`에 켜진 비트를 지원하여 `initialize_hr`가 `0x00000000`이며 꺼진 비트를 거절하는 것입니다. 종단 검사는 E-AC-3, 192000 Hz, 2채널을 기록하고 보낸 frame의 90% 이상을 바이트 단위·순서대로 되찾아야 합니다.
+
+사람이 시험서명 PC에서 더 확인할 것은 실제 플레이어와 디코더 조합의 장치 선택·fallback 표시, 재생 중 음질, 그리고 0의 시스템 소리와 1의 공유 음악이 함께 들리는지입니다. MPC-HC와 LAV Filters를 예로 듭니다.
 
 기본 `CodecMask2=0x7c`에서는 DD+, MAT, TrueHD를 받지만 AC-3와 DTS 계열은 꺼져 있습니다. PCM은 별도 규칙(`PcmRateMask2=0x3f`, `PcmShapeMask2=0x1f`, `PcmMaxMaskedChannels2=18`, `PcmDirectChannels2=0xffffffff`)으로 44.1~192 kHz의 여섯 표본율, 다섯 표본 모양, Windows 18개 스피커 비트의 배치 및 마스크 0의 1~32채널 직접 출력을 받습니다. 옛 `FormatMask2`는 읽지 않습니다. 기본으로 꺼진 코덱(AC-3, DTS 계열)의 협상은 지원 디코더에 맞춰 별도로 켠 시험 구성에서만 확인하며, 기본 구성에서 그 코덱이 거절되는 것은 드라이버 결함으로 보지 않습니다. 아래 재생과 함께 0으로 시스템 소리, 1로 공유 음악을 보내 둘이 끊기지 않는지도 확인합니다. PCM 형식의 범위는 4-1단계에서 봅니다.
 
@@ -765,6 +792,16 @@ bcdedit /set testsigning off
 
 ### 10-0. 필요한 것
 
+CI는 두 로컬 Velopack 릴리스로 무인 설치 → 바로가기 AUMID와 HKCU 제거 등록 → 로컬 업데이트 → 무인 제거 → 제거 훅 로그를 한 주기로 검사합니다. 시험서명 PC에서 사람이 확인할 것은 SmartScreen/UAC, 창·트레이·소리와 다음 절의 실제 사용감입니다.
+
+**설치 수명 주기 자동 검사는 드라이버 묶음 명령이 아니라 릴리스/CI의 저장소 체크아웃 시험입니다.** `installer_cycle.ps1`, 설치본, Velopack 릴리스 피드는 드라이버 묶음에 넣지 않습니다. 재현하려면 저장소 루트에서 아래 명령을 쓰되, 경로와 버전을 실제 릴리스 산출물로 바꾸십시오. `-Setup`에는 이전 버전 설치본을, `-Releases`에는 두 버전의 패키지와 피드 메타데이터가 있는 로컬 Velopack 릴리스 폴더를 줍니다. 기존 앱이 없는 일회용 Windows 계정에서 관리자 권한 없이 실행합니다.
+
+```powershell
+pwsh -NoProfile -File .\tools\ci\installer_cycle.ps1 -Releases '<릴리스 산출물의 Velopack 피드 폴더 절대 경로>' -Setup '<이전 버전 설치본 exe 절대 경로>' -OldVersion '<이전 버전>' -NewVersion '<새 버전>' -Summary installer-cycle.json
+```
+
+**자동 검사 합격 기준**은 요약의 모든 단계가 통과하고, 설치 폴더에 앱·가드·설정 도구가 있으며, 시작 메뉴 바로가기 AUMID와 HKCU 제거 등록이 맞고, 설치 버전이 새 버전으로 바뀐 뒤 제거 시 설치 폴더·바로가기·등록이 사라지고 제거 훅 로그가 남는 것입니다. 사용자별 설치·업데이트·제거에는 관리자 권한이 필요하지 않습니다(품은 시험서명 드라이버를 앱에서 설치하는 단계는 별도 UAC가 필요합니다).
+
 - 릴리스 페이지의 `spatial-softreceiver-setup-<버전>-x64.exe`. 해시는 `SHA256SUMS.txt`와 맞춥니다.
 - Microsoft Edge WebView2 런타임. Windows 11과 최근 Windows 10에는 이미 있습니다. 없으면 앱 창이 뜨지 않으니 Microsoft에서 Evergreen 부트스트래퍼를 받아 설치합니다.
 - 헤드폰(기본), 있으면 Impulcifer의 `hesuvi.wav`나 `hrir.wav`, 또는 방향별 WAV 폴더.
@@ -886,6 +923,8 @@ bcdedit /set testsigning off
 
 ### 10-5. 업데이트
 
+로컬 릴리스에서 업데이트를 찾아 내려받아 바로 적용하고 설치 버전이 바뀌는 경로는 10-0의 CI 주기가 검사합니다. 이 절에서는 실제 GitHub 릴리스 발견, 화면의 알림과 사용자가 누르는 재시작, 새 앱과 감시 프로세스가 다시 뜨는 모습만 확인합니다.
+
 앱은 시작 20초 뒤와 여섯 시간마다 릴리스 페이지(사전 릴리스 포함)에서 새 버전을 찾아 내려받고, 설정 화면의 '업데이트'에 "새 버전 x.y.z을 받았습니다."와 '다시 시작해 적용' 단추를 보입니다. 새 릴리스가 아직 없으면 한 버전 낮은 설치본으로 먼저 깔아 시험합니다.
 
 1. '다시 시작해 적용'을 누릅니다. 앱이 역할을 돌려주고 끝난 뒤 새 버전으로 다시 뜨고, 감시 프로세스가 새로 붙습니다(작업 관리자).
@@ -908,6 +947,8 @@ bcdedit /set testsigning off
 - 3단계에서 한국어 Windows면 한국어, 영어 Windows면 영어. 영어 Windows에서 처음 설치하면 설정을 만지지 않아도 영어
 
 ### 10-7. 지우기
+
+무인 Velopack 제거가 설치 폴더·바로가기·HKCU 제거 등록을 없애고 제거 훅 로그를 남기는지는 10-0의 CI 주기가 검사합니다. 여기서는 Windows 설정의 제거 UI, 복원점이 있을 때 실제 역할이 돌아오는지, 남겨 두기로 한 상태 폴더를 확인합니다.
 
 설정 → 앱에서 'Spatial SoftReceiver'를 제거합니다. 제거 훅이 복원점이 남아 있으면 역할을 돌려줍니다. 드라이버는 남으므로 1절 묶음의 `uninstall.ps1`로 지웁니다(관리자). `%LOCALAPPDATA%\Spatial SoftReceiver`(설정, 로그, 프로필)는 남으니 손으로 지웁니다.
 

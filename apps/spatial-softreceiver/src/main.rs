@@ -5,7 +5,8 @@
 
 //! Spatial SoftReceiver: the Tauri 2 shell around the supervisor (ADR 0001).
 
-use spatial_softreceiver::paths::Args;
+use spatial_softreceiver::paths::{Args, CommandLine};
+use spatial_softreceiver::update;
 
 fn main() {
     // Velopack's hooks and AUMID come before anything else (its process
@@ -15,8 +16,17 @@ fn main() {
     spatial_softreceiver::update::startup(&spatial_softreceiver::paths::state_dir(
         std::env::var_os("LOCALAPPDATA"),
     ));
-    let args = match Args::parse(std::env::args_os().skip(1)) {
-        Ok(args) => args,
+    let args = match CommandLine::parse(std::env::args_os().skip(1)) {
+        Ok(CommandLine::App(args)) => args,
+        Ok(CommandLine::UpdateOnce { result }) => {
+            std::process::exit(match update::run_once(&result) {
+                Ok(()) => 0,
+                Err(message) => {
+                    eprintln!("Spatial SoftReceiver: {message}");
+                    1
+                }
+            });
+        }
         Err(message) => {
             eprintln!("Spatial SoftReceiver: {message}");
             std::process::exit(2);
