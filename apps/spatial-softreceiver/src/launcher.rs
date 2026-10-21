@@ -13,7 +13,7 @@ use ssr_sys::driver_ring::DriverRing;
 use ssr_sys::mmcss;
 use ssr_sys::output::WasapiOpener;
 use ssr_types::OutputDevice;
-use supervisor::{EngineHandle, Launcher, Session, SessionConfig, SessionError};
+use supervisor::{EngineHandle, LaunchOptions, Launcher, Session, SessionConfig, SessionError};
 
 struct DiscoveryFallback<T>(T);
 
@@ -62,34 +62,36 @@ impl<T: ssr_types::OutputSink> ssr_types::OutputSink for DiscoveryFallback<T> {
 pub struct WindowsLauncher;
 
 impl Launcher for WindowsLauncher {
-    /// Opens the driver ring and starts a session with a copy of `profile`
-    /// on `output`: 48 kHz exclusive, falling back to shared when the device
-    /// refuses, each engine thread registered with MMCSS. The supervisor
-    /// keeps the profile and answers the engine's re-prepares from it.
     fn launch(
         &mut self,
         output: &OutputDevice,
         profile: &OutputProfile,
     ) -> Result<Box<dyn EngineHandle>, SessionError> {
-        launch_session(output, profile, None, false)
+        self.launch_with(output, profile, LaunchOptions::default())
     }
 
-    fn launch_with_ks(
+    fn launch_with(
         &mut self,
         output: &OutputDevice,
         profile: &OutputProfile,
-        ks_target: Option<&ssr_types::ports::KsTarget>,
+        options: LaunchOptions<'_>,
     ) -> Result<Box<dyn EngineHandle>, SessionError> {
-        launch_session(output, profile, ks_target, true)
+        launch_session(output, profile, options)
     }
 }
 
+/// Opens the driver ring and starts a session with a copy of `profile` on
+/// `output`: 48 kHz exclusive, each engine thread registered with MMCSS.
+/// WASAPI falls back to shared when the device refuses exclusive, except when
+/// kernel streaming was asked for (its fallback is WASAPI exclusive). The
+/// supervisor keeps the profile and answers the engine's re-prepares from it.
 fn launch_session(
     output: &OutputDevice,
     profile: &OutputProfile,
-    ks_target: Option<&ssr_types::ports::KsTarget>,
-    ks_requested: bool,
+    options: LaunchOptions<'_>,
 ) -> Result<Box<dyn EngineHandle>, SessionError> {
+    let ks_requested = options.kernel_streaming;
+    let ks_target = options.ks_target;
     let ring = DriverRing::open()?;
     let opener = WasapiOpener {
         endpoint: Some(output.id.0.clone()),
@@ -99,9 +101,15 @@ fn launch_session(
         period: None,
     };
     let engine = EngineConfig {
+        asio: options.asio,
         thread_hook: Some(Arc::new(mmcss::promote_engine_thread)),
         ..EngineConfig::default()
-    };
+    }
+    .with_asio_runtime(engine::asio::AsioRuntimeConfig {
+        provider: crate::asio_transport::provider(),
+        profile: profile.clone(),
+        target_lead_frames: engine::asio::MAX_ASIO_BUFFER_FRAMES as u32,
+    });
     let qpc_frequency = ring.info().qpc_frequency;
     let observer = ring.observer();
     let config = SessionConfig {

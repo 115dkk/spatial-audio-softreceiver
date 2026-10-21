@@ -26,6 +26,8 @@ ssr-types.workspace = true
 ssr-abi.workspace = true
 thiserror.workspace = true
 zerocopy.workspace = true
+asio-proto.workspace = true
+streamring.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true

@@ -16,10 +16,10 @@ use std::path::{Path, PathBuf};
 use specta::TypeCollection;
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use ssr_types::app::{
-    AppRule, CorrectionView, EndpointUpmixView, Entrance, HeadphonesView, Intent, Language,
-    NextAction, OutputChoice, Phase, PluginChoice, PluginFormat, PluginView, ProfileKind,
-    ProfileView, RoutedApp, RoutingSettings, RoutingView, RuleView, SetupStep, Snapshot,
-    SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply, UpmixBypass, UpmixState,
+    AppRule, AsioLayout, AsioSettings, CorrectionView, EndpointUpmixView, Entrance, HeadphonesView,
+    Intent, Language, NextAction, OutputChoice, Phase, PluginChoice, PluginFormat, PluginView,
+    ProfileKind, ProfileView, RoutedApp, RoutingSettings, RoutingView, RuleView, SetupStep,
+    Snapshot, SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply, UpmixBypass, UpmixState,
     UpmixView, UpmixerChoice, UpmixerSetting, UserError,
 };
 use ssr_types::ports::PolicyState;
@@ -80,6 +80,41 @@ fn typescript_bindings_match_the_types() {
         .join("\n")
         + "\n";
     check_or_bless(&ui_dir().join("src/bindings.ts"), &bindings);
+}
+
+#[test]
+fn asio_snapshot_contract_keeps_settings_separate_from_client_status() {
+    for language in [Language::Ko, Language::En] {
+        let mut snapshot = blank(language, Phase::Ready);
+        assert_eq!(snapshot.asio, AsioSettings::default());
+        let mut old = serde_json::to_value(&snapshot).unwrap();
+        old.as_object_mut().unwrap().remove("asio");
+        assert_eq!(serde_json::from_value::<Snapshot>(old).unwrap(), snapshot);
+        for layout in AsioLayout::ALL {
+            snapshot.asio.layout = layout;
+            snapshot.engine = Some(EngineStatus {
+                asio: Some(ssr_types::AsioStatus {
+                    client_pid: 42,
+                    client_exe: "test-daw.exe".into(),
+                    sample_rate: 48_000,
+                    buffer_frames: 256,
+                    channels: ssr_types::channel_layout_preset(layout.name())
+                        .unwrap()
+                        .len() as u32,
+                    layout,
+                    underruns: 0,
+                    generation: 1,
+                    clock_fault: false,
+                    fault_reason: None,
+                }),
+                ..Default::default()
+            });
+            let json = serde_json::to_value(&snapshot).unwrap();
+            assert_eq!(json["asio"]["layout"], layout.name());
+            assert_eq!(json["engine"]["asio"]["layout"], layout.name());
+            assert_eq!(serde_json::from_value::<Snapshot>(json).unwrap(), snapshot);
+        }
+    }
 }
 
 fn choice(id: &str, name: &str) -> OutputChoice {
@@ -380,6 +415,7 @@ fn blank(language: Language, phase: Phase) -> Snapshot {
         profile: stereo_profile(language),
         upmix: default_upmix(),
         routing: RoutingView::default(),
+        asio: AsioSettings::default(),
         engine: None,
         outputs: Vec::new(),
         chosen_output: None,
@@ -493,6 +529,7 @@ fn engine_status(language: Language) -> EngineStatus {
         }),
     };
     EngineStatus {
+        asio: None,
         directions: headphone_profile(language).directions,
         scene: vec![
             SceneObject {
@@ -576,6 +613,42 @@ fn engine_status(language: Language) -> EngineStatus {
         clock: ClockStatus::Asrc,
         clock_ppm: -37.5,
         fault: None,
+    }
+}
+
+/// A DAW holding the ASIO input (ADR 0025) at the output's 48 kHz.
+fn asio_client(layout: AsioLayout, buffer_frames: u32) -> ssr_types::AsioStatus {
+    ssr_types::AsioStatus {
+        client_pid: 9_120,
+        client_exe: "reaper.exe".into(),
+        sample_rate: 48_000,
+        buffer_frames,
+        channels: ssr_types::channel_layout_preset(layout.name())
+            .unwrap()
+            .len() as u32,
+        layout,
+        underruns: 0,
+        generation: 1,
+        clock_fault: false,
+        fault_reason: None,
+    }
+}
+
+/// The ASIO input whose start failed and has no DAW, as the engine reports it
+/// (crates/engine/src/asio.rs `AsioShared::status`): the counters at rest,
+/// the clock marked faulty and the transport's reason.
+fn asio_fault(reason: &str) -> ssr_types::AsioStatus {
+    ssr_types::AsioStatus {
+        client_pid: 0,
+        client_exe: String::new(),
+        sample_rate: 0,
+        buffer_frames: 0,
+        channels: 0,
+        layout: AsioLayout::Surround714,
+        underruns: 0,
+        generation: 0,
+        clock_fault: true,
+        fault_reason: Some(reason.to_owned()),
     }
 }
 
@@ -663,6 +736,18 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
         "the output device could not be opened: {}",
         OutputError::Busy
     );
+    // What the engine's ASIO control thread keeps when the transport does
+    // not open (engine AsioTransportError::Transport), and the note the
+    // supervisor makes of it once.
+    let asio_reason = "ASIO transport failed: owner_exists";
+    let asio_unavailable = match language {
+        Language::Ko => {
+            format!("ASIO 입구를 시작하지 못했습니다. 시스템 소리는 계속 재생합니다: {asio_reason}")
+        }
+        Language::En => {
+            format!("The ASIO input could not start. System audio continues: {asio_reason}")
+        }
+    };
     vec![
         (
             "setup-welcome",
@@ -1009,6 +1094,73 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
                 ..ready.clone()
             },
         ),
+        (
+            // A DAW plays 7.1.4 into the ASIO input; system sound 12 dB down.
+            "running-asio",
+            Snapshot {
+                profile: headphone_profile(language),
+                asio: AsioSettings {
+                    enabled: true,
+                    layout: AsioLayout::Surround714,
+                    system_attenuation_db: 12.0,
+                },
+                engine: Some(EngineStatus {
+                    asio: Some(asio_client(AsioLayout::Surround714, 256)),
+                    ..engine_status(language)
+                }),
+                roles_taken: true,
+                ..with_phase(ready.clone(), Phase::Running)
+            },
+        ),
+        (
+            // The output clock stopped under a 5.1 DAW: the stand-in clock
+            // drives it and the output found its queue empty meanwhile.
+            "running-asio-clock-fault",
+            Snapshot {
+                profile: headphone_profile(language),
+                asio: AsioSettings {
+                    layout: AsioLayout::Surround51,
+                    ..AsioSettings::default()
+                },
+                engine: Some(EngineStatus {
+                    asio: Some(ssr_types::AsioStatus {
+                        underruns: 37,
+                        generation: 2,
+                        clock_fault: true,
+                        ..asio_client(AsioLayout::Surround51, 128)
+                    }),
+                    ..engine_status(language)
+                }),
+                roles_taken: true,
+                ..with_phase(ready.clone(), Phase::Running)
+            },
+        ),
+        (
+            // The ASIO input did not start; system sound plays on.
+            "running-asio-fault",
+            Snapshot {
+                profile: headphone_profile(language),
+                engine: Some(EngineStatus {
+                    asio: Some(asio_fault(asio_reason)),
+                    ..engine_status(language)
+                }),
+                roles_taken: true,
+                notes: vec![asio_unavailable],
+                ..with_phase(ready.clone(), Phase::Running)
+            },
+        ),
+        (
+            // The ASIO input off; its layout and attenuation are kept.
+            "ready-asio-off",
+            Snapshot {
+                asio: AsioSettings {
+                    enabled: false,
+                    layout: AsioLayout::Stereo,
+                    system_attenuation_db: 20.0,
+                },
+                ..ready.clone()
+            },
+        ),
         ("quit", with_phase(ready, Phase::Quit)),
     ]
 }
@@ -1043,6 +1195,15 @@ fn intents() -> Vec<Intent> {
             r"C:\Users\me\Documents\SECS_export\2026-10-16 living room\configs\secs_mixed.yml",
         )),
         Intent::ClearCorrection,
+        Intent::SetAsioEnabled(true),
+        Intent::SetAsioEnabled(false),
+        Intent::SetAsioLayout(AsioLayout::Stereo),
+        Intent::SetAsioLayout(AsioLayout::Surround51),
+        Intent::SetAsioLayout(AsioLayout::Surround71),
+        Intent::SetAsioLayout(AsioLayout::Surround714),
+        Intent::SetAsioLayout(AsioLayout::Surround916),
+        Intent::SetAsioSystemAttenuation(0.0),
+        Intent::SetAsioSystemAttenuation(60.0),
         Intent::SetGain(-3.5),
         Intent::TestDirection(DirectionId(7)),
         Intent::SetUpmixer(UpmixerSetting {

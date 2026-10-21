@@ -1,10 +1,11 @@
 // The settings screen: login autostart, the language, the output path, the
-// entrance each app plays into, the app's update, diagnostic recording, and
-// what the supervisor knows about the PC and the driver.
+// entrance each app plays into, the ASIO input, the app's update, diagnostic
+// recording, and what the supervisor knows about the PC and the driver.
 
 import { toUserError } from '../api';
-import type { Entrance, Language, OutputPath, RoutedApp, RuleView } from '../bindings';
+import type { AsioLayout, Entrance, Language, OutputPath, RoutedApp, RuleView } from '../bindings';
 import { type Child, facts, h } from '../dom';
+import { ASIO_ATTENUATION_MAX, ASIO_DEFAULTS, ASIO_LAYOUTS } from '../guard';
 import { text } from '../text';
 import { type Context, type Drawn, button, described, intentButton, panel } from './common';
 import { driverRows, platformRows } from './facts';
@@ -327,6 +328,123 @@ function routing(ctx: Context): Child[] {
   ];
 }
 
+/** The DAW layouts in the contract's order. */
+const ASIO_LAYOUT_LIST = Object.keys(ASIO_LAYOUTS) as AsioLayout[];
+
+/** A layout's channels by its name: 7.1.4 is 7 + 1 + 4. */
+const layoutChannels = (layout: AsioLayout) => layout.split('.').reduce((sum, part) => sum + Number(part), 0);
+
+/** How much the system path is lowered, as the readout says it: "12 dB", or muted at the end. */
+function attenuationText(db: number): string {
+  return db >= ASIO_ATTENUATION_MAX ? text.status.muted : `${Math.round(db)} ${text.profile.gainUnit}`;
+}
+
+/**
+ * The ASIO input (ADR 0025): the switch, the layout the DAW sends, and how
+ * much the system sound is lowered while a DAW plays. The supervisor takes
+ * each change while the engine runs too. While the input is off the layout
+ * and the slider stay in view, locked; a change in flight already stands
+ * where it goes.
+ */
+function asio(ctx: Context): Child[] {
+  const t = text.settings;
+  const saved = ctx.snapshot.asio ?? ASIO_DEFAULTS;
+  const sending = ctx.sending;
+  const enabled = sending?.kind === 'set_asio_enabled' ? sending.value : saved.enabled;
+  const layout = sending?.kind === 'set_asio_layout' ? sending.value : saved.layout;
+  const attenuation =
+    sending?.kind === 'set_asio_system_attenuation' ? sending.value : saved.system_attenuation_db;
+  const locked = ctx.busy || !enabled;
+
+  const checkbox = h('input', {
+    type: 'checkbox',
+    id: 'asio-enabled',
+    'data-key': 'asio-enabled',
+    checked: enabled,
+    disabled: ctx.busy,
+    'aria-busy': sending?.kind === 'set_asio_enabled' ? 'true' : null,
+    'aria-describedby': 'asio-hint asio-limits',
+  });
+  checkbox.addEventListener('change', () => ctx.send({ kind: 'set_asio_enabled', value: checkbox.checked }));
+
+  const select = h('select', {
+    id: 'asio-layout',
+    'data-key': 'asio-layout',
+    disabled: locked,
+    'aria-busy': sending?.kind === 'set_asio_layout' ? 'true' : null,
+    'aria-describedby': 'asio-layout-hint',
+  });
+  for (const value of ASIO_LAYOUT_LIST) {
+    select.append(
+      h('option', { value, selected: value === layout }, `${value} (${text.format.channels(layoutChannels(value))})`),
+    );
+  }
+  select.addEventListener('change', () => {
+    const value = ASIO_LAYOUT_LIST.find((candidate) => candidate === select.value);
+    if (value !== undefined) ctx.send({ kind: 'set_asio_layout', value });
+  });
+
+  // Drawn like the profile's gain: the readout follows the thumb, and the
+  // value is sent once the slider is let go.
+  const shown = attenuationText(attenuation);
+  const readout = h('output', { class: 'num gain-readout', for: 'asio-attenuation' }, shown);
+  const slider = h('input', {
+    id: 'asio-attenuation',
+    type: 'range',
+    min: 0,
+    max: ASIO_ATTENUATION_MAX,
+    step: 1,
+    value: attenuation,
+    'data-key': 'asio-attenuation',
+    disabled: locked,
+    'aria-valuetext': shown,
+    'aria-describedby': 'asio-attenuation-hint',
+  });
+  slider.addEventListener('input', () => {
+    const moved = attenuationText(Number(slider.value));
+    readout.textContent = moved;
+    slider.setAttribute('aria-valuetext', moved);
+  });
+  // `change` fires when the slider is let go (or a key step ends).
+  slider.addEventListener('change', () => ctx.send({ kind: 'set_asio_system_attenuation', value: Number(slider.value) }));
+
+  return [
+    h(
+      'div',
+      { class: 'check' },
+      checkbox,
+      h('label', { for: 'asio-enabled' }, t.asioEnabled),
+      h('p', { id: 'asio-hint', class: 'hint' }, t.asioHint(t.asioDevice)),
+      h('p', { id: 'asio-limits', class: 'hint' }, t.asioLimits),
+    ),
+    h(
+      'div',
+      { class: 'asio-section' },
+      h(
+        'div',
+        { class: 'field' },
+        h('label', { for: 'asio-layout' }, t.asioLayout),
+        select,
+        h('p', { id: 'asio-layout-hint', class: 'hint' }, t.asioLayoutHint),
+      ),
+      h(
+        'div',
+        { class: 'asio-attenuation' },
+        h('label', { for: 'asio-attenuation' }, t.asioAttenuation),
+        h(
+          'div',
+          { class: 'gain' },
+          h('span', { class: 'gain-scale muted small' }, '0'),
+          slider,
+          h('span', { class: 'gain-scale muted small' }, `${ASIO_ATTENUATION_MAX}`),
+          readout,
+        ),
+        h('p', { id: 'asio-attenuation-hint', class: 'hint' }, t.asioAttenuationHint),
+      ),
+    ),
+  ];
+}
+
 export function settings(ctx: Context): Drawn {
   const t = text.settings;
   const { platform, driver } = ctx.snapshot;
@@ -337,6 +455,7 @@ export function settings(ctx: Context): Drawn {
     panel(t.language, [language(ctx)]),
     panel(t.outputPath, [outputPath(ctx)]),
     panel(t.routing, routing(ctx)),
+    panel(text.asio, asio(ctx)),
     panel(t.update, [update(ctx)]),
     panel(t.diagnostics, [
       h('p', { class: 'body-text' }, t.recordHint),

@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 use engine::adapters::NullOpener;
 use engine::{LiveChange, MatrixUpmixer, OutputProfile, UpmixMonitor, UpmixStatus, Upmixer};
 use ssr_types::app::{
-    AppRule, Entrance, Intent, Language, NextAction, OutputChoice, OutputPath, Phase, SetupStep,
-    UserError,
+    AppRule, AsioLayout, AsioSettings, Entrance, Intent, Language, NextAction, OutputChoice,
+    OutputPath, Phase, SetupStep, UserError,
 };
 use ssr_types::ports::PolicyState;
 use ssr_types::{
@@ -26,8 +26,8 @@ use ssr_types::{
 use supervisor::machine::Config;
 use supervisor::restore_point::{self, RestorePoint, RestorePointError};
 use supervisor::{
-    EngineHandle, Launcher, PluginClass, PluginEvent, PluginHost, PluginHostError, PluginInstance,
-    PluginSetting, Session, SessionError, SessionNotice, Settings, Supervisor,
+    EngineHandle, LaunchOptions, Launcher, PluginClass, PluginEvent, PluginHost, PluginHostError,
+    PluginInstance, PluginSetting, Session, SessionError, SessionNotice, Settings, Supervisor,
 };
 
 const OURS: &str = "{ours-main}";
@@ -54,6 +54,9 @@ struct World {
     engine_polls: VecDeque<Result<Vec<SessionNotice>, SessionError>>,
     /// Every profile a launch received, described, in order.
     launched: Vec<String>,
+    launched_asio: Vec<AsioSettings>,
+    applied_asio: Vec<AsioSettings>,
+    engine_asio: Option<ssr_types::AsioStatus>,
     /// Every change the running engine took, described.
     applied: Vec<String>,
     /// The engine refuses the next changes with these errors, in order.
@@ -267,21 +270,22 @@ impl Launcher for FakeLauncher {
         output: &OutputDevice,
         profile: &OutputProfile,
     ) -> Result<Box<dyn EngineHandle>, SessionError> {
-        self.launch_with_ks(output, profile, None)
+        self.launch_with(output, profile, LaunchOptions::default())
     }
 
-    fn launch_with_ks(
+    fn launch_with(
         &mut self,
         output: &OutputDevice,
         profile: &OutputProfile,
-        ks_target: Option<&KsTarget>,
+        options: LaunchOptions<'_>,
     ) -> Result<Box<dyn EngineHandle>, SessionError> {
         let mut world = self.0.get();
-        world.calls.push(match ks_target {
+        world.calls.push(match options.ks_target {
             Some(target) => format!("launch {} ks {}:{}", output.id.0, target.filter, target.pin),
             None => format!("launch {}", output.id.0),
         });
         world.launched.push(describe(profile));
+        world.launched_asio.push(options.asio);
         if world.launch_fails {
             return Err(SessionError::Recorder("scripted failure".into()));
         }
@@ -303,6 +307,7 @@ impl EngineHandle for FakeEngine {
     fn status(&self) -> EngineStatus {
         let world = self.0.get();
         EngineStatus {
+            asio: world.engine_asio.clone(),
             directions: world.engine_directions.clone(),
             output_ks_fallback: world.ks_fallback,
             fault: world.engine_fault.clone(),
@@ -354,6 +359,10 @@ impl EngineHandle for FakeEngine {
                 format!("upmixer {endpoint} off")
             }
             LiveChange::UpmixApply(on) => format!("upmix apply {on}"),
+            LiveChange::AsioSettings(settings) => {
+                world.applied_asio.push(settings);
+                format!("asio {settings:?}")
+            }
             other => format!("{other:?}"),
         };
         world.applied.push(described);
@@ -614,6 +623,9 @@ fn ready_pc() -> World {
         launch_fails: false,
         engine_polls: VecDeque::new(),
         launched: Vec::new(),
+        launched_asio: Vec::new(),
+        applied_asio: Vec::new(),
+        engine_asio: None,
         applied: Vec::new(),
         apply_errors: VecDeque::new(),
         layout_support: Ok(true),
@@ -702,6 +714,7 @@ fn dac_settings() -> Settings {
         output_path: Default::default(),
         upmix: Default::default(),
         routing: Default::default(),
+        asio: AsioSettings::default(),
     }
 }
 
@@ -717,6 +730,157 @@ fn start(world: World, settings: Settings) -> (Shared, Machine) {
         settings,
     );
     (shared, supervisor)
+}
+
+#[test]
+fn asio_settings_migrate_persist_and_reach_the_launcher() {
+    for json in [r#"{}"#, r#"{"profile":{"gain_db":-2.0}}"#, r#"{"asio":{}}"#] {
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.asio, AsioSettings::default());
+    }
+    let partial: Settings = serde_json::from_str(r#"{"asio":{"enabled":false}}"#).unwrap();
+    assert_eq!(
+        partial.asio,
+        AsioSettings {
+            enabled: false,
+            ..Default::default()
+        }
+    );
+    let (shared, mut supervisor) = start(ready_pc(), dac_settings());
+    supervisor.handle(Intent::SetAsioEnabled(false)).unwrap();
+    supervisor
+        .handle(Intent::SetAsioLayout(AsioLayout::Surround916))
+        .unwrap();
+    supervisor
+        .handle(Intent::SetAsioSystemAttenuation(60.0))
+        .unwrap();
+    let expected = AsioSettings {
+        enabled: false,
+        layout: AsioLayout::Surround916,
+        system_attenuation_db: 60.0,
+    };
+    assert_eq!(supervisor.snapshot().asio, expected);
+    assert!(shared.get().applied_asio.is_empty());
+    let json = serde_json::to_string(supervisor.settings()).unwrap();
+    let settings: Settings = serde_json::from_str(&json).unwrap();
+    assert_eq!(settings.asio, expected);
+    supervisor.handle(Intent::Enable).unwrap();
+    assert_eq!(shared.get().launched_asio, [expected]);
+    assert!(supervisor.engine_status().unwrap().asio.is_none());
+}
+
+#[test]
+fn asio_live_changes_commit_only_after_the_engine_accepts() {
+    let (shared, mut supervisor) = running(ready_pc());
+    for intent in [
+        Intent::SetAsioEnabled(false),
+        Intent::SetAsioLayout(AsioLayout::Surround51),
+        Intent::SetAsioSystemAttenuation(12.0),
+    ] {
+        let before = supervisor.settings().clone();
+        shared.get().apply_errors.push_back(SessionError::Rejected);
+        let error = supervisor.handle(intent.clone()).unwrap_err();
+        assert_eq!(
+            error.message,
+            supervisor::text::Message::EngineChangeRejected.render(Language::Ko)
+        );
+        assert_eq!(supervisor.settings(), &before);
+        assert_eq!(supervisor.snapshot().asio, before.asio);
+        let count = shared.get().applied_asio.len();
+        supervisor.handle(intent).unwrap();
+        assert_eq!(shared.get().applied_asio.len(), count + 1);
+        assert_eq!(
+            shared.get().applied_asio.last(),
+            Some(&supervisor.settings().asio)
+        );
+        assert_eq!(supervisor.snapshot().asio, supervisor.settings().asio);
+    }
+}
+
+#[test]
+fn asio_invalid_attenuation_is_rejected_before_apply_or_launch() {
+    for db in [-0.1, 60.1, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let (shared, mut supervisor) = running(ready_pc());
+        let before = supervisor.settings().clone();
+        supervisor
+            .handle(Intent::SetLanguage(Some(Language::En)))
+            .unwrap();
+        let error = supervisor
+            .handle(Intent::SetAsioSystemAttenuation(db))
+            .unwrap_err();
+        assert_eq!(
+            error.message,
+            supervisor::text::Message::AsioSystemAttenuationOutOfRange.render(Language::En)
+        );
+        assert_eq!(supervisor.settings().asio, before.asio);
+        assert!(shared.get().applied_asio.is_empty());
+
+        let mut settings = dac_settings();
+        settings.asio.system_attenuation_db = db;
+        let (shared, mut supervisor) = start(ready_pc(), settings);
+        supervisor.handle(Intent::Enable).unwrap_err();
+        assert!(shared.get().launched_asio.is_empty());
+        assert!(shared.take_calls().is_empty());
+        assert!(!supervisor.snapshot().roles_taken);
+        // A valid attenuation repairs a hand-edited persisted value.
+        supervisor
+            .handle(Intent::SetAsioSystemAttenuation(0.0))
+            .unwrap();
+        supervisor.handle(Intent::Enable).unwrap();
+    }
+}
+
+#[test]
+fn asio_settings_follow_profile_phase_rules_without_starting_a_client() {
+    let (_, mut supervisor) = start(ready_pc(), Settings::default());
+    let intents = [
+        Intent::SetAsioEnabled(false),
+        Intent::SetAsioLayout(AsioLayout::Stereo),
+        Intent::SetAsioSystemAttenuation(0.0),
+    ];
+    for intent in &intents {
+        supervisor.handle(intent.clone()).unwrap_err();
+        assert_eq!(supervisor.settings().asio, AsioSettings::default());
+    }
+    supervisor.handle(Intent::Quit).unwrap();
+    for intent in intents {
+        supervisor.handle(intent).unwrap_err();
+    }
+    let (shared, mut supervisor) = running(ready_pc());
+    supervisor.handle(Intent::SetAsioEnabled(true)).unwrap();
+    assert!(supervisor.engine_status().unwrap().asio.is_none());
+    let status = ssr_types::AsioStatus {
+        client_pid: 42,
+        client_exe: "test-daw.exe".into(),
+        sample_rate: 48_000,
+        buffer_frames: 256,
+        channels: 12,
+        layout: AsioLayout::Surround714,
+        underruns: 2,
+        generation: 4,
+        clock_fault: true,
+        fault_reason: None,
+    };
+    shared.get().engine_asio = Some(status.clone());
+    assert_eq!(
+        supervisor.engine_status().unwrap().asio,
+        Some(status.clone())
+    );
+    assert_eq!(
+        supervisor.snapshot().engine.unwrap().asio,
+        Some(status.clone())
+    );
+    shared.get().engine_asio = Some(ssr_types::AsioStatus {
+        fault_reason: Some("owner_exists".into()),
+        ..status
+    });
+    let notes = supervisor.snapshot().notes.len();
+    supervisor.tick(std::time::Instant::now());
+    supervisor.tick(std::time::Instant::now());
+    assert_eq!(supervisor.snapshot().phase, Phase::Running);
+    assert_eq!(supervisor.snapshot().notes.len(), notes + 1);
+    shared.get().engine_asio = None;
+    assert!(supervisor.snapshot().engine.unwrap().asio.is_none());
 }
 
 #[test]
@@ -1677,6 +1841,7 @@ fn a_changed_device_id_is_found_by_name_and_remembered() {
             output_path: Default::default(),
             upmix: Default::default(),
             routing: Default::default(),
+            asio: AsioSettings::default(),
         },
     );
     let note = format!("출력 장치의 식별자가 바뀌어 이름으로 다시 찾았습니다: {DAC_NAME}");
@@ -2383,6 +2548,7 @@ fn new_starts_at_welcome_otherwise() {
         output_path: Default::default(),
         upmix: Default::default(),
         routing: Default::default(),
+        asio: AsioSettings::default(),
     };
     let unplugged = |mut world: World| {
         world

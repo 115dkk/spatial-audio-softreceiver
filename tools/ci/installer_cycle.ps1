@@ -212,7 +212,8 @@ try {
     }
     Invoke-Stage 'installed-files-and-old-version' {
         Wait-Condition { (Read-InstalledVersion) -ceq $OldVersion } "installed version $OldVersion"
-        $files = @('spatial-softreceiver.exe', 'ssr-guard.exe', 'ssr-setup.exe', 'ssr-plughost.exe')
+        $files = @('spatial-softreceiver.exe', 'ssr-guard.exe', 'ssr-setup.exe', 'ssr-plughost.exe', 'ssrasio.dll',
+            'LICENSE-GPL-3.0.txt')
         foreach ($file in $files) {
             if (-not (Test-Path -LiteralPath (Join-Path $installRoot "current\$file") -PathType Leaf)) { throw "Missing $file" }
         }

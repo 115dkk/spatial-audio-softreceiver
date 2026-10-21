@@ -21,6 +21,7 @@ type Text = Omit<Screen, 'endpoints' | 'chainErrorKinds' | 'status' | 'profile' 
   settings: Screen['settings'] & {
     outputPathLocked: Supervisor['disable_before_changing_output'];
     routingUnavailable: Supervisor['entrance_routing_unavailable'];
+    asioDevice: Catalog['names']['product'];
   };
 };
 
@@ -49,6 +50,10 @@ function project(catalog: Catalog): Text {
       // What the supervisor notes when Windows has no per-app output
       // setting; the screen keeps it beside the locked routing controls.
       routingUnavailable: supervisor.entrance_routing_unavailable,
+      // The ASIO driver names itself to every DAW in English
+      // (apps/ssr-asio, ssr_i18n::names::product(Language::En)), so the
+      // screen names that device the way the DAW lists it in both languages.
+      asioDevice: catalogEn.names.product,
     },
     endpoints: [
       { ...screen.endpoints[0]!, name: names.endpoint_main },

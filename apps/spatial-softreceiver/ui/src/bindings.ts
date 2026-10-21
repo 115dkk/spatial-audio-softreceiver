@@ -13,6 +13,25 @@ export type AppRule = { exe: string; entrance: Entrance | null }
 export type Arch = "x64" | "arm64" | "other"
 
 /**
+ * The input layouts a DAW may send (ADR 0025), independent of the output.
+ */
+export type AsioLayout = "2.0" | "5.1" | "7.1" | "7.1.4" | "9.1.6"
+
+/**
+ * Saved ASIO entrance settings. Missing fields keep the original defaults.
+ */
+export type AsioSettings = { enabled: boolean; layout: AsioLayout;
+/**
+ * Applied only while ASIO runs; 0 mixes normally and 60 mutes the system path.
+ */
+system_attenuation_db: number }
+
+/**
+ * The ASIO client that currently holds the entrance; absent without a client.
+ */
+export type AsioStatus = { client_pid: number; client_exe: string; sample_rate: number; buffer_frames: number; channels: number; layout: AsioLayout; underruns: number; generation: number; clock_fault: boolean; fault_reason: string | null }
+
+/**
  * The codec an IEC 61937 stream announces through its KS subtype.
  */
 export type BitstreamCodec = "ac3" | "eac3" | "eac3_joc" |
@@ -147,6 +166,10 @@ outputs: string[] }
 export type EngineFault = { kind: "capture_lost"; value: string } | { kind: "output_lost"; value: string }
 
 export type EngineStatus = {
+/**
+ * Populated only while an ASIO client exists, not merely when enabled.
+ */
+asio?: AsioStatus | null;
 /**
  * Directions in the current output layout (BRIR directions for headphones,
  * physical speakers for speaker output).
@@ -329,7 +352,11 @@ export type Intent = { kind: "set_language"; value: Language | null } | { kind: 
 /**
  * Whether an output kind applies upmixing (ADR 0035); on by default.
  */
-{ kind: "set_upmix_apply"; value: UpmixApply } | { kind: "enable" } | { kind: "disable" } | { kind: "start_diagnostic_recording" } | { kind: "quit" }
+{ kind: "set_upmix_apply"; value: UpmixApply } | { kind: "set_asio_enabled"; value: boolean } | { kind: "set_asio_layout"; value: AsioLayout } |
+/**
+ * Attenuates the system path while ASIO runs; 60 dB mutes it.
+ */
+{ kind: "set_asio_system_attenuation"; value: number } | { kind: "enable" } | { kind: "disable" } | { kind: "start_diagnostic_recording" } | { kind: "quit" }
 
 export type KsFallbackReason = "no_target" | "filter_open" | "no_sink_pin" | "format_rejected" | "pin_create" | "state_change" | "buffer_alloc" | "other"
 
@@ -565,7 +592,7 @@ language: Language;
  * The saved choice behind `language`: `None` follows the Windows display
  * language. The settings screen's selector shows this, not the result.
  */
-language_choice: Language | null; output_path: OutputPath; phase: Phase; profile: ProfileView; upmix: UpmixView; routing: RoutingView; engine: EngineStatus | null;
+language_choice: Language | null; output_path: OutputPath; phase: Phase; profile: ProfileView; upmix: UpmixView; routing: RoutingView; asio?: AsioSettings; engine: EngineStatus | null;
 /**
  * Outputs the user may choose: active, and never our own endpoints.
  */

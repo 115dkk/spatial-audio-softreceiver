@@ -3,9 +3,9 @@
 이 릴리스는 시험판입니다. 시험서명 모드를 켠 Windows PC에서 드라이버와 실시간 경로, 그리고 앱을 시험할 수 있습니다. 자세한 명령과 합격 기준은 [시험 안내서]({guide})에 있고, 같은 문서가 드라이버 묶음 안의 `README.md`입니다. 안내서는 AI 도우미와 함께 따라 할 수 있게 썼으니, 도우미에게 그 README를 먼저 읽히십시오. 드라이버 시험(안내서 1~9절, M3)은 앱이 생긴 뒤에도 그대로 유효합니다. 앱은 같은 드라이버 패키지를 품고 있을 뿐, 드라이버를 대신 시험해 주지 않습니다.
 
 **받을 것**
-- `spatial-softreceiver-setup-{version}-x64.exe`: 앱 설치본(M4). 앱, 감시 프로세스, 설치 도구, 시험서명한 드라이버 패키지가 함께 들어 있고, 앱이 이 릴리스 페이지에서 다음 버전을 스스로 받습니다
+- `spatial-softreceiver-setup-{version}-x64.exe`: 앱 설치본(M4). 앱, 감시 프로세스, 설치 도구, 시험서명한 드라이버 패키지, DAW용 ASIO 장치(`ssrasio.dll`)가 함께 들어 있고, 앱이 이 릴리스 페이지에서 다음 버전을 스스로 받습니다
 - `spatial-softreceiver-driver-test-{version}-x64.zip`: 시험서명한 드라이버, 설치·제거·수집 스크립트, 시험 도구
-- `spatial-softreceiver-tools-{version}-windows-x86_64.zip`: `ssr-live.exe`, `ssr-replay.exe`, 스피커 프로필 예시(`profiles/`)
+- `spatial-softreceiver-tools-{version}-windows-x86_64.zip`: `ssr-live.exe`, `ssr-replay.exe`, ASIO 장치를 DAW처럼 적재해 보는 `asio_probe.exe`, 스피커 프로필 예시(`profiles/`)
 - `SHA256SUMS.txt`: 받은 파일이 맞는지 확인할 해시
 - `SpatialSoftReceiver-*.nupkg`, `releases.win.json`: 앱의 자동 업데이트가 읽는 파일. 사람이 받을 것은 아닙니다
 
@@ -17,11 +17,12 @@
 5. 드라이버 링을 `ssr-live`로 받아 헤드폰으로 듣기(6-1). 다채널 DAC나 AV 리시버가 있으면 스피커로 듣기(6-2, 선택)
 6. Driver Verifier를 켠 채 다시 시험하고 IOCTL 퍼저를 돌림(7-1), 메모리 무결성(7-2)
 7. `collect.ps1`로 결과를 모읍니다(8). 공개 이슈에는 결과 표만 올리고, zip과 `.ssrdump`는 저장소 소유자에게 따로 보냅니다(재생한 소리가 들어 있습니다).
-8. 드라이버를 지운 뒤(9) 앱 설치본으로 앱을 시험합니다(10): 설치, 처음 설정 마법사의 드라이버 설치, 켜기와 듣기, 프로필(헤드폰과 스피커, SECS 2R 보정, 출력 음량 조절, 방향별 시험용 신호, 소리 위치), 업믹스(VST 업믹서, 10-2-1), 감시 프로세스의 되돌리기와 토스트, 업데이트, 언어 설정.
+8. 드라이버를 지운 뒤(9) 앱 설치본으로 앱을 시험합니다(10): 설치, 처음 설정 마법사의 드라이버 설치, 켜기와 듣기, 프로필(헤드폰과 스피커, SECS 2R 보정, 출력 음량 조절, 방향별 시험용 신호, 소리 위치), 업믹스(VST 업믹서, 10-2-1), 커널 스트리밍 출력(10-2-2), 앱별 입구(10-2-3), DAW의 ASIO 출력(10-2-4), 감시 프로세스의 되돌리기와 토스트, 업데이트, 언어 설정.
 
 **미리 알 것**
 - 커널 드라이버 시험이라 블루스크린과 재부팅이 날 수 있습니다.
 - SAL에서는 출력(덤프, 녹음, 숫자)만 보내 주십시오. SAL의 소스, 패치, 파일은 보내지 마십시오.
 - 출력 장치 이름은 영어 Windows에서 `Spatial SoftReceiver`, `Spatial SoftReceiver Music`, `Spatial SoftReceiver PASS`, 한국어 Windows에서 `공간 소프트리시버`, `공간 소프트리시버 음악`, `공간 소프트리시버 PASS`입니다.
 - 앱 화면과 알림은 한국어와 영어입니다. Windows 표시 언어를 따르고 설정 화면에서 바꿀 수 있습니다.
+- 앱 설치본과 도구 zip은 ASIO SDK에 닿는 부분이 있어 GPLv3 조건으로 배포합니다(전문은 `LICENSE-GPL-3.0.txt`, 소스는 이 릴리스의 태그). 드라이버는 MS-PL입니다.
 - 끝나면 `uninstall.ps1`로 지우고 시험서명 모드를 끈 뒤 Secure Boot를 다시 켭니다(9).

@@ -24,6 +24,8 @@ pub mod settings;
 pub mod tray;
 
 #[cfg(windows)]
+mod asio_transport;
+#[cfg(windows)]
 pub mod launcher;
 #[cfg(windows)]
 pub mod shell;

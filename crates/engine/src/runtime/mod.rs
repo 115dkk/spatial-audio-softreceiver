@@ -131,6 +131,7 @@ pub type ThreadHook = Arc<dyn Fn(EngineThread) + Send + Sync>;
 pub enum RtSection {
     Capture,
     Output,
+    Asio,
 }
 
 /// Runs one real-time section. Tests may wrap `work`, for example in
@@ -193,6 +194,10 @@ pub struct EngineConfig {
     pub thread_hook: Option<ThreadHook>,
     pub rt_scope: Option<RtScope>,
     pub rt_event: Option<RtEventHook>,
+    /// Saved entrance settings. A runtime provider and the output profile it
+    /// independently prepares at the DAC rate are optional on non-Windows runs.
+    pub asio: ssr_types::app::AsioSettings,
+    pub asio_runtime: Option<crate::asio::AsioRuntimeConfig>,
 }
 
 impl Default for EngineConfig {
@@ -207,7 +212,16 @@ impl Default for EngineConfig {
             thread_hook: None,
             rt_scope: None,
             rt_event: None,
+            asio: ssr_types::app::AsioSettings::default(),
+            asio_runtime: None,
         }
+    }
+}
+
+impl EngineConfig {
+    pub fn with_asio_runtime(mut self, runtime: crate::asio::AsioRuntimeConfig) -> Self {
+        self.asio_runtime = Some(runtime);
+        self
     }
 }
 
@@ -223,6 +237,8 @@ impl std::fmt::Debug for EngineConfig {
             .field("thread_hook", &self.thread_hook.is_some())
             .field("rt_scope", &self.rt_scope.is_some())
             .field("rt_event", &self.rt_event.is_some())
+            .field("asio", &self.asio)
+            .field("asio_runtime", &self.asio_runtime.is_some())
             .finish()
     }
 }
@@ -274,6 +290,8 @@ pub enum LiveChange {
     /// for the kind in use (ADR 0035); on by default. Off, every stage is
     /// transparent while the upmixers keep running.
     UpmixApply(bool),
+    /// Changes the ASIO entrance policy without rebuilding the system chain.
+    AsioSettings(ssr_types::app::AsioSettings),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -369,6 +387,7 @@ pub struct Engine {
     retired: Consumer<Retired>,
     capture_thread: Option<CaptureThreads>,
     output_thread: Option<JoinHandle<()>>,
+    asio_available: bool,
 }
 
 /// The output layout's directions as the control thread knows them. Names
@@ -490,8 +509,10 @@ where
         prepared,
     } = options;
     validate_config(&config, qpc_frequency)?;
+    let asio_available = config.asio_runtime.is_some();
 
     let shared = Arc::new(Shared::new());
+    shared.asio.set_settings(config.asio);
     shared
         .target_ms_bits
         .store(config.target_ms.to_bits(), Ordering::Release);
@@ -521,6 +542,7 @@ where
         crossing::channel(ring_capacity_frames, MAX_OUTPUT_CHANNELS);
     let (start_sender, start_receiver) = std::sync::mpsc::sync_channel(0);
     let (clock_sender, clock_receiver) = std::sync::mpsc::sync_channel(0);
+    let (asio_sender, asio_receiver) = std::sync::mpsc::sync_channel(1);
     let initial_layout = prepared
         .as_ref()
         .map_or(OutputLayout::STEREO, |prepared| prepared.layout());
@@ -543,11 +565,12 @@ where
                 clock_receiver,
                 initial_layout,
                 ring_capacity_frames,
+                asio_receiver,
             );
         })
         .map_err(|error| StartError::Thread(error.to_string()))?;
 
-    let output_format = match start_receiver.recv() {
+    let (output_format, output_latency) = match start_receiver.recv() {
         Ok(Ok(format)) => format,
         Ok(Err(error)) => {
             shared.stop.store(true, Ordering::Release);
@@ -597,6 +620,14 @@ where
         ));
     }
     shared.publish_output_format(output_format);
+    let _ = output_latency;
+    if asio_sender.send(None).is_err() {
+        shared.stop.store(true, Ordering::Release);
+        let _ = output_thread.join();
+        return Err(StartError::Thread(
+            "output thread ended during ASIO setup".to_owned(),
+        ));
+    }
 
     // Chain owns the large FIR tables used by every entrance. Build and seed it
     // on the control thread, before the capture thread enters its real-time loop.
@@ -679,6 +710,7 @@ where
             decode: decode_thread,
         }),
         output_thread: Some(output_thread),
+        asio_available,
     })
 }
 
@@ -709,6 +741,10 @@ impl Engine {
                         stage.endpoint() == *endpoint && stage.qpc_frequency() == self.qpc_frequency
                     })
             }
+            LiveChange::AsioSettings(settings) => {
+                settings.system_attenuation_db.is_finite()
+                    && (0.0..=60.0).contains(&settings.system_attenuation_db)
+            }
             LiveChange::Prepared(_) | LiveChange::Mute(_) | LiveChange::UpmixApply(_) => true,
         };
         if !valid {
@@ -725,7 +761,30 @@ impl Engine {
             )),
             _ => None,
         };
-        if let Err(PushError::Full(change)) = self.changes.borrow_mut().push(change) {
+        // One control-thread producer: reserve before committing the independent
+        // ASIO profile, so a full system queue cannot accept half a change.
+        let mut changes = self.changes.borrow_mut();
+        if changes.slots() == 0 {
+            return Err((Rejected, change));
+        }
+        if self.asio_available
+            && let LiveChange::Prepared(prepared) = &change
+        {
+            let Some(profile) = prepared.source_profile() else {
+                return Err((Rejected, change));
+            };
+            let Ok(asio_prepared) = crate::asio::prepare(
+                profile,
+                self.shared.device_rate.load(Ordering::Acquire),
+                self.shared.asio.settings().layout,
+            ) else {
+                return Err((Rejected, change));
+            };
+            self.shared
+                .asio
+                .queue_profile(profile.clone(), prepared.layout(), asio_prepared);
+        }
+        if let Err(PushError::Full(change)) = changes.push(change) {
             return Err((Rejected, change));
         }
         if let Some((endpoint, monitor)) = monitor {
@@ -1015,6 +1074,7 @@ struct Shared {
     prepared_installed: AtomicU64,
     scene: SceneShared,
     layouts: [LayoutShared; ENGINE_ENDPOINTS],
+    asio: Arc<crate::asio::AsioShared>,
 }
 
 /// One published scene entry as five words: lane and object index, then the
@@ -1348,6 +1408,9 @@ impl Shared {
             prepared_installed: AtomicU64::new(0),
             scene: SceneShared::new(),
             layouts: std::array::from_fn(|_| LayoutShared::new()),
+            asio: Arc::new(crate::asio::AsioShared::new(
+                ssr_types::app::AsioSettings::default(),
+            )),
         }
     }
 
@@ -1618,6 +1681,7 @@ impl Shared {
 
     fn status(&self) -> EngineStatus {
         EngineStatus {
+            asio: self.asio.status(),
             directions: Vec::new(),
             scene: self.scene.read(),
             endpoints: std::array::from_fn(|endpoint| self.read_endpoint(endpoint)),
@@ -2034,7 +2098,29 @@ fn capture_thread_main<C: CaptureSource>(
                     std::thread::yield_now();
                 }
             }
-            CaptureStep::Finished => break,
+            CaptureStep::Finished => {
+                shared.capture_done.store(true, Ordering::Release);
+                if config.asio_runtime.is_some() {
+                    while !shared.stop.load(Ordering::Acquire) {
+                        let mut work = || {
+                            drain_changes(
+                                &mut changes,
+                                &mut chain,
+                                &mut retired,
+                                &mut pending_retired,
+                                &shared,
+                            )
+                        };
+                        if let Some(scope) = &config.rt_scope {
+                            scope(RtSection::Capture, &mut work);
+                        } else {
+                            work();
+                        }
+                        std::thread::park_timeout(Duration::from_millis(1));
+                    }
+                }
+                break;
+            }
             CaptureStep::Lost => {
                 events.fault(FAULT_CAPTURE, RtEvent::CaptureFault);
                 let mut delay = 0;
@@ -2174,6 +2260,7 @@ fn drain_changes(
             LiveChange::Prepared(prepared) => {
                 let old = chain.set_prepared(prepared);
                 shared.prepared_installed.fetch_add(1, Ordering::AcqRel);
+                shared.asio.profile_installed();
                 if let Some(old) = old {
                     match retired.push(Retired::Prepared(old)) {
                         Ok(()) => {}
@@ -2182,17 +2269,24 @@ fn drain_changes(
                 }
             }
             LiveChange::Mute(mute) => shared.mute.store(mute, Ordering::Release),
-            LiveChange::Gain(db) => chain.set_gain(10.0_f32.powf(db / 20.0)),
+            LiveChange::Gain(db) => {
+                chain.set_gain(10.0_f32.powf(db / 20.0));
+                shared.asio.set_gain(db);
+            }
             // Engine::apply checked the direction against the layout this
             // change meets; the chain checks again and ignores a mismatch.
             LiveChange::TestTone(direction) => {
                 chain.start_test_tone(direction);
             }
-            LiveChange::LfeGain(db) => chain.set_lfe_gain(10.0_f32.powf(db / 20.0)),
+            LiveChange::LfeGain(db) => {
+                chain.set_lfe_gain(10.0_f32.powf(db / 20.0));
+                shared.asio.set_lfe_gain(db);
+            }
             LiveChange::TargetMs(ms) => {
                 shared.target_ms_bits.store(ms.to_bits(), Ordering::Release)
             }
             LiveChange::UpmixApply(on) => chain.set_upmix_apply(on),
+            LiveChange::AsioSettings(settings) => shared.asio.set_settings(settings),
             LiveChange::Upmixer { endpoint, stage } => {
                 if let Some(stage) = chain.set_upmixer(endpoint, stage) {
                     match retired.push(Retired::Upmix { endpoint, stage }) {
@@ -2278,6 +2372,7 @@ enum OutputStep {
 
 fn output_rt_step<S: OutputSink>(
     output: &mut OutputState,
+    mut asio: Option<&mut crate::asio::AsioOutput>,
     sink: &mut S,
     shared: &Shared,
     qpc_frequency: u64,
@@ -2287,9 +2382,42 @@ fn output_rt_step<S: OutputSink>(
     if let Some(layout) = output.pending_layout_change() {
         return OutputStep::ChangeLayout(layout);
     }
+    if asio.is_some()
+        && output.ended()
+        && let Some(layout) = shared.asio.desired_layout()
+        && layout != output.layout
+    {
+        return OutputStep::ChangeLayout(layout);
+    }
     output.latency.apply_requested_reset(shared);
-    let mut fill = |buffer: &mut [f32]| output.fill(buffer);
-    let qpc = match sink.next_period(&mut fill) {
+    let channels = output.channels;
+    if let Some(asio) = asio.as_deref_mut() {
+        asio.latency(sink.latency_frames());
+    }
+    let mut fill = |buffer: &mut [f32], restarts: u64| {
+        if restarts > sink_baseline.restarts {
+            shared
+                .output_restarts
+                .fetch_add(restarts - sink_baseline.restarts, Ordering::Relaxed);
+            sink_baseline.restarts = restarts;
+            output.reprime(Reprime::SinkRestarted);
+            if let Some(asio) = asio.as_deref_mut() {
+                asio.reset(output.device_rate);
+            }
+        }
+        if let Some(asio) = asio.as_deref_mut() {
+            if output.ended() {
+                output.fill_remaining_tail(buffer);
+            } else {
+                output.fill_system(buffer);
+            }
+            asio.mix_period(buffer, channels);
+            output.apply_mute(buffer);
+        } else {
+            output.fill(buffer);
+        }
+    };
+    let qpc = match sink.next_period_with_restarts(&mut fill) {
         Ok(qpc) => qpc,
         Err(error) => return OutputStep::Lost(error),
     };
@@ -2301,6 +2429,9 @@ fn output_rt_step<S: OutputSink>(
             .fetch_add(restarts - sink_baseline.restarts, Ordering::Relaxed);
         sink_baseline.restarts = restarts;
         output.reprime(Reprime::SinkRestarted);
+        if let Some(asio) = asio {
+            asio.reset(output.device_rate);
+        }
     }
     let late_resyncs = sink.late_resyncs();
     if late_resyncs > sink_baseline.late_resyncs {
@@ -2335,6 +2466,34 @@ fn output_rt_step<S: OutputSink>(
     OutputStep::Continue
 }
 
+fn write_reopen_tail_period<S: OutputSink>(
+    output: &mut OutputState,
+    mut asio: Option<&mut crate::asio::AsioOutput>,
+    sink: &mut S,
+    shared: &Shared,
+    restart_baseline: &mut u64,
+) -> Result<bool, OutputError> {
+    sink.next_period_with_restarts(&mut |buffer, restarts| {
+        if restarts > *restart_baseline {
+            shared
+                .output_restarts
+                .fetch_add(restarts - *restart_baseline, Ordering::Relaxed);
+            *restart_baseline = restarts;
+            output.reprime(Reprime::SinkRestarted);
+            if let Some(asio) = asio.as_deref_mut() {
+                asio.reset(output.device_rate);
+            }
+        }
+        output.fill_remaining_tail(buffer);
+        if let Some(asio) = asio.as_deref_mut() {
+            asio.mix_period(buffer, output.channels);
+        }
+        output.apply_mute(buffer);
+    })?;
+    shared.output_periods.fetch_add(1, Ordering::Relaxed);
+    Ok(output.tail_periods == 0)
+}
+
 /// Once capture has ended and every frame is rendered, nothing is left to play
 /// on a reopened sink, so a layout or cadence reopen gives way to finishing
 /// (the tail still owed goes to the current sink).
@@ -2352,6 +2511,112 @@ fn complete_reopen_step(reopen: ReopenStep) -> OutputStep {
     }
 }
 
+type AsioReady = (crate::asio::AsioRuntime, Option<crate::asio::AsioOutput>);
+struct AsioLifecycle {
+    ready: Consumer<AsioReady>,
+    retired: Producer<AsioReady>,
+    format: Arc<[AtomicU32; 3]>,
+    stop: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+}
+impl AsioLifecycle {
+    fn new(
+        config: &EngineConfig,
+        shared: &Arc<Shared>,
+        format: ssr_types::OutputFormat,
+        latency: u32,
+    ) -> Self {
+        let (mut ready_tx, ready) = RingBuffer::new(1);
+        let (retired, mut retired_rx) = RingBuffer::<AsioReady>::new(1);
+        let values = Arc::new([
+            AtomicU32::new(format.rate),
+            AtomicU32::new(format.period_frames as u32),
+            AtomicU32::new(latency),
+        ]);
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread = config.asio_runtime.clone().and_then(|runtime_config| {
+            let fault = shared.asio.clone();
+            let shared = shared.clone();
+            let values = values.clone();
+            let stop = stop.clone();
+            let scope = config.rt_scope.clone();
+            let hook = config.thread_hook.clone();
+            std::thread::Builder::new()
+                .name("ssr-asio-control".into())
+                .spawn(move || {
+                    let mut opened = false;
+                    let mut attempted = false;
+                    while !stop.load(Ordering::Acquire) && !shared.stop.load(Ordering::Acquire) {
+                        if let Ok(retired) = retired_rx.pop() {
+                            drop(retired);
+                            opened = false;
+                            attempted = false;
+                        }
+                        let settings = shared.asio.settings();
+                        if !settings.enabled {
+                            attempted = false;
+                            shared.asio.set_fault_reason(None);
+                        } else if !opened && !attempted {
+                            attempted = true;
+                            let mut config = runtime_config.clone();
+                            if let Some(profile) = shared.asio.current_profile() {
+                                config.profile = profile;
+                            }
+                            match crate::asio::AsioRuntime::start_with_latency(
+                                config,
+                                settings,
+                                shared.asio.clone(),
+                                values[0].load(Ordering::Acquire),
+                                values[1].load(Ordering::Acquire) as usize,
+                                values[2].load(Ordering::Acquire),
+                                scope.clone(),
+                                hook.clone(),
+                            ) {
+                                Ok(mut runtime) => {
+                                    let output = runtime.take_output();
+                                    shared.asio.set_fault_reason(None);
+                                    if ready_tx.push((runtime, output)).is_ok() {
+                                        opened = true;
+                                    }
+                                }
+                                Err(error) => shared.asio.set_fault_reason(Some(error.to_string())),
+                            }
+                        }
+                        std::thread::sleep(Duration::from_millis(2));
+                    }
+                    while let Ok(retired) = retired_rx.pop() {
+                        drop(retired);
+                    }
+                })
+                .map_err(|error| fault.set_fault_reason(Some(error.to_string())))
+                .ok()
+        });
+        Self {
+            ready,
+            retired,
+            format: values,
+            stop,
+            thread,
+        }
+    }
+    fn publish_format(&self, format: ssr_types::OutputFormat, latency: u32) {
+        self.format[0].store(format.rate, Ordering::Release);
+        self.format[1].store(format.period_frames as u32, Ordering::Release);
+        self.format[2].store(latency, Ordering::Release);
+    }
+}
+impl Drop for AsioLifecycle {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+        while let Ok(ready) = self.ready.pop() {
+            drop(ready);
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn output_thread_main<O: OutputOpener>(
     config: EngineConfig,
@@ -2360,10 +2625,11 @@ fn output_thread_main<O: OutputOpener>(
     shared: Arc<Shared>,
     qpc_frequency: u64,
     event_producer: Producer<RtEvent>,
-    start_sender: std::sync::mpsc::SyncSender<Result<ssr_types::OutputFormat, OutputError>>,
+    start_sender: std::sync::mpsc::SyncSender<Result<(ssr_types::OutputFormat, u32), OutputError>>,
     clock_receiver: std::sync::mpsc::Receiver<()>,
     initial_layout: OutputLayout,
     capacity_frames: usize,
+    asio_receiver: std::sync::mpsc::Receiver<Option<crate::asio::AsioOutput>>,
 ) {
     if let Some(hook) = &config.thread_hook {
         hook(EngineThread::Output);
@@ -2377,9 +2643,23 @@ fn output_thread_main<O: OutputOpener>(
         }
     };
     let format = sink.format();
-    if start_sender.send(Ok(format)).is_err() || clock_receiver.recv().is_err() {
+    if start_sender
+        .send(Ok((format, sink.latency_frames())))
+        .is_err()
+        || clock_receiver.recv().is_err()
+    {
         return;
     }
+    let mut asio_output = loop {
+        if shared.stop.load(Ordering::Acquire) {
+            return;
+        }
+        match asio_receiver.recv_timeout(Duration::from_millis(10)) {
+            Ok(output) => break output,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+        }
+    };
 
     shared.publish_output_format(format);
     let mut cadence_period_grown = false;
@@ -2396,11 +2676,30 @@ fn output_thread_main<O: OutputOpener>(
         capacity_frames,
     );
     let mut draining_reopen = None;
+    let mut asio_runtime: Option<crate::asio::AsioRuntime> = None;
+    let mut asio_lifecycle = AsioLifecycle::new(&config, &shared, format, sink.latency_frames());
     while !shared.stop.load(Ordering::Acquire) {
+        asio_lifecycle.publish_format(sink.format(), sink.latency_frames());
+        if let Ok((runtime, ready_output)) = asio_lifecycle.ready.pop() {
+            debug_assert!(asio_runtime.is_none());
+            asio_runtime = Some(runtime);
+            asio_output = ready_output;
+        }
+        if !shared.asio.settings().enabled
+            && asio_lifecycle.retired.slots() > 0
+            && let Some(runtime) = asio_runtime.take()
+        {
+            // Move ownership back to the control thread: no join, drop, lock or
+            // preparation can interrupt a system output period.
+            let _ = asio_lifecycle.retired.push((runtime, asio_output.take()));
+        }
         // Checked before every period: the end of capture can become visible
         // after the last take was rendered, and the resampler's delayed tail
         // then follows that period directly instead of an empty one.
-        if output.ended() {
+        if output.ended()
+            && asio_output.is_none()
+            && !(config.asio_runtime.is_some() && shared.asio.settings().enabled)
+        {
             if let Some(hook) = &config.rt_event {
                 hook(RtLoopEvent::OutputTailBegin);
             }
@@ -2423,7 +2722,13 @@ fn output_thread_main<O: OutputOpener>(
         let mut step = None;
         let mut work = || {
             step = Some(if let Some(reopen) = draining_reopen {
-                match output.write_reopen_tail_period(&mut sink) {
+                match write_reopen_tail_period(
+                    &mut output,
+                    asio_output.as_mut(),
+                    &mut sink,
+                    &shared,
+                    &mut sink_baseline.restarts,
+                ) {
                     Ok(true) => complete_reopen_step(reopen),
                     Ok(false) => OutputStep::Continue,
                     Err(error) => OutputStep::Lost(error),
@@ -2431,6 +2736,7 @@ fn output_thread_main<O: OutputOpener>(
             } else {
                 output_rt_step(
                     &mut output,
+                    asio_output.as_mut(),
                     &mut sink,
                     &shared,
                     qpc_frequency,
@@ -2449,7 +2755,9 @@ fn output_thread_main<O: OutputOpener>(
         }
         // One decision after the period: whether capture has ended decides both
         // what happens to a reopen and to a reopen drain.
-        let ended = output.ended();
+        let ended = output.ended()
+            && asio_output.is_none()
+            && !(config.asio_runtime.is_some() && shared.asio.settings().enabled);
         let mut step = end_before_reopen(
             step.expect("the real-time scope must run its closure exactly once"),
             ended,
@@ -2491,13 +2799,19 @@ fn output_thread_main<O: OutputOpener>(
         match step {
             OutputStep::Continue => {}
             OutputStep::ChangeLayout(mut layout) => {
+                if let Some(asio) = &mut asio_output {
+                    asio.lost();
+                }
                 drop(sink);
                 let mut delay = 0;
                 loop {
                     if delay != 0 && wait_for_stop(&shared, Duration::from_millis(delay)) {
                         return;
                     }
-                    if output.ended() {
+                    if output.ended()
+                        && asio_output.is_none()
+                        && !(config.asio_runtime.is_some() && shared.asio.settings().enabled)
+                    {
                         // Capture ended while no sink was open and nothing is queued:
                         // there is nothing left to play on a new one.
                         if let Some(hook) = &config.rt_event {
@@ -2520,6 +2834,9 @@ fn output_thread_main<O: OutputOpener>(
                                 format,
                             ) {
                                 Ok(()) => {
+                                    if let Some(asio) = &mut asio_output {
+                                        asio.reconfigure(format, reopened.latency_frames());
+                                    }
                                     if let Some(hook) = &config.rt_event {
                                         hook(RtLoopEvent::OutputOpenEnd);
                                     }
@@ -2563,6 +2880,9 @@ fn output_thread_main<O: OutputOpener>(
             OutputStep::Lost(error) => {
                 shared.publish_output_error(&error.to_string());
                 output.events.fault(FAULT_OUTPUT, RtEvent::OutputFault);
+                if let Some(asio) = &mut asio_output {
+                    asio.lost();
+                }
                 drop(sink);
                 output.discard_crossing_audio();
                 let mut delay = RECONNECT_INITIAL_MS;
@@ -2570,7 +2890,10 @@ fn output_thread_main<O: OutputOpener>(
                     if wait_for_stop(&shared, Duration::from_millis(delay)) {
                         return;
                     }
-                    if output.ended() {
+                    if output.ended()
+                        && asio_output.is_none()
+                        && !(config.asio_runtime.is_some() && shared.asio.settings().enabled)
+                    {
                         // Capture ended while no sink was open and nothing is queued:
                         // there is nothing left to play on a new one.
                         if let Some(hook) = &config.rt_event {
@@ -2603,6 +2926,9 @@ fn output_thread_main<O: OutputOpener>(
                                 delay = (delay * 2).min(RECONNECT_MAX_MS);
                                 continue;
                             }
+                            if let Some(asio) = &mut asio_output {
+                                asio.reconfigure(reopened_format, reopened.latency_frames());
+                            }
                             if let Some(hook) = &config.rt_event {
                                 hook(RtLoopEvent::OutputOpenEnd);
                             }
@@ -2624,13 +2950,19 @@ fn output_thread_main<O: OutputOpener>(
                 }
             }
             OutputStep::GrowCadence(_) => {
+                if let Some(asio) = &mut asio_output {
+                    asio.lost();
+                }
                 drop(sink);
                 let mut delay = 0;
                 loop {
                     if delay != 0 && wait_for_stop(&shared, Duration::from_millis(delay)) {
                         return;
                     }
-                    if output.ended() {
+                    if output.ended()
+                        && asio_output.is_none()
+                        && !(config.asio_runtime.is_some() && shared.asio.settings().enabled)
+                    {
                         // Capture ended while no sink was open and nothing is queued:
                         // there is nothing left to play on a new one.
                         if let Some(hook) = &config.rt_event {
@@ -2654,6 +2986,9 @@ fn output_thread_main<O: OutputOpener>(
                                 format,
                             ) {
                                 Ok(()) => {
+                                    if let Some(asio) = &mut asio_output {
+                                        asio.reconfigure(format, reopened.latency_frames());
+                                    }
                                     if let Some(hook) = &config.rt_event {
                                         hook(RtLoopEvent::OutputOpenEnd);
                                     }

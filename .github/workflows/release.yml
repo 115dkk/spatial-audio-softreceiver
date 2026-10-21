@@ -91,7 +91,11 @@ jobs:
       - name: Build
         env:
           SSR_RELEASE_VERSION: ${{ needs.gate.outputs.version }}
-        run: cargo build --release --locked -p ssr-replay -p ssr-live
+        # asio_probe loads an ASIO DLL as a DAW does; `ssr-live asio-probe`
+        # runs it from beside ssr-live.exe (docs/testing/test-signed-pc.md).
+        run: |
+          cargo build --release --locked -p ssr-replay -p ssr-live
+          cargo build --release --locked -p ssr-asio --features probe --example asio_probe
 
       - name: Package
         shell: pwsh
@@ -106,6 +110,9 @@ jobs:
           $stage = "spatial-softreceiver-tools-$env:VERSION-windows-x86_64"
           New-Item -ItemType Directory -Force "dist/$stage" | Out-Null
           Copy-Item target/release/ssr-replay.exe, target/release/ssr-live.exe, LICENSE, README.md "dist/$stage/"
+          # asio_probe links asio-sys, so it is GPL-3.0 and carries the text (ADR 0025).
+          Copy-Item target/release/examples/asio_probe.exe "dist/$stage/"
+          Copy-Item crates/asio-sys/LICENSE "dist/$stage/LICENSE-GPL-3.0.txt"
           # Speaker profile examples (ADR 0030): a tester copies one and edits it.
           New-Item -ItemType Directory -Force "dist/$stage/profiles" | Out-Null
           Copy-Item docs/profiles/*.toml "dist/$stage/profiles/"
@@ -209,8 +216,8 @@ jobs:
           name: driver-kit
           path: kit
 
-      - name: Build the app, the guard, the setup tool and the plugin host
-        run: cargo build --release --locked -p spatial-softreceiver --features spatial-softreceiver/updater -p ssr-guard -p ssr-setup -p ssr-plughost
+      - name: Build the app, the guard, the setup tool, the plugin host and the ASIO DLL
+        run: cargo build --release --locked -p spatial-softreceiver --features spatial-softreceiver/updater -p ssr-guard -p ssr-setup -p ssr-plughost -p ssr-asio
 
       - name: Stage the app folder
         shell: pwsh
@@ -233,6 +240,11 @@ jobs:
           # The plugin host runs each VST upmixer in its own process (ADR 0021);
           # the repository's test plugin is never staged.
           Copy-Item target/release/spatial-softreceiver.exe, target/release/ssr-guard.exe, target/release/ssr-setup.exe, target/release/ssr-plughost.exe, LICENSE stage/
+          # ssr-setup copies the ASIO DLL from beside itself to Program Files
+          # and registers it there (ADR 0025). The DLL links asio-sys, so it
+          # is GPL-3.0 and the folder carries the text.
+          Copy-Item target/release/ssrasio.dll stage/
+          Copy-Item crates/asio-sys/LICENSE stage/LICENSE-GPL-3.0.txt
           # The toasts' icon (ssr_sys::toast::register reads it beside the app).
           Copy-Item apps/spatial-softreceiver/icons/icon.ico stage/spatial-softreceiver.ico
           Copy-Item docs/profiles/*.toml stage/profiles/

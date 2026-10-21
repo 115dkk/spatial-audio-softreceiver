@@ -37,8 +37,8 @@ use windows::{
             Properties::{DEVPKEY_Device_HardwareIds, DEVPROP_TYPE_STRING_LIST, DEVPROPTYPE},
         },
         Foundation::{
-            ERROR_FILE_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_NO_MORE_ITEMS, ERROR_NOT_FOUND,
-            PROPERTYKEY, WIN32_ERROR,
+            ERROR_FILE_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_INVALID_DATA, ERROR_MORE_DATA,
+            ERROR_NO_MORE_ITEMS, ERROR_NOT_FOUND, PROPERTYKEY, WIN32_ERROR,
         },
         Media::Audio::{
             DEVICE_STATE, DEVICE_STATEMASK_ALL, IConnector, IDeviceTopology, IMMDevice,
@@ -63,9 +63,10 @@ use windows::{
                 },
             },
             Registry::{
-                HKEY, HKEY_LOCAL_MACHINE, KEY_READ, REG_DWORD, REG_ROUTINE_FLAGS, RRF_RT_REG_DWORD,
-                RRF_RT_REG_SZ, RegCloseKey, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW,
-                RegSetKeyValueW,
+                HKEY, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_64KEY, KEY_WRITE, REG_DWORD,
+                REG_OPTION_NON_VOLATILE, REG_ROUTINE_FLAGS, REG_SZ, RRF_RT_REG_DWORD,
+                RRF_RT_REG_SZ, RegCloseKey, RegCreateKeyExW, RegDeleteKeyExW, RegDeleteValueW,
+                RegEnumKeyExW, RegGetValueW, RegOpenKeyExW, RegSetKeyValueW, RegSetValueExW,
             },
             Variant::{VT_EMPTY, VT_UI4},
         },
@@ -830,14 +831,25 @@ pub(crate) fn machine_string(subkey: &str, name: &str) -> Option<String> {
     Some(String::from_utf16_lossy(&units[..end]))
 }
 
-/// A registry key under HKEY_LOCAL_MACHINE opened for reading
-/// (`RegOpenKeyExW`), closed with `RegCloseKey` on drop.
+/// A registry key under HKEY_LOCAL_MACHINE, opened with `RegOpenKeyExW` or
+/// created with `RegCreateKeyExW`, closed with `RegCloseKey` on drop.
 #[derive(Debug)]
 pub(crate) struct RegKey(HKEY);
 
 impl RegKey {
     /// `None` when the key does not exist.
     pub(crate) fn open_machine(subkey: &str) -> Result<Option<Self>, WinError> {
+        Self::open_machine_access(subkey, KEY_READ)
+    }
+
+    pub(crate) fn open_machine_64(subkey: &str) -> Result<Option<Self>, WinError> {
+        Self::open_machine_access(subkey, KEY_READ | KEY_WRITE | KEY_WOW64_64KEY)
+    }
+
+    fn open_machine_access(
+        subkey: &str,
+        access: windows::Win32::System::Registry::REG_SAM_FLAGS,
+    ) -> Result<Option<Self>, WinError> {
         let subkey = wide(subkey);
         let mut key = HKEY(std::ptr::null_mut());
         // SAFETY: the name is NUL-terminated and `key` is a writable HKEY.
@@ -846,7 +858,7 @@ impl RegKey {
                 HKEY_LOCAL_MACHINE,
                 PCWSTR(subkey.as_ptr()),
                 None,
-                KEY_READ,
+                access,
                 &mut key,
             )
         };
@@ -857,6 +869,125 @@ impl RegKey {
         } else {
             Err(WinError::win32("RegOpenKeyExW", status))
         }
+    }
+
+    /// `RegCreateKeyExW`: an explicit 64-bit machine key, never HKCR/HKCU.
+    pub(crate) fn create_machine_64(subkey: &str) -> Result<Self, WinError> {
+        let subkey = wide(subkey);
+        let mut key = HKEY(std::ptr::null_mut());
+        // SAFETY: the name is terminated and `key` is writable; no class or
+        // security descriptor is supplied. The owned handle is closed on drop.
+        let status = unsafe {
+            RegCreateKeyExW(
+                HKEY_LOCAL_MACHINE,
+                PCWSTR(subkey.as_ptr()),
+                None,
+                PCWSTR::null(),
+                REG_OPTION_NON_VOLATILE,
+                KEY_READ | KEY_WRITE | KEY_WOW64_64KEY,
+                None,
+                &mut key,
+                None,
+            )
+        };
+        status
+            .ok()
+            .map_err(|_| WinError::win32("RegCreateKeyExW", status))?;
+        Ok(Self(key))
+    }
+
+    /// `RegGetValueW(REG_SZ)`: preserves absence versus access/type errors.
+    /// Rejects malformed strings before a registration can overwrite them.
+    pub(crate) fn string(&self, name: &str) -> Result<Option<String>, WinError> {
+        let name = wide(name);
+        let mut data = vec![0_u16; 256];
+        loop {
+            let mut bytes = u32::try_from(size_of_val(data.as_slice())).expect("bounded buffer");
+            // SAFETY: the key is open; the name is terminated and the buffer
+            // is writable for `bytes`. The API updates the live size value.
+            let status = unsafe {
+                RegGetValueW(
+                    self.0,
+                    PCWSTR::null(),
+                    PCWSTR(name.as_ptr()),
+                    RRF_RT_REG_SZ,
+                    None,
+                    Some(data.as_mut_ptr().cast()),
+                    Some(&mut bytes),
+                )
+            };
+            if status == ERROR_FILE_NOT_FOUND {
+                return Ok(None);
+            }
+            if status == ERROR_MORE_DATA && data.len() < 32768 {
+                data.resize((data.len() * 2).min(32768), 0);
+                continue;
+            }
+            status
+                .ok()
+                .map_err(|_| WinError::win32("RegGetValueW", status))?;
+            let units = bytes as usize / 2;
+            if bytes % 2 != 0 || units == 0 || units > data.len() || data[units - 1] != 0 {
+                return Err(WinError::win32("RegGetValueW", ERROR_INVALID_DATA));
+            }
+            let value = &data[..units - 1];
+            if value.contains(&0) {
+                return Err(WinError::win32("RegGetValueW", ERROR_INVALID_DATA));
+            }
+            return String::from_utf16(value)
+                .map(Some)
+                .map_err(|_| WinError::win32("RegGetValueW", ERROR_INVALID_DATA));
+        }
+    }
+
+    /// `RegSetValueExW(REG_SZ)`, including the terminating UTF-16 NUL.
+    pub(crate) fn set_string(&self, name: &str, value: &str) -> Result<(), WinError> {
+        if name.contains('\0') || value.contains('\0') {
+            return Err(WinError::win32("RegSetValueExW", ERROR_INVALID_DATA));
+        }
+        let name = wide(name);
+        let bytes: Vec<u8> = wide(value).into_iter().flat_map(u16::to_le_bytes).collect();
+        // SAFETY: the open key permits writes, the name is terminated and
+        // the byte slice contains a complete terminated REG_SZ.
+        let status =
+            unsafe { RegSetValueExW(self.0, PCWSTR(name.as_ptr()), None, REG_SZ, Some(&bytes)) };
+        status
+            .ok()
+            .map_err(|_| WinError::win32("RegSetValueExW", status))
+    }
+
+    /// `RegDeleteValueW`; absence is already the requested state.
+    pub(crate) fn delete_value(&self, name: &str) -> Result<(), WinError> {
+        let name = wide(name);
+        // SAFETY: the key is open for writes and the name is terminated.
+        let status = unsafe { RegDeleteValueW(self.0, PCWSTR(name.as_ptr())) };
+        if status == ERROR_FILE_NOT_FOUND {
+            return Ok(());
+        }
+        status
+            .ok()
+            .map_err(|_| WinError::win32("RegDeleteValueW", status))
+    }
+
+    /// `RegDeleteKeyExW`: deletes this exact 64-bit key, never a subtree.
+    pub(crate) fn delete_machine_64(subkey: &str) -> Result<(), WinError> {
+        let subkey = wide(subkey);
+        // SAFETY: the name is terminated; the predefined root is valid and
+        // the explicit view matches the keys opened/created above.
+        let status = unsafe {
+            RegDeleteKeyExW(
+                HKEY_LOCAL_MACHINE,
+                PCWSTR(subkey.as_ptr()),
+                KEY_WOW64_64KEY.0,
+                None,
+            )
+        };
+        if status == ERROR_FILE_NOT_FOUND {
+            return Ok(());
+        }
+        status
+            .ok()
+            .map_err(|_| WinError::win32("RegDeleteKeyExW", status))
     }
 
     /// `RegEnumKeyExW`: the names of the key's subkeys (at most 255

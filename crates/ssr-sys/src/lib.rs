@@ -44,6 +44,12 @@ mod toast_xml;
 pub mod toast;
 
 #[cfg(windows)]
+pub mod asio_host;
+#[cfg(all(test, not(windows)))]
+#[path = "asio_host/validation.rs"]
+mod asio_host_validation;
+
+#[cfg(windows)]
 mod apartment;
 #[cfg(windows)]
 mod device;

@@ -156,6 +156,30 @@ pub mod supervisor {
         }
     }
 
+    #[doc = "ASIO 재생 중 시스템 소리의 감쇠 범위는 0 dB에서 60 dB까지입니다. 60 dB에서는 시스템 소리가 음소거됩니다."]
+    pub fn asio_system_attenuation_out_of_range(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "ASIO 재생 중 시스템 소리의 감쇠 범위는 0 dB에서 60 dB까지입니다. 60 dB에서는 시스템 소리가 음소거됩니다."
+            }
+            Language::En => {
+                "System sound attenuation during ASIO playback must be between 0 dB and 60 dB. At 60 dB, system sound is muted."
+            }
+        }
+    }
+
+    #[doc = "ASIO 입구를 시작하지 못했습니다. 시스템 소리는 계속 재생합니다: {detail}"]
+    pub fn asio_unavailable(language: Language, detail: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => {
+                format!("ASIO 입구를 시작하지 못했습니다. 시스템 소리는 계속 재생합니다: {detail}")
+            }
+            Language::En => {
+                format!("The ASIO input could not start. System audio continues: {detail}")
+            }
+        }
+    }
+
     #[doc = "BRIR 세트를 읽지 못했습니다: {detail}"]
     pub fn brir_read_failed(language: Language, detail: impl core::fmt::Display) -> String {
         match language {
@@ -1051,6 +1075,120 @@ pub mod live {
         }
     }
 
+    #[doc = "앱이 ASIO 소리를 받을 준비가 되지 않았습니다."]
+    pub fn asio_driver_app_not_ready(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "앱이 ASIO 소리를 받을 준비가 되지 않았습니다.",
+            Language::En => "The app is not ready to receive ASIO audio.",
+        }
+    }
+
+    #[doc = "정지 제한 시간 안에 ASIO 콜백이 끝나지 않았습니다."]
+    pub fn asio_driver_callback_not_drained(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "정지 제한 시간 안에 ASIO 콜백이 끝나지 않았습니다.",
+            Language::En => "The ASIO callback did not finish before the stop timeout.",
+        }
+    }
+
+    #[doc = "다른 앱이 ASIO 입구를 사용 중입니다."]
+    pub fn asio_driver_lease_busy(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "다른 앱이 ASIO 입구를 사용 중입니다.",
+            Language::En => "Another app is using the ASIO input.",
+        }
+    }
+
+    #[doc = "오류 없음"]
+    pub fn asio_driver_ok(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "오류 없음",
+            Language::En => "No error",
+        }
+    }
+
+    #[doc = "ASIO 드라이버에서 내부 오류가 발생했습니다."]
+    pub fn asio_driver_panicked(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "ASIO 드라이버에서 내부 오류가 발생했습니다.",
+            Language::En => "An internal error occurred in the ASIO driver.",
+        }
+    }
+
+    #[doc = "ssr-live.exe 옆의 asio_probe.exe로 ASIO DLL을 시험합니다."]
+    pub fn asio_probe_about(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "ssr-live.exe 옆의 asio_probe.exe로 ASIO DLL을 시험합니다.",
+            Language::En => "Test an ASIO DLL using asio_probe.exe beside ssr-live.exe",
+        }
+    }
+
+    #[doc = "시험할 ASIO 드라이버 DLL 경로입니다."]
+    pub fn asio_probe_dll_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "시험할 ASIO 드라이버 DLL 경로입니다.",
+            Language::En => "Path to the ASIO driver DLL to test",
+        }
+    }
+
+    #[doc = "asio_probe.exe를 찾으려면 ssr-live.exe의 절대 경로가 필요합니다"]
+    pub fn asio_probe_executable_path(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "asio_probe.exe를 찾으려면 ssr-live.exe의 절대 경로가 필요합니다",
+            Language::En => {
+                "Cannot locate asio_probe.exe without the absolute path to ssr-live.exe"
+            }
+        }
+    }
+
+    #[doc = "asio_probe.exe 시험에 실패했습니다: {status}"]
+    pub fn asio_probe_failed(language: Language, status: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("asio_probe.exe 시험에 실패했습니다: {status}"),
+            Language::En => format!("asio_probe.exe failed: {status}"),
+        }
+    }
+
+    #[doc = "--seconds에는 1~3600 사이의 정수가 필요합니다"]
+    pub fn asio_probe_invalid_seconds(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "--seconds에는 1~3600 사이의 정수가 필요합니다",
+            Language::En => "--seconds must be a whole number from 1 to 3600",
+        }
+    }
+
+    #[doc = "시험 결과를 이 JSON 파일에 씁니다."]
+    pub fn asio_probe_json_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "시험 결과를 이 JSON 파일에 씁니다.",
+            Language::En => "Write the probe's JSON report to this file",
+        }
+    }
+
+    #[doc = "asio_probe.exe를 시작하지 못했습니다: {detail}"]
+    pub fn asio_probe_launch_failed(language: Language, detail: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("asio_probe.exe를 시작하지 못했습니다: {detail}"),
+            Language::En => format!("Could not start asio_probe.exe: {detail}"),
+        }
+    }
+
+    #[doc = "시험할 시간(초)입니다. 1~3600 사이의 정수를 씁니다."]
+    pub fn asio_probe_seconds_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "시험할 시간(초)입니다. 1~3600 사이의 정수를 씁니다.",
+            Language::En => "Whole seconds to run the probe (1-3600)",
+        }
+    }
+
+    #[doc = "사용법: asio_probe.exe DLL [--seconds N] [--frames N] [--json PATH]"]
+    pub fn asio_probe_usage(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "사용법: asio_probe.exe DLL [--seconds N] [--frames N] [--json PATH]",
+            Language::En => "Usage: asio_probe.exe DLL [--seconds N] [--frames N] [--json PATH]",
+        }
+    }
+
     #[doc = "우리 엔드포인트에서 IEC 61937 비트스트림을 시험하거나 재생합니다."]
     pub fn bitstream_about(language: Language) -> &'static str {
         match language {
@@ -1804,6 +1942,14 @@ pub mod live {
         }
     }
 
+    #[doc = "캡처 원본과 함께 ASIO 입구를 켭니다."]
+    pub fn play_asio_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "캡처 원본과 함께 ASIO 입구를 켭니다.",
+            Language::En => "Enable the ASIO input alongside the capture source",
+        }
+    }
+
     #[doc = "클럭 제어 방식입니다."]
     pub fn play_clock_help(language: Language) -> &'static str {
         match language {
@@ -1945,6 +2091,16 @@ pub mod live {
         match language {
             Language::Ko => "독점 모드 대신 WASAPI 공유 모드를 씁니다.",
             Language::En => "Use WASAPI shared mode instead of exclusive",
+        }
+    }
+
+    #[doc = "커널 드라이버 없이 일정한 속도로 무음을 공급합니다(--asio 필요)."]
+    pub fn play_silence_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "커널 드라이버 없이 일정한 속도로 무음을 공급합니다(--asio 필요).",
+            Language::En => {
+                "Use a paced silence source without the kernel driver (requires --asio)"
+            }
         }
     }
 

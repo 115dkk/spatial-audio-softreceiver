@@ -512,6 +512,9 @@ fn no_unsafe_outside_budget() {
             }
         }
 
+        if allowed > 0 {
+            println!("{}: {total} unsafe token(s), budget {allowed}", krate.name);
+        }
         if total > allowed {
             violations.push(format!(
                 "crate {}: found {total} unsafe token(s), budget is {allowed}",
@@ -974,7 +977,7 @@ fn check_dependency_table(
     violations: &mut Vec<String>,
 ) {
     const WINDOWS_PACKAGES: [&str; 4] = ["windows", "windows-sys", "windows-core", "wasapi"];
-    const WINDOWS_CRATES: [&str; 3] = ["ssr-sys", "ssr-setup-sys", "plughost-sys"];
+    const WINDOWS_CRATES: [&str; 4] = ["ssr-sys", "ssr-setup-sys", "plughost-sys", "asio-sys"];
 
     for (alias, specification) in dependencies {
         let package = dependency_package(alias, specification, workspace_packages);
@@ -982,11 +985,23 @@ fn check_dependency_table(
             && !WINDOWS_CRATES.contains(&krate.name.as_str())
         {
             violations.push(format!(
-                "{} (crate {}, [{section}] dependency '{}'): package '{}' may only be used by an isolation crate (ssr-sys, ssr-setup-sys, plughost-sys)",
+                "{} (crate {}, [{section}] dependency '{}'): package '{}' may only be used by an isolation crate (ssr-sys, ssr-setup-sys, plughost-sys, asio-sys)",
                 relative_path(&krate.manifest),
                 krate.name,
                 alias,
                 package
+            ));
+        }
+        if package == "asio-sys" && !(krate.is_app && krate.name == "ssr-asio") {
+            violations.push(format!(
+                "{}: only apps/ssr-asio may depend on asio-sys (ADR 0025)",
+                relative_path(&krate.manifest)
+            ));
+        }
+        if krate.name == "asio-proto" && package.starts_with("ssr-") {
+            violations.push(format!(
+                "{}: asio-proto must not depend on ssr-* crates",
+                relative_path(&krate.manifest)
             ));
         }
         if package == "plughost-sys"
@@ -1071,6 +1086,76 @@ fn plughost_link_rules_reject_wrong_owners_and_unconditional_links() {
         &mut violations,
     );
     assert_eq!(violations.len(), 1);
+}
+
+#[test]
+fn asio_sdk_license_stays_in_its_isolation_crate() {
+    for krate in first_party_crates() {
+        let is_asio = krate.name == "asio-sys";
+        if is_asio {
+            let manifest = read_toml(&krate.manifest);
+            assert_eq!(
+                manifest["package"]["license"].as_str(),
+                Some("GPL-3.0-or-later AND GPL-3.0-only")
+            );
+            let license = fs::read_to_string(krate.dir.join("LICENSE")).unwrap();
+            assert!(license.contains("GNU GENERAL PUBLIC LICENSE"));
+            assert!(license.contains("Version 3, 29 June 2007"));
+            assert!(license.len() > 30_000, "GPLv3 must be included in full");
+        }
+        for file in rust_files(&krate.dir) {
+            let source = fs::read_to_string(&file).unwrap();
+            let first = source.lines().next().unwrap_or_default();
+            if is_asio {
+                let expected = if file.file_name().is_some_and(|name| name == "sdk.rs") {
+                    "// SPDX-License-Identifier: GPL-3.0-only"
+                } else {
+                    "// SPDX-License-Identifier: GPL-3.0-or-later"
+                };
+                assert_eq!(first, expected, "{}", relative_path(&file));
+            } else {
+                assert!(
+                    !source.lines().any(|line| line
+                        .trim_start()
+                        .starts_with("// SPDX-License-Identifier:")
+                        && line.contains("GPL-")),
+                    "GPL source outside asio-sys: {}",
+                    relative_path(&file)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn asio_link_rules_reject_non_dll_owners_and_aliases() {
+    let packages = workspace_dependency_packages();
+    let manifest: toml::Value = toml::from_str(
+        "[dependencies]\nrenamed = { package = 'asio-sys', path = '../asio-sys' }\n",
+    )
+    .unwrap();
+    for (name, is_app, allowed) in [
+        ("ssr-asio", true, true),
+        ("ssr-live", true, false),
+        ("engine", false, false),
+        ("ssr-asio", false, false),
+    ] {
+        let krate = FirstPartyCrate {
+            name: name.into(),
+            dir: repo_root().join("crates").join(name),
+            manifest: repo_root().join("crates").join(name).join("Cargo.toml"),
+            is_app,
+        };
+        let mut violations = Vec::new();
+        check_dependency_table(
+            &krate,
+            "dependencies",
+            manifest["dependencies"].as_table().unwrap(),
+            &packages,
+            &mut violations,
+        );
+        assert_eq!(violations.is_empty(), allowed, "{name}");
+    }
 }
 
 #[test]

@@ -78,6 +78,42 @@
     "kind": "clear_correction"
   },
   {
+    "kind": "set_asio_enabled",
+    "value": true
+  },
+  {
+    "kind": "set_asio_enabled",
+    "value": false
+  },
+  {
+    "kind": "set_asio_layout",
+    "value": "2.0"
+  },
+  {
+    "kind": "set_asio_layout",
+    "value": "5.1"
+  },
+  {
+    "kind": "set_asio_layout",
+    "value": "7.1"
+  },
+  {
+    "kind": "set_asio_layout",
+    "value": "7.1.4"
+  },
+  {
+    "kind": "set_asio_layout",
+    "value": "9.1.6"
+  },
+  {
+    "kind": "set_asio_system_attenuation",
+    "value": 0.0
+  },
+  {
+    "kind": "set_asio_system_attenuation",
+    "value": 60.0
+  },
+  {
     "kind": "set_gain",
     "value": -3.5
   },

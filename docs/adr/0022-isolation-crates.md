@@ -61,3 +61,14 @@ ADR 0037(74)과 0038(107)에 이어, 시험서명 PC에서만 볼 수 있던 것
 
 이 도구들은 `driver.yml`의 시험서명 설치 잡이 부릅니다(`endpoint_format_check.py`, `bitstream_check.py`, `endpoint_name_check.py`).
 
+## 2026-10-21 덧붙임: `asio-sys`와 ASIO 입구의 숫자
+
+ADR 0025의 첫 PR에서 격리 크레이트 `asio-sys`를 더하고 숫자를 정합니다. 셈법은 위와 같습니다.
+
+| 크레이트 | 숫자 | 담는 것 | 링크하는 쪽 |
+| --- | --- | --- | --- |
+| `asio-sys` | 216 | ASIO SDK ABI(함수형 포함), in-proc COM 서버, 콜백 버퍼, Windows 전달(공유 메모리, 이벤트, 피어 핸들, MMCSS, QPC), 모듈 수명, DLL을 경로로 적재하는 시험용 probe(`probe` 기능) | `apps/ssr-asio`만 |
+
+- **`ssr-sys`는 107에서 133이 됩니다(+26).** 앱 쪽 ASIO 호스트의 제어 블록과 링 매핑, 이벤트, 피어 핸들입니다. 바로 앞 덧붙임의 M3·M4 마무리(134)와 합치면 160입니다.
+- **`ssr-setup-sys`는 52에서 57이 됩니다(+5).** ASIO 등록의 레지스트리 작업 다섯입니다(ADR 0032의 관리자 작업).
+- **`asio-sys`의 라이선스는 `GPL-3.0-or-later AND GPL-3.0-only`입니다.** SDK 정의를 손으로 옮긴 `sdk.rs`가 `GPL-3.0-only`이고, 크레이트에 GPLv3 전문(`LICENSE`)을 둡니다(ADR 0025).

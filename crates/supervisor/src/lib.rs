@@ -25,7 +25,7 @@ pub mod upmix;
 
 pub use driver_stats::{DriverStatsSource, DriverStatsTotals};
 pub use machine::{
-    EngineHandle, Launcher, ProfileSettings, Settings, Supervisor, default_profile,
+    EngineHandle, LaunchOptions, Launcher, ProfileSettings, Settings, Supervisor, default_profile,
     default_profile_view,
 };
 pub use recorder::{Recorder, RecorderConfig, TeeCapture};

@@ -279,6 +279,11 @@
       }
     ]
   },
+  "asio": {
+    "enabled": true,
+    "layout": "7.1.4",
+    "system_attenuation_db": 0.0
+  },
   "engine": null,
   "outputs": [
     {

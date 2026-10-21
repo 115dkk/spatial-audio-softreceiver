@@ -1332,10 +1332,30 @@ note = "ADR 0021 control framing, deterministic deadlines, fallback and restart 
 [[feature]]
 id = "asio.entrance"
 kind = "app"
-milestone = "M6"
-status = "planned"
-tests = []
-note = "ssrasio.dll, a JACK Router style ASIO driver into the engine, paced by the DAC clock and mixed after the cross ring (ADR 0025). Only asio-sys touches the ASIO SDK and carries GPL-3.0-or-later SPDX headers; releases that ship ssrasio.dll are GPLv3 as a whole (ADR 0003, 0025)"
+milestone = "M4"
+status = "partial"
+tests = [
+  "asio-proto::deficit_uses_largest_cumulative_watermark",
+  "asio-proto::only_one_lease_racer_wins",
+  "asio-proto::tracker_detects_stall_peer_loss_and_generation_change",
+  "asio-proto::all_layout_orders_and_names_are_fixed",
+  "asio-proto::late_old_callback_publish_is_covered_by_quiescent_ack",
+  "asio-sys::windows_sdk_struct_layouts",
+  "asio-sys::actual_com_entries_contain_panics_and_preserve_error_messages",
+  "asio-sys::actual_com_disposes_running_and_commits_each_half_once",
+  "ssr-asio::channel_validation_requires_power_of_two_and_rejects_duplicates",
+  "engine::fake_daw_64_128_512_follow_dac_demand_and_process_without_allocations",
+  "engine::underrun_keeps_generation_and_dead_lease_removes_only_its_audio",
+  "engine::real_engine_survives_system_eof_profiles_mute_and_prefill_restart_without_allocating",
+  "ssr-setup-sys::partial_install_rolls_back_every_written_value",
+  "ssr-types::asio_settings_default_missing_fields_and_round_trip",
+  "supervisor::asio_live_changes_commit_only_after_the_engine_accepts",
+  "ssr-live::asio_play_accepts_driver_dump_and_explicit_no_driver_source",
+  "ssr-policy::asio_sdk_license_stays_in_its_isolation_crate",
+  "ssr-policy::asio_link_rules_reject_non_dll_owners_and_aliases",
+  "asio-sys::probe_rejects_missing_callbacks_bad_order_and_counter_mismatch",
+]
+note = "DAC-paced JACK Router-style entrance (ADR 0025, x64); partial until real DAW validation. The pinned SDK definitions and COM boundary stay in asio-sys; the driver policy and shared protocol are MIT. Releases shipping ssrasio.dll are GPLv3 as a whole (ADR 0003, 0025). ssr-setup copies the DLL to %ProgramFiles%\\Spatial SoftReceiver\\ASIO and registers it there; the DLL never launches the app and runs a silent stand-in clock without it. On the Windows runners ci.yml's audio job loads the shipped DLL with asio_probe three ways (alone, ssr-live play --asio first, the DAW first with ssr-live joining and then killed) and tools/ci/test_asio_probe_check.py covers the judgement; the asio-sdk job compares asio-sys with the pinned SDK (tools/ci/test_check_asio_sdk.py). Real DAWs (Reaper, Cubase), latency figures and second-DAW refusal remain for the test-signed PC (docs/testing/test-signed-pc.md 10-2-4)."
 
 [[feature]]
 id = "driver.endpoint_identity"

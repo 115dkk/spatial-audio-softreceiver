@@ -18,13 +18,15 @@
 # endpoint property store's description, friendly name and DeviceFormat
 # (PROPVARIANT access), and IEC 61937 exclusive negotiation and E-AC-3
 # playback into PASS through IAudioClient, IAudioRenderClient and IAudioClock.
-ssr-sys = 134
+# ASIO control/ring mappings, events and peer handles (ADR 0025, +26).
+ssr-sys = 160
 # The administrator tasks of ssr-setup (ADR 0032): COM endpoint enumeration
 # and the exclusive-mode property store, cfgmgr32 device nodes, SetupAPI root
 # device install and removal, the local machine certificate stores, and the
 # registry (driver parameter, service keys, endpoint entries), each call in
 # one wrapper in `win.rs`.
-ssr-setup-sys = 52
+# ASIO registration adds five registry operations (ADR 0025).
+ssr-setup-sys = 57
 # Plugin isolation: previous 84 + VST 3 module/COM calls and host callbacks (98),
 # less the temporary ring producer (1) that streamring's owned Publisher and
 # `RegionMemory for SharedRegion` replaced.
@@ -32,3 +34,8 @@ ssr-setup-sys = 52
 plughost-sys = 181
 # Test only: VST 2 (22) + VST 3 factory, component/controller/view and buffers (104).
 plughost-testplugin = 126
+# ASIO SDK ABI, in-process COM server, callback buffers, Windows transport and
+# the optional DLL-path probe (ADR 0022, 0025). Count includes SDK function types.
+# Audit fixes: native worker/module lifetime, deferred COM reclamation, combined
+# event waits and regression callback (+12 net, app auto-launch removed).
+asio-sys = 216

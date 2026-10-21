@@ -61,6 +61,8 @@ plugin_not_upmixer = "This plugin is not an upmixer: {name}"
 plugin_disabled = "The upmixer plugin stopped three times within 10 minutes, so it is off until the app restarts: {name}"
 choose_plugin_first = "Choose an upmixer plugin first."
 gain_out_of_range = "Output volume adjustment must be between -20 dB and +10 dB."
+asio_system_attenuation_out_of_range = "System sound attenuation during ASIO playback must be between 0 dB and 60 dB. At 60 dB, system sound is muted."
+asio_unavailable = "The ASIO input could not start. System audio continues: {detail}"
 direction_missing = "The selected direction could not be found."
 stored_output_missing = "The saved output device could not be found: {name}"
 profile_file_read_failed = "profile.toml could not be read: {detail}"
@@ -146,6 +148,8 @@ record_source_help = "Capture source; the Spatial SoftReceiver driver is the nor
 record_out_help = "Output file (`.ssrdump`)"
 record_seconds_help = "Seconds to record"
 play_source_help = "Capture source; ignored when --from-dump supplies the source"
+play_asio_help = "Enable the ASIO input alongside the capture source"
+play_silence_help = "Use a paced silence source without the kernel driver (requires --asio)"
 play_endpoints_help = "Endpoints to consume: all exposed endpoints, or a comma-separated subset"
 play_profile_help = "Profile TOML (see crates/brir)"
 play_output_help = "Part of the output device's name; the default device when omitted"
@@ -233,6 +237,20 @@ no = "no"
 locate_exe_failed = "cannot locate ssr-live.exe: {detail}"
 package_setup_fallback = "ssr-live: {package_dir} holds no ssr-setup.exe; running {setup} with the package files beside it"
 source_driver = "Spatial SoftReceiver"
+asio_probe_about = "Test an ASIO DLL using asio_probe.exe beside ssr-live.exe"
+asio_probe_dll_help = "Path to the ASIO driver DLL to test"
+asio_probe_seconds_help = "Whole seconds to run the probe (1-3600)"
+asio_probe_json_help = "Write the probe's JSON report to this file"
+asio_probe_invalid_seconds = "--seconds must be a whole number from 1 to 3600"
+asio_probe_executable_path = "Cannot locate asio_probe.exe without the absolute path to ssr-live.exe"
+asio_probe_launch_failed = "Could not start asio_probe.exe: {detail}"
+asio_probe_failed = "asio_probe.exe failed: {status}"
+asio_probe_usage = "Usage: asio_probe.exe DLL [--seconds N] [--frames N] [--json PATH]"
+asio_driver_lease_busy = "Another app is using the ASIO input."
+asio_driver_app_not_ready = "The app is not ready to receive ASIO audio."
+asio_driver_callback_not_drained = "The ASIO callback did not finish before the stop timeout."
+asio_driver_ok = "No error"
+asio_driver_panicked = "An internal error occurred in the ASIO driver."
 
 # ssr-replay help and human-readable output. Report JSON remains unlocalized.
 [replay]
@@ -328,6 +346,8 @@ quitting = "The app is shutting down."
 
 [screen]
 endpoints = [{ purpose = "Games and other apps" }, { purpose = "Music apps" }, { purpose = "Bitstream and exclusive-mode apps" }]
+# The name the status screen's ASIO line and the settings screen's ASIO panel share.
+asio = "ASIO input"
 
 [screen.nav]
 label = "Navigation"
@@ -405,6 +425,11 @@ chainErrors = "Audio processing errors"
 chainErrorsNone = "None"
 upmix = "Upmix: {name}"
 upmixFallback = "Upmix: {name}, playing the original stereo"
+asioWaiting = "No DAW is connected."
+asioFailed = "Could not start"
+asioBuffer = "Buffer {frames}\u00a0frames ({ms}\u00a0ms)"
+asioUnderruns = "Underruns {n}"
+asioClockFault = "The output device clock has stopped, so a fallback clock keeps the DAW running. DAW audio is not played in the meantime."
 
 [screen.unsupported]
 format = "This format is not supported."
@@ -621,6 +646,13 @@ routingRemove = "Remove"
 routingBuiltIn = "Default"
 routingRestore = "Restore default"
 routingBuiltInWas = "Default: {entrance}"
+asioEnabled = "Receive DAW audio through ASIO"
+asioHint = "Choose {device} as the ASIO device in the DAW's audio device settings. While Spatial SoftReceiver is on, the DAW's audio plays through your headphones or speakers along with system sound."
+asioLimits = "The sample rate must be the output device's current rate, and the buffer size a power of two from 64 to 2048 frames."
+asioLayout = "DAW output layout"
+asioLayoutHint = "Changing the layout changes the channel count on the DAW side, so the DAW reopens the device."
+asioAttenuation = "Lower system sound during ASIO playback"
+asioAttenuationHint = "While a DAW uses the ASIO input, system sound is lowered by this amount. At 60 dB it is muted. Changes apply when you release the slider."
 
 [screen.facts]
 osBuild = "Windows build"

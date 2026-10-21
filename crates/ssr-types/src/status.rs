@@ -276,9 +276,28 @@ pub struct UnderrunSnapshot {
     pub since_block_ms: f32,
 }
 
+/// The ASIO client that currently holds the entrance; absent without a client.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct AsioStatus {
+    pub client_pid: u32,
+    pub client_exe: String,
+    pub sample_rate: u32,
+    pub buffer_frames: u32,
+    pub channels: u32,
+    pub layout: crate::app::AsioLayout,
+    pub underruns: u64,
+    pub generation: u64,
+    pub clock_fault: bool,
+    pub fault_reason: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
 pub struct EngineStatus {
+    /// Populated only while an ASIO client exists, not merely when enabled.
+    #[serde(default)]
+    pub asio: Option<AsioStatus>,
     /// Directions in the current output layout (BRIR directions for headphones,
     /// physical speakers for speaker output).
     pub directions: Vec<DirectionView>,

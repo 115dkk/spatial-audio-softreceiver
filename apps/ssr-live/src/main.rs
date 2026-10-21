@@ -20,11 +20,16 @@
 //! The SAL device opens only from an administrator prompt.
 
 mod app_routing;
+mod asio_probe;
+#[cfg(windows)]
+mod asio_transport;
 mod bitstream_cli;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod host_json;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod ks_lifecycle;
+#[cfg(any(windows, test))]
+mod silence;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -209,6 +214,77 @@ mod endpoint_tests {
     #[test]
     fn english_help_is_the_derived_help_and_korean_help_is_complete() {
         ssr_i18n::clap_help::verify(Cli::command(), localized_command);
+    }
+
+    #[test]
+    fn asio_play_accepts_driver_dump_and_explicit_no_driver_source() {
+        for args in [
+            vec!["--asio"],
+            vec!["--asio", "--from-dump", "capture.ssrdump"],
+            vec!["--asio", "--silence"],
+        ] {
+            let mut line = vec!["ssr-live", "play", "--profile", "profile.toml"];
+            line.extend(args);
+            let cli = Cli::try_parse_from(line).unwrap();
+            let Command::Play { asio, .. } = cli.command else {
+                panic!("expected play");
+            };
+            assert!(asio);
+        }
+        for args in [
+            vec!["--silence"],
+            vec!["--asio", "--silence", "--source", "driver"],
+            vec!["--asio", "--silence", "--source", "sal"],
+            vec!["--asio", "--silence", "--from-dump", "capture.ssrdump"],
+        ] {
+            let mut line = vec!["ssr-live", "play", "--profile", "profile.toml"];
+            line.extend(args);
+            assert!(Cli::try_parse_from(line).is_err());
+        }
+        let cli = Cli::try_parse_from(["ssr-live", "play", "--profile", "p"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Play {
+                source: CaptureKind::Driver,
+                asio: false,
+                silence: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn asio_probe_requires_dll_and_validates_duration() {
+        assert!(Cli::try_parse_from(["ssr-live", "asio-probe"]).is_err());
+        for (seconds, valid) in [
+            ("1", true),
+            ("3600", true),
+            ("0", false),
+            ("NaN", false),
+            ("inf", false),
+            ("3601", false),
+        ] {
+            assert_eq!(
+                Cli::try_parse_from([
+                    "ssr-live",
+                    "asio-probe",
+                    "--dll",
+                    "driver.dll",
+                    "--seconds",
+                    seconds,
+                    "--json",
+                    "probe.json"
+                ])
+                .is_ok(),
+                valid
+            );
+        }
+        let cli = Cli::try_parse_from(["ssr-live", "asio-probe", "--dll", "driver.dll"]).unwrap();
+        let Command::AsioProbe { seconds, json, .. } = cli.command else {
+            panic!("expected asio-probe");
+        };
+        assert_eq!(seconds, 5);
+        assert_eq!(json, None);
     }
 
     #[test]
@@ -781,6 +857,12 @@ enum Command {
         /// Capture source; ignored when --from-dump supplies the source.
         #[arg(long, value_enum, default_value_t = CaptureKind::Driver)]
         source: CaptureKind,
+        /// Enable the ASIO input alongside the capture source.
+        #[arg(long)]
+        asio: bool,
+        /// Use a paced silence source without the kernel driver (requires --asio).
+        #[arg(long, requires = "asio", conflicts_with_all = ["source", "from_dump"])]
+        silence: bool,
         /// Endpoints to consume: all exposed endpoints, or a comma-separated subset.
         #[arg(long)]
         endpoints: Option<String>,
@@ -854,6 +936,18 @@ enum Command {
         #[arg(long)]
         json: Option<PathBuf>,
     },
+    /// Test an ASIO DLL using asio_probe.exe beside ssr-live.exe.
+    AsioProbe {
+        /// Path to the ASIO driver DLL to test.
+        #[arg(long, value_name = "PATH")]
+        dll: PathBuf,
+        /// Whole seconds to run the probe (1-3600).
+        #[arg(long, default_value_t = 5, value_parser = asio_probe::parse_seconds)]
+        seconds: u32,
+        /// Write the probe's JSON report to this file.
+        #[arg(long, value_name = "PATH")]
+        json: Option<PathBuf>,
+    },
     /// List render endpoints (name, default flag, id).
     Devices {
         /// Include the Kernel Streaming filter and pin, or the discovery failure.
@@ -880,6 +974,7 @@ fn localized_command(language: Language) -> clap::Command {
     for (name, about) in [
         ("record", live::record_about(language)),
         ("play", live::play_about(language)),
+        ("asio-probe", live::asio_probe_about(language)),
         ("devices", live::devices_about(language)),
         ("ks-probe", live::ks_probe_about(language)),
         ("host", live::host_about(language)),
@@ -924,6 +1019,8 @@ fn localized_command(language: Language) -> clap::Command {
         .mut_subcommand("play", |subcommand| {
             subcommand
                 .mut_arg("source", |arg| arg.help(live::play_source_help(language)))
+                .mut_arg("asio", |arg| arg.help(live::play_asio_help(language)))
+                .mut_arg("silence", |arg| arg.help(live::play_silence_help(language)))
                 .mut_arg("endpoints", |arg| {
                     arg.help(live::play_endpoints_help(language))
                 })
@@ -971,6 +1068,14 @@ fn localized_command(language: Language) -> clap::Command {
                     arg.help(live::ks_probe_seconds_help(language))
                 })
                 .mut_arg("json", |arg| arg.help(live::ks_probe_json_help(language)))
+        })
+        .mut_subcommand("asio-probe", |subcommand| {
+            subcommand
+                .mut_arg("dll", |arg| arg.help(live::asio_probe_dll_help(language)))
+                .mut_arg("seconds", |arg| {
+                    arg.help(live::asio_probe_seconds_help(language))
+                })
+                .mut_arg("json", |arg| arg.help(live::asio_probe_json_help(language)))
         })
         .mut_subcommand("devices", |subcommand| {
             subcommand
@@ -1116,6 +1221,8 @@ fn main() -> ExitCode {
         } => platform::record(source, &out, seconds),
         Command::Play {
             source,
+            asio,
+            silence,
             endpoints,
             profile,
             output,
@@ -1137,6 +1244,8 @@ fn main() -> ExitCode {
             direct_layouts,
         } => platform::play(platform::PlayOptions {
             source,
+            asio,
+            silence,
             endpoints,
             profile,
             output,
@@ -1167,6 +1276,9 @@ fn main() -> ExitCode {
             seconds,
             json,
         } => platform::ks_probe(&output, seconds, json.as_deref()),
+        Command::AsioProbe { dll, seconds, json } => {
+            asio_probe::run(&dll, seconds, json.as_deref())
+        }
         Command::Host { command } => match command {
             HostCommand::Formats => bitstream_cli::host_formats(),
             HostCommand::Apps => platform::host_apps(),
@@ -1225,6 +1337,8 @@ mod platform {
 
     pub struct PlayOptions {
         pub source: CaptureKind,
+        pub asio: bool,
+        pub silence: bool,
         pub endpoints: Option<String>,
         pub profile: PathBuf,
         pub output: Option<String>,
@@ -1360,6 +1474,7 @@ mod platform {
         Driver(DriverRing),
         Sal(SalRing),
         Dump(DumpCapture),
+        Silence(super::silence::SilenceCapture),
     }
 
     impl CaptureSource for Source {
@@ -1368,6 +1483,7 @@ mod platform {
                 Self::Driver(ring) => ring.read(buf, wait),
                 Self::Sal(ring) => ring.read(buf, wait),
                 Self::Dump(dump) => dump.read(buf, wait),
+                Self::Silence(silence) => silence.read(buf, wait),
             }
         }
 
@@ -1376,6 +1492,7 @@ mod platform {
                 Self::Driver(ring) => ring.now_qpc(),
                 Self::Sal(ring) => ring.now_qpc(),
                 Self::Dump(dump) => dump.now_qpc(),
+                Self::Silence(silence) => silence.now_qpc(),
             }
         }
 
@@ -1384,6 +1501,7 @@ mod platform {
                 Self::Driver(ring) => ring.set_rate_trim(ppm),
                 Self::Sal(ring) => ring.set_rate_trim(ppm),
                 Self::Dump(dump) => dump.set_rate_trim(ppm),
+                Self::Silence(silence) => silence.set_rate_trim(ppm),
             }
         }
 
@@ -1392,6 +1510,7 @@ mod platform {
                 Self::Driver(ring) => ring.reconnect(),
                 Self::Sal(ring) => ring.reconnect(),
                 Self::Dump(dump) => dump.reconnect(),
+                Self::Silence(silence) => silence.reconnect(),
             }
         }
     }
@@ -1399,6 +1518,13 @@ mod platform {
     type OpenedSource = (Source, u64, Option<Box<dyn supervisor::DriverStatsSource>>);
 
     fn open_source(options: &PlayOptions, ended: Arc<AtomicBool>) -> Result<OpenedSource, String> {
+        if options.silence {
+            return Ok((
+                Source::Silence(super::silence::SilenceCapture::new(qpc::now)),
+                qpc::frequency(),
+                None,
+            ));
+        }
         if let Some(path) = &options.from_dump {
             let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
             return Ok((
@@ -1438,6 +1564,10 @@ mod platform {
                 endpoints,
                 ..engine::ChainConfig::default()
             },
+            asio: ssr_types::app::AsioSettings {
+                enabled: options.asio,
+                ..Default::default()
+            },
             target_ms: options.target_ms,
             clock: match options.clock {
                 Clock::Auto => ClockPreference::Auto,
@@ -1450,7 +1580,7 @@ mod platform {
     }
 
     fn report_request(options: &PlayOptions) -> supervisor::RequestFields {
-        super::request_fields(
+        let mut fields = super::request_fields(
             options.source,
             options.from_dump.is_some(),
             options.clock,
@@ -1471,7 +1601,11 @@ mod platform {
                         .collect(),
                 })
                 .collect(),
-        )
+        );
+        if options.silence {
+            fields.source = "silence".to_owned();
+        }
+        fields
     }
 
     pub fn play(options: PlayOptions) -> Result<(), String> {
@@ -1515,7 +1649,11 @@ mod platform {
         eprintln!("{}", ssr_i18n::live::output(language, &endpoint.name));
         let ended = Arc::new(AtomicBool::new(false));
         let (source, source_qpc, driver_stats) = open_source(&options, ended.clone())?;
-        let config = engine_config(&options)?;
+        let config = engine_config(&options)?.with_asio_runtime(engine::asio::AsioRuntimeConfig {
+            provider: super::asio_transport::provider(),
+            profile: profile.clone(),
+            target_lead_frames: engine::asio::MAX_ASIO_BUFFER_FRAMES as u32,
+        });
         let output = WasapiOpener {
             endpoint: Some(endpoint.id.clone()),
             rate: options.rate,
@@ -2510,6 +2648,8 @@ mod platform {
     #[allow(dead_code)]
     pub struct PlayOptions {
         pub source: CaptureKind,
+        pub asio: bool,
+        pub silence: bool,
         pub endpoints: Option<String>,
         pub profile: PathBuf,
         pub output: Option<String>,

@@ -1,0 +1,29 @@
+[package]
+name = "ssr-asio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "ssrasio"
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+asio-sys.workspace = true
+asio-proto.workspace = true
+streamring.workspace = true
+ssr-i18n.workspace = true
+ssr-types.workspace = true
+
+[features]
+probe = ["asio-sys/probe"]
+
+[[example]]
+name = "asio_probe"
+required-features = ["probe"]

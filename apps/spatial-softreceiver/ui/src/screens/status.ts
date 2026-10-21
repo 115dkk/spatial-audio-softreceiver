@@ -1,10 +1,11 @@
 // The status screen (ready, running, faulted): the power switch, the chosen
-// output, one card per entrance (with its upmixer while one runs) and, while
-// running, the meter column. The cards and meters are built once per snapshot
-// and then only their text nodes change, 30 times a second.
+// output, one card per entrance (with its upmixer while one runs), the ASIO
+// input's line while it is on and the engine runs, and, while running, the
+// meter column. The cards, the line and the meters are built once per
+// snapshot and then only their text nodes change, 30 times a second.
 
-import type { EndpointStatus, EndpointUpmixView, EngineStatus } from '../bindings';
-import { h, liveText } from '../dom';
+import type { AsioStatus, EndpointStatus, EndpointUpmixView, EngineStatus } from '../bindings';
+import { h, liveText, setAttr } from '../dom';
 import {
   chainErrorEntries,
   chainErrorTotal,
@@ -14,10 +15,12 @@ import {
   describeFormat,
   describeOutputFormat,
   describeOutputMode,
+  describeRate,
   describeUnsupported,
   describeVolume,
   oneDecimal,
 } from '../format';
+import { ASIO_DEFAULTS } from '../guard';
 import { text } from '../text';
 import { bypassReason } from './upmix';
 import { type Context, type Drawn, type Live, button, intentButton } from './common';
@@ -196,6 +199,67 @@ function endpointCard(index: number, upmix: EndpointUpmixView | undefined): Card
   };
 }
 
+interface AsioLine {
+  element: HTMLElement;
+  update(status: AsioStatus | null): void;
+}
+
+/**
+ * The ASIO input (ADR 0025) under the entrance cards, its name over one
+ * line like the output in the head. A DAW that holds it: its program file,
+ * the rate, the buffer and its length, the layout it sends and the times the
+ * output found nothing from it, with a warning while a stand-in clock drives
+ * the DAW. None: one quiet line. A fault: its reason as the engine gives it.
+ */
+function asioLine(): AsioLine {
+  const s = text.status;
+  const client = liveText();
+  const rate = liveText();
+  const buffer = liveText();
+  const layout = liveText();
+  const underruns = liveText();
+  const reason = liveText();
+  const details = [rate, buffer, layout, underruns].map((value) => h('span', { class: 'asio-detail' }, value.node));
+  const state = h(
+    'p',
+    { class: 'asio-state' },
+    h('span', { class: 'lamp', 'aria-hidden': 'true' }),
+    h('span', { class: 'asio-state-text' }, h('span', { class: 'asio-client' }, client.node), ...details),
+  );
+  const clockWarning = h('p', { class: 'card-warning', hidden: true }, s.asioClockFault);
+  const fault = h('p', { class: 'asio-fault', hidden: true }, reason.node);
+  const element = h(
+    'article',
+    { class: 'panel asio-line', 'aria-labelledby': 'asio-line-title' },
+    h('h3', { id: 'asio-line-title', class: 'card-title' }, text.asio),
+    state,
+    clockWarning,
+    fault,
+  );
+  return {
+    element,
+    update(status) {
+      const faultReason = status?.fault_reason ?? null;
+      // A fault comes with no DAW to speak of; the reason is the line.
+      const attached = status !== null && faultReason === null ? status : null;
+      const tone = faultReason !== null ? 'error' : attached === null ? 'off' : attached.clock_fault ? 'warning' : 'on';
+      setAttr(state, 'class', `asio-state tone-${tone}`);
+      client.set(faultReason !== null ? s.asioFailed : attached === null ? s.asioWaiting : attached.client_exe || '-');
+      for (const detail of details) detail.hidden = attached === null;
+      if (attached !== null) {
+        const { sample_rate: hz, buffer_frames: frames } = attached;
+        rate.set(hz > 0 ? describeRate(hz) : '-');
+        buffer.set(s.asioBuffer(count(frames), hz > 0 ? oneDecimal((frames / hz) * 1000) : '-'));
+        layout.set(`${attached.layout} (${text.format.channels(attached.channels)})`);
+        underruns.set(s.asioUnderruns(count(attached.underruns)));
+      }
+      clockWarning.hidden = attached === null || !attached.clock_fault;
+      fault.hidden = faultReason === null;
+      if (faultReason !== null) reason.set(faultReason);
+    },
+  };
+}
+
 type MeterRow = [label: string, unit: string, read: (engine: EngineStatus) => string];
 
 function meterRows(): MeterRow[] {
@@ -247,20 +311,27 @@ export function status(ctx: Context, engineNow: EngineStatus | null): Drawn {
       ctx.snapshot.upmix.endpoints.find((endpoint) => endpoint.endpoint === index),
     ),
   );
+  // The ASIO line stands while the input is on and the engine runs.
+  const asio = running && (ctx.snapshot.asio ?? ASIO_DEFAULTS).enabled ? asioLine() : null;
   const grid = h(
     'section',
     { class: 'entrances', 'aria-label': s.entrances },
-    ...cards.map((card) => card.element),
+    h('div', { class: 'entrance-cards' }, ...cards.map((card) => card.element)),
+    asio?.element ?? null,
   );
   const meters = running ? meterColumn() : null;
   const live: Live = {
     update(engine) {
       cards.forEach((card, index) => card.update(engine.endpoints[index] ?? null));
+      asio?.update(engine.asio ?? null);
       meters?.update(engine);
     },
   };
   if (engineNow !== null) live.update(engineNow);
-  else for (const card of cards) card.update(null);
+  else {
+    for (const card of cards) card.update(null);
+    asio?.update(null);
+  }
 
   const element = h(
     'div',

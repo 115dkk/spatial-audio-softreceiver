@@ -61,6 +61,8 @@ plugin_not_upmixer = "이 플러그인은 업믹서가 아닙니다: {name}"
 plugin_disabled = "업믹스 플러그인이 10분 안에 세 번 멈춰 이번 실행에서는 껐습니다: {name}"
 choose_plugin_first = "먼저 업믹스 플러그인을 고르십시오."
 gain_out_of_range = "출력 음량 조절 범위는 -20 dB에서 +10 dB까지입니다."
+asio_system_attenuation_out_of_range = "ASIO 재생 중 시스템 소리의 감쇠 범위는 0 dB에서 60 dB까지입니다. 60 dB에서는 시스템 소리가 음소거됩니다."
+asio_unavailable = "ASIO 입구를 시작하지 못했습니다. 시스템 소리는 계속 재생합니다: {detail}"
 direction_missing = "선택한 방향을 찾을 수 없습니다."
 stored_output_missing = "저장된 출력 장치를 찾을 수 없습니다: {name}"
 profile_file_read_failed = "profile.toml을 읽지 못했습니다: {detail}"
@@ -146,6 +148,8 @@ record_source_help = "캡처 원본입니다. 보통 공간 소프트리시버 �
 record_out_help = "출력 파일(`.ssrdump`)입니다."
 record_seconds_help = "기록할 시간(초)입니다."
 play_source_help = "캡처 원본입니다. --from-dump를 쓰면 무시합니다."
+play_asio_help = "캡처 원본과 함께 ASIO 입구를 켭니다."
+play_silence_help = "커널 드라이버 없이 일정한 속도로 무음을 공급합니다(--asio 필요)."
 play_endpoints_help = "쓸 엔드포인트입니다. 공개된 엔드포인트 전부 또는 쉼표로 나눈 일부를 고릅니다."
 play_profile_help = "프로필 TOML입니다(crates/brir 참고)."
 play_output_help = "출력 장치 이름의 일부입니다. 생략하면 기본 장치를 씁니다."
@@ -233,6 +237,20 @@ no = "아니요"
 locate_exe_failed = "ssr-live.exe 위치를 찾지 못했습니다: {detail}"
 package_setup_fallback = "ssr-live: {package_dir}에 ssr-setup.exe가 없어 패키지 파일 옆의 {setup}을 실행합니다"
 source_driver = "공간 소프트리시버"
+asio_probe_about = "ssr-live.exe 옆의 asio_probe.exe로 ASIO DLL을 시험합니다."
+asio_probe_dll_help = "시험할 ASIO 드라이버 DLL 경로입니다."
+asio_probe_seconds_help = "시험할 시간(초)입니다. 1~3600 사이의 정수를 씁니다."
+asio_probe_json_help = "시험 결과를 이 JSON 파일에 씁니다."
+asio_probe_invalid_seconds = "--seconds에는 1~3600 사이의 정수가 필요합니다"
+asio_probe_executable_path = "asio_probe.exe를 찾으려면 ssr-live.exe의 절대 경로가 필요합니다"
+asio_probe_launch_failed = "asio_probe.exe를 시작하지 못했습니다: {detail}"
+asio_probe_failed = "asio_probe.exe 시험에 실패했습니다: {status}"
+asio_probe_usage = "사용법: asio_probe.exe DLL [--seconds N] [--frames N] [--json PATH]"
+asio_driver_lease_busy = "다른 앱이 ASIO 입구를 사용 중입니다."
+asio_driver_app_not_ready = "앱이 ASIO 소리를 받을 준비가 되지 않았습니다."
+asio_driver_callback_not_drained = "정지 제한 시간 안에 ASIO 콜백이 끝나지 않았습니다."
+asio_driver_ok = "오류 없음"
+asio_driver_panicked = "ASIO 드라이버에서 내부 오류가 발생했습니다."
 
 # ssr-replay 도움말과 사람이 읽는 출력입니다. 보고서 JSON은 번역하지 않습니다.
 [replay]
@@ -328,6 +346,8 @@ quitting = "앱이 종료되는 중입니다."
 
 [screen]
 endpoints = [{ purpose = "게임과 일반 앱" }, { purpose = "음악 앱" }, { purpose = "비트스트림과 독점 재생 앱" }]
+# 상태 화면의 ASIO 줄과 설정 화면의 ASIO 패널이 함께 쓰는 이름입니다.
+asio = "ASIO 입구"
 
 [screen.nav]
 label = "화면 이동"
@@ -405,6 +425,11 @@ chainErrors = "소리 처리 오류"
 chainErrorsNone = "없음"
 upmix = "업믹스: {name}"
 upmixFallback = "업믹스: {name}, 원래 스테레오를 재생"
+asioWaiting = "DAW가 연결되지 않았습니다."
+asioFailed = "시작하지 못함"
+asioBuffer = "버퍼 {frames}프레임 ({ms}\u00a0ms)"
+asioUnderruns = "끊김 {n}회"
+asioClockFault = "출력 장치의 클럭이 멈춰 대체 클럭이 DAW를 계속 구동하고 있습니다. 그동안 DAW의 소리는 재생하지 않습니다."
 
 [screen.unsupported]
 format = "지원하지 않는 형식입니다."
@@ -621,6 +646,13 @@ routingRemove = "지우기"
 routingBuiltIn = "기본값"
 routingRestore = "기본값으로 되돌리기"
 routingBuiltInWas = "기본값: {entrance}"
+asioEnabled = "DAW의 소리를 ASIO로 받기"
+asioHint = "DAW의 오디오 장치 설정에서 ASIO 장치로 {device}를 고르면, 공간 소프트리시버가 켜져 있는 동안 DAW의 소리를 시스템 소리와 함께 헤드폰이나 스피커로 재생합니다."
+asioLimits = "샘플레이트는 지금 출력 장치의 샘플레이트만, 버퍼 크기는 64~2048프레임 가운데 2의 거듭제곱만 쓸 수 있습니다."
+asioLayout = "DAW 출력 배치"
+asioLayoutHint = "배치를 바꾸면 DAW 쪽 채널 수가 바뀌므로 DAW가 장치를 다시 엽니다."
+asioAttenuation = "ASIO 재생 중 시스템 소리 줄이기"
+asioAttenuationHint = "DAW가 ASIO 입구를 쓰는 동안 시스템 소리를 이만큼 줄입니다. 60 dB에서는 음소거합니다. 슬라이더를 놓으면 적용됩니다."
 
 [screen.facts]
 osBuild = "Windows 빌드"

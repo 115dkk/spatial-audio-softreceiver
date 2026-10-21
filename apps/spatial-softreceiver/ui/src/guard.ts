@@ -8,6 +8,9 @@
 import type {
   AppRule,
   Arch,
+  AsioLayout,
+  AsioSettings,
+  AsioStatus,
   BitstreamCodec,
   BitstreamFormat,
   ChainErrorMap,
@@ -226,6 +229,17 @@ export const SPEAKER_LAYOUTS: Record<SpeakerLayout, true> = {
   '7.1.2': true,
   '7.1.4': true,
 };
+export const ASIO_LAYOUTS: Record<AsioLayout, true> = {
+  '2.0': true,
+  '5.1': true,
+  '7.1': true,
+  '7.1.4': true,
+  '9.1.6': true,
+};
+/** `AsioSettings::default()` (crates/ssr-types/src/app.rs): on, 7.1.4, the system path not lowered. */
+export const ASIO_DEFAULTS: Readonly<AsioSettings> = { enabled: true, layout: '7.1.4', system_attenuation_db: 0 };
+/** `AsioSettings::MAX_SYSTEM_ATTENUATION_DB`: the most the system path is lowered; there it is muted. */
+export const ASIO_ATTENUATION_MAX = 60;
 /** The upmixers an endpoint may choose (ADR 0035). */
 export const UPMIXER_CHOICES: Record<UpmixerChoice, true> = { first_party: true, plugin: true, off: true };
 export const PLUGIN_FORMATS: Record<PluginFormat, true> = { vst2: true, vst3: true };
@@ -265,6 +279,7 @@ const entrance = oneOf(ENTRANCES);
 const ksFallbackReason = oneOf(KS_FALLBACK_REASONS);
 const profileKind = oneOf(PROFILE_KINDS);
 const speakerLayout = oneOf(SPEAKER_LAYOUTS);
+const asioLayout = oneOf(ASIO_LAYOUTS);
 const upmixerChoice = oneOf(UPMIXER_CHOICES);
 const pluginFormat = oneOf(PLUGIN_FORMATS);
 const upmixBypass = oneOf(UPMIX_BYPASSES);
@@ -378,7 +393,27 @@ const sceneObject = object<SceneObject>({
   level_dbfs: number,
 });
 
+const asioSettings = object<AsioSettings>({
+  enabled: boolean,
+  layout: asioLayout,
+  system_attenuation_db: number,
+});
+
+const asioStatus = object<AsioStatus>({
+  client_pid: number,
+  client_exe: string,
+  sample_rate: number,
+  buffer_frames: number,
+  channels: number,
+  layout: asioLayout,
+  underruns: number,
+  generation: number,
+  clock_fault: boolean,
+  fault_reason: nullable(string),
+});
+
 const engineStatus = object<EngineStatus>({
+  asio: nullable(asioStatus),
   directions: array(directionView),
   scene: array(sceneObject),
   endpoints,
@@ -545,6 +580,7 @@ const snapshot = object<Snapshot>({
   profile: profileView,
   upmix: upmixView,
   routing,
+  asio: asioSettings,
   engine: nullable(engineStatus),
   outputs: array(outputChoice),
   chosen_output: nullable(outputChoice),
@@ -576,6 +612,9 @@ const intent = tagged<Intent>({
   choose_plugin: carrying('choose_plugin', pluginChoice),
   open_plugin_editor: carrying('open_plugin_editor', number),
   set_upmix_apply: carrying('set_upmix_apply', upmixApply),
+  set_asio_enabled: carrying('set_asio_enabled', boolean),
+  set_asio_layout: carrying('set_asio_layout', asioLayout),
+  set_asio_system_attenuation: carrying('set_asio_system_attenuation', number),
   enable: unit('enable'),
   disable: unit('disable'),
   start_diagnostic_recording: unit('start_diagnostic_recording'),

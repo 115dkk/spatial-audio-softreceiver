@@ -172,6 +172,23 @@ pub trait OutputSink {
     /// which the period's first frame will play.
     fn next_period(&mut self, fill: &mut dyn FnMut(&mut [f32])) -> Result<u64, OutputError>;
 
+    /// Supplies the stream restart count before filling the period. Adapters
+    /// that restart while waiting must override this so DAC-clock entrances
+    /// discard their old generation before the first restarted period.
+    fn next_period_with_restarts(
+        &mut self,
+        fill: &mut dyn FnMut(&mut [f32], u64),
+    ) -> Result<u64, OutputError> {
+        let restarts = self.restarts();
+        self.next_period(&mut |samples| fill(samples, restarts))
+    }
+
+    /// Device-side queued latency in frames, excluding upstream DSP and queues.
+    /// Adapters without a hardware measurement report one period as an estimate.
+    fn latency_frames(&self) -> u32 {
+        self.format().period_frames.min(u32::MAX as usize) as u32
+    }
+
     /// Times the sink restarted its stream after the device stalled; sinks
     /// that never restart keep the default.
     fn restarts(&self) -> u64 {
