@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from asio_probe_check import main, probe_problems
+from asio_probe_check import engine_report_problems, main, probe_problems
 
 ORDER = ["DllGetClassObject", "CreateInstance", "init", "getChannels", "getBufferSize",
          "getSampleRate", "canSampleRate", "createBuffers", "getLatencies", "start", "stop",
@@ -59,6 +59,14 @@ class ProbeTests(unittest.TestCase):
         problems = probe_problems(good_report(completed_frames=300000), "attached")
         self.assertEqual(problems, ["300000 frames completed but only 235520 were loaded"])
 
+    def test_an_engine_that_kept_only_its_last_generation_fails(self):
+        # windows-2025 at VB-CABLE's minimum period: the output restarted 137
+        # times in 12 s and each restart reset the counters.
+        report = good_report(callbacks=577, loaded_frames=6144, completed_frames=6144)
+        self.assertEqual(probe_problems(report, "attached"),
+                         ["the engine took 6144 of the 295424 frames the callbacks produced "
+                          "(at least 80% of them)"])
+
     def test_frames_loaded_with_no_engine_fail(self):
         self.assertEqual(probe_problems(good_report(loaded_frames=None, completed_frames=None), "absent"), [])
         self.assertEqual(probe_problems(good_report(loaded_frames=0, completed_frames=0), "absent"), [])
@@ -79,6 +87,14 @@ class ProbeTests(unittest.TestCase):
                              key)
         self.assertEqual(probe_problems([]), ["the probe report must be an object"])
 
+    def test_an_engine_that_restarted_its_output_fails(self):
+        self.assertEqual(engine_report_problems({"output_restarts": 0}), [])
+        self.assertEqual(engine_report_problems({"output_restarts": 137}),
+                         ["the engine restarted its output 137 times; each restart starts a new "
+                          "generation and drops the DAW's frames"])
+        self.assertEqual(engine_report_problems({}), ["the engine report lacks output_restarts"])
+        self.assertEqual(engine_report_problems([]), ["the engine report must be an object"])
+
     def test_the_command_line_reads_the_file_and_exits_with_the_verdict(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "probe.json"
@@ -87,6 +103,13 @@ class ProbeTests(unittest.TestCase):
             path.write_text(json.dumps(good_report(callbacks=10)), encoding="utf-8")
             self.assertEqual(main([str(path)]), 1)
             self.assertEqual(main([str(Path(folder) / "missing.json")]), 1)
+            path.write_text(json.dumps(good_report()), encoding="utf-8")
+            engine = Path(folder) / "live.json"
+            engine.write_text(json.dumps({"output_restarts": 0}), encoding="utf-8")
+            self.assertEqual(main([str(path), "--engine", "attached", "--engine-report", str(engine)]), 0)
+            engine.write_text(json.dumps({"output_restarts": 3}), encoding="utf-8")
+            self.assertEqual(main([str(path), "--engine", "attached", "--engine-report", str(engine)]), 1)
+            self.assertEqual(main([str(path), "--engine-report", str(Path(folder) / "none.json")]), 1)
 
 
 if __name__ == "__main__":

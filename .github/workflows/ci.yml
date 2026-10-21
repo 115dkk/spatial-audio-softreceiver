@@ -554,7 +554,12 @@ jobs:
           missing = sorted({"DllGetClassObject", "DllCanUnloadNow"} - names)
           sys.exit(f"ssrasio.dll does not export {missing}" if missing else 0)
           EOF
-          live=(target/release/ssr-live.exe play --asio --silence --profile "$RUNNER_TEMP/fx/profile.toml" --output "VB-Audio Virtual Cable")
+          # VB-CABLE holds no exclusive period under ~16 ms (soak.ps1): at its
+          # minimum the stall guard restarted the output 11 times a second, and
+          # each restart's new generation dropped the DAW's frames. 20 ms, as
+          # the loopbacks and soaks, against a 512-frame DAW buffer also keeps
+          # the two periods out of step.
+          live=(target/release/ssr-live.exe play --asio --silence --profile "$RUNNER_TEMP/fx/profile.toml" --output "VB-Audio Virtual Cable" --period-ms 20)
 
           echo "::group::1. the DLL alone"
           "$probe" "$dll" --seconds 3 --json "$asio/alone.json" || status=1
@@ -567,7 +572,8 @@ jobs:
           sleep 3
           "$probe" "$dll" --seconds 5 --json "$asio/engine-first.json" || status=1
           wait $engine || { echo "::error::ssr-live failed with the DAW attached"; cat "$asio/engine-first.log"; status=1; }
-          python tools/ci/asio_probe_check.py "$asio/engine-first.json" --engine attached --no-clock-fault || status=1
+          python tools/ci/asio_probe_check.py "$asio/engine-first.json" --engine attached --no-clock-fault \
+            --engine-report "$asio/engine-first-report.json" || status=1
           echo "::endgroup::"
 
           echo "::group::3. the DAW first, ssr-live joining and then killed"
@@ -590,6 +596,9 @@ jobs:
               jq -r --arg run "$run" '"| \($run) | \(.accepted) | \(.callbacks) | \(.sample_rate) | \(.buffer_frames) | \(.output_channels) | \(.loaded_frames) | \(.completed_frames) | \(.clock_fault_observed) | \(.reset_requests) |"' "$asio/$run.json" 2>/dev/null \
                 || echo "| $run | no report | | | | | | | | |"
             done
+            echo
+            jq -r '"engine-first output restarts: \(.output_restarts)"' "$asio/engine-first-report.json" 2>/dev/null \
+              || echo "engine-first: no engine report"
           } >> "$GITHUB_STEP_SUMMARY"
           exit $status
 
