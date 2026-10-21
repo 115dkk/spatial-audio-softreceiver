@@ -505,7 +505,14 @@ jobs:
         timeout-minutes: 5
         run: |
           python tools/ci/endpoint_name_check.py --ssr-live target/release/ssr-live.exe --summary (Join-Path $env:RUNNER_TEMP 'endpoint-name.json')
-          if ($LASTEXITCODE -ne 0) { throw "endpoint_name_check.py exited $LASTEXITCODE" }
+          $code = $LASTEXITCODE
+          # The two restarts reload the image. Server 2025's `/dif ... /now`
+          # checks last only while the image stays loaded, so they start again
+          # for the Verifier steps below (Server 2022's volatile flags keep
+          # applying to later loads; there this does nothing).
+          . ./tools/ci/verifier.ps1
+          Enable-SsrVerifier -When Loaded | Out-Null
+          if ($code -ne 0) { throw "endpoint_name_check.py exited $code" }
 
       # ADR 0033: the guard process against a fake app. tools/ci/guard_check.py
       # points the three default roles at our main endpoint, writes a restore
