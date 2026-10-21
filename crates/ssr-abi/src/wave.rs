@@ -175,6 +175,214 @@ pub fn parse_wave_format(b: &[u8]) -> Result<SourceFormat, WaveFormatError> {
     }
 }
 
+/// A property-store format, without losing the WAVE tag or speaker mask.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceFormat {
+    pub tag: &'static str,
+    pub subformat: &'static str,
+    pub rate: u32,
+    pub channels: u16,
+    pub bits: u16,
+    pub valid_bits: u16,
+    pub channel_mask: u32,
+}
+
+/// Reads a bounded PKEY_AudioEngine_DeviceFormat BLOB, never a native pointer.
+pub fn parse_device_format(bytes: &[u8]) -> Result<DeviceFormat, WaveFormatError> {
+    if bytes.len() < WAVEFORMATEX_BYTES {
+        return Err(WaveFormatError::Truncated {
+            need: WAVEFORMATEX_BYTES,
+            have: bytes.len(),
+        });
+    }
+    let required = WAVEFORMATEX_BYTES + usize::from(u16_at(bytes, 16));
+    if bytes.len() < required {
+        return Err(WaveFormatError::Truncated {
+            need: required,
+            have: bytes.len(),
+        });
+    }
+    let format = parse_wave_format(bytes)?;
+    let bits = u16_at(bytes, 14);
+    let block = u32::from(u16_at(bytes, 2)) * u32::from(bits / 8);
+    if bits == 0 || !bits.is_multiple_of(8) || block != u32::from(u16_at(bytes, 12)) {
+        return Err(WaveFormatError::Inconsistent("block alignment"));
+    }
+    if u32_at(bytes, 4).checked_mul(block) != Some(u32_at(bytes, 8)) {
+        return Err(WaveFormatError::Inconsistent("average byte rate"));
+    }
+    let tag = match u16_at(bytes, 0) {
+        WAVE_FORMAT_EXTENSIBLE => "extensible",
+        WAVE_FORMAT_PCM => "pcm",
+        WAVE_FORMAT_IEEE_FLOAT => "ieee_float",
+        WAVE_FORMAT_DOLBY_AC3_SPDIF => "ac3",
+        WAVE_FORMAT_DTS => "dts",
+        _ => unreachable!("parse_wave_format checked the tag"),
+    };
+    let (subformat, valid_bits, channel_mask) = match format {
+        SourceFormat::Pcm(pcm) => (
+            if pcm.sample_type == SampleType::Float {
+                "ieee_float"
+            } else {
+                "pcm"
+            },
+            pcm.valid_bits,
+            pcm.channel_mask,
+        ),
+        SourceFormat::Bitstream(stream) => (
+            codec_name(stream.codec),
+            if tag == "extensible" {
+                u16_at(bytes, 18)
+            } else {
+                u16_at(bytes, 14)
+            },
+            if tag == "extensible" {
+                u32_at(bytes, 20)
+            } else {
+                0
+            },
+        ),
+    };
+    Ok(DeviceFormat {
+        tag,
+        subformat,
+        rate: u32_at(bytes, 4),
+        channels: u16_at(bytes, 2),
+        bits: u16_at(bytes, 14),
+        valid_bits,
+        channel_mask,
+    })
+}
+
+pub const fn codec_name(codec: BitstreamCodec) -> &'static str {
+    match codec {
+        BitstreamCodec::Ac3 => "ac3",
+        BitstreamCodec::Eac3 => "eac3",
+        BitstreamCodec::Eac3Joc => "eac3_joc",
+        BitstreamCodec::TrueHd => "truehd",
+        BitstreamCodec::Mat20 => "mat20",
+        BitstreamCodec::Mat21 => "mat21",
+        BitstreamCodec::Dts => "dts",
+        BitstreamCodec::DtsHd => "dts_hd",
+        BitstreamCodec::Other(_) => "unknown",
+    }
+}
+
+pub const fn codec_subtype(codec: BitstreamCodec) -> (u16, u32) {
+    match codec {
+        BitstreamCodec::Ac3 => (WAVE_FAMILY, 0x0092),
+        BitstreamCodec::Dts => (WAVE_FAMILY, 0x0008),
+        BitstreamCodec::Eac3 => (IEC61937_FAMILY, 0x000a),
+        BitstreamCodec::Eac3Joc => (IEC61937_FAMILY, 0x010a),
+        BitstreamCodec::DtsHd => (IEC61937_FAMILY, 0x000b),
+        BitstreamCodec::TrueHd => (IEC61937_FAMILY, 0x000c),
+        BitstreamCodec::Mat20 => (IEC61937_FAMILY, 0x010c),
+        BitstreamCodec::Mat21 => (IEC61937_FAMILY, 0x030c),
+        BitstreamCodec::Other(id) => (IEC61937_FAMILY, id),
+    }
+}
+
+/// One concrete probe per ABI codec bit. The Linux test checks every selection
+/// against driver/core/ssr_core.h's kCodecCarriers (including GUID and mask).
+#[derive(Debug, Clone, Copy)]
+pub struct CodecCarrier {
+    pub mask: u64,
+    pub codec: BitstreamCodec,
+    pub rate: u32,
+    pub channels: u16,
+    pub channel_mask: u32,
+    pub encoded_channels: u32,
+}
+
+impl CodecCarrier {
+    pub fn bit(self) -> u32 {
+        self.mask.trailing_zeros()
+    }
+
+    pub fn format(self) -> BitstreamFormat {
+        BitstreamFormat {
+            codec: self.codec,
+            container_rate: self.rate,
+            container_channels: self.channels,
+            encoded_rate: 48_000,
+            encoded_channels: self.encoded_channels,
+        }
+    }
+
+    pub fn wave_bytes(self) -> [u8; IEC61937_FORMAT_BYTES] {
+        let mut bytes = wave_format_bytes(&SourceFormat::Bitstream(self.format()));
+        bytes[20..24].copy_from_slice(&self.channel_mask.to_le_bytes());
+        bytes.try_into().expect("IEC format is 52 bytes")
+    }
+}
+
+pub const CODEC_CARRIERS: [CodecCarrier; 8] = [
+    CodecCarrier {
+        mask: crate::FORMAT_AC3,
+        codec: BitstreamCodec::Ac3,
+        rate: 48_000,
+        channels: 2,
+        channel_mask: 0x60f,
+        encoded_channels: 6,
+    },
+    CodecCarrier {
+        mask: crate::FORMAT_EAC3,
+        codec: BitstreamCodec::Eac3,
+        rate: 192_000,
+        channels: 2,
+        channel_mask: 0x60f,
+        encoded_channels: 6,
+    },
+    CodecCarrier {
+        mask: crate::FORMAT_EAC3_JOC,
+        codec: BitstreamCodec::Eac3Joc,
+        rate: 192_000,
+        channels: 2,
+        channel_mask: 0x0ff,
+        encoded_channels: 8,
+    },
+    CodecCarrier {
+        mask: crate::FORMAT_TRUEHD,
+        codec: BitstreamCodec::TrueHd,
+        rate: 192_000,
+        channels: 8,
+        channel_mask: 0x0ff,
+        encoded_channels: 8,
+    },
+    CodecCarrier {
+        mask: crate::FORMAT_MAT20,
+        codec: BitstreamCodec::Mat20,
+        rate: 192_000,
+        channels: 8,
+        channel_mask: 0x0ff,
+        encoded_channels: 8,
+    },
+    CodecCarrier {
+        mask: crate::FORMAT_MAT21,
+        codec: BitstreamCodec::Mat21,
+        rate: 192_000,
+        channels: 8,
+        channel_mask: 0x0ff,
+        encoded_channels: 8,
+    },
+    CodecCarrier {
+        mask: crate::FORMAT_DTS,
+        codec: BitstreamCodec::Dts,
+        rate: 48_000,
+        channels: 2,
+        channel_mask: 0x60f,
+        encoded_channels: 6,
+    },
+    CodecCarrier {
+        mask: crate::FORMAT_DTS_HD,
+        codec: BitstreamCodec::DtsHd,
+        rate: 192_000,
+        channels: 8,
+        channel_mask: 0x0ff,
+        encoded_channels: 8,
+    },
+];
+
 /// The WAVEFORMATEXTENSIBLE Windows would negotiate for `format`: 40 bytes for
 /// PCM, 52 (the IEC 61937 extension) for a bitstream. Used to synthesize
 /// format-change records outside the driver.
@@ -198,17 +406,7 @@ pub fn wave_format_bytes(format: &SourceFormat) -> Vec<u8> {
             )
         }
         SourceFormat::Bitstream(s) => {
-            let (family, id) = match s.codec {
-                BitstreamCodec::Ac3 => (WAVE_FAMILY, 0x0092),
-                BitstreamCodec::Dts => (WAVE_FAMILY, 0x0008),
-                BitstreamCodec::Eac3 => (IEC61937_FAMILY, 0x000a),
-                BitstreamCodec::Eac3Joc => (IEC61937_FAMILY, 0x010a),
-                BitstreamCodec::DtsHd => (IEC61937_FAMILY, 0x000b),
-                BitstreamCodec::TrueHd => (IEC61937_FAMILY, 0x000c),
-                BitstreamCodec::Mat20 => (IEC61937_FAMILY, 0x010c),
-                BitstreamCodec::Mat21 => (IEC61937_FAMILY, 0x030c),
-                BitstreamCodec::Other(id) => (IEC61937_FAMILY, id),
-            };
+            let (family, id) = codec_subtype(s.codec);
             (
                 s.container_channels,
                 s.container_rate,
@@ -296,6 +494,95 @@ mod tests {
     }
 
     #[test]
+    fn selected_carriers_match_driver_table() {
+        let header = include_str!("../../../driver/core/ssr_core.h");
+        let table = header
+            .split("kCodecCarriers[] = {")
+            .nth(1)
+            .unwrap()
+            .split("};")
+            .next()
+            .unwrap();
+        let rows: Vec<Vec<&str>> = table
+            .lines()
+            .filter(|line| line.contains("{SSR_FORMAT_"))
+            .map(|line| {
+                line.trim()
+                    .trim_start_matches('{')
+                    .trim_end_matches(',')
+                    .trim_end_matches('}')
+                    .split(',')
+                    .map(str::trim)
+                    .collect()
+            })
+            .collect();
+        let number = |value: &str| {
+            if let Some(hex) = value.strip_prefix("0x") {
+                u32::from_str_radix(hex, 16).unwrap()
+            } else {
+                value.parse::<u32>().unwrap()
+            }
+        };
+        for (index, carrier) in CODEC_CARRIERS.into_iter().enumerate() {
+            assert_eq!(carrier.bit(), index as u32 + 1);
+            let name = format!("SSR_FORMAT_{}", codec_name(carrier.codec).to_uppercase());
+            let (family, id) = codec_subtype(carrier.codec);
+            assert!(rows.iter().any(|r| r[0] == name
+                && r[1..].iter().map(|n| number(n)).collect::<Vec<_>>()
+                    == [
+                        id,
+                        u32::from(family),
+                        u32::from(carrier.channels),
+                        carrier.rate,
+                        carrier.channel_mask,
+                        16,
+                        16
+                    ]));
+            assert_eq!(
+                parse_wave_format(&carrier.wave_bytes()),
+                Ok(SourceFormat::Bitstream(carrier.format()))
+            );
+            assert_eq!(u32_at(&carrier.wave_bytes(), 20), carrier.channel_mask);
+        }
+    }
+
+    #[test]
+    fn property_blob_preserves_fields_and_rejects_truncation() {
+        let format = SourceFormat::Pcm(PcmFormat {
+            channels: 8,
+            sample_rate: 48_000,
+            bits_per_sample: 32,
+            valid_bits: 32,
+            sample_type: SampleType::Float,
+            channel_mask: 1599,
+        });
+        let bytes = wave_format_bytes(&format);
+        assert_eq!(
+            parse_device_format(&bytes).unwrap(),
+            DeviceFormat {
+                tag: "extensible",
+                subformat: "ieee_float",
+                rate: 48_000,
+                channels: 8,
+                bits: 32,
+                valid_bits: 32,
+                channel_mask: 1599
+            }
+        );
+        for len in 0..bytes.len() {
+            assert!(parse_device_format(&bytes[..len]).is_err());
+        }
+        for offset in [8, 12, 14] {
+            let mut invalid = bytes.clone();
+            invalid[offset] ^= 1;
+            assert!(parse_device_format(&invalid).is_err());
+        }
+        let mut invalid = bytes;
+        invalid[16..18].copy_from_slice(&34u16.to_le_bytes());
+        assert!(parse_device_format(&invalid).is_err());
+    }
+
+    #[test]
     fn every_format_round_trips() {
         for f in all_formats() {
             assert_eq!(parse_wave_format(&wave_format_bytes(&f)), Ok(f), "{f:?}");
@@ -318,6 +605,7 @@ mod tests {
             panic!("not PCM");
         };
         assert_eq!((p.channels, p.valid_bits, p.channel_mask), (2, 16, 3));
+        assert_eq!(parse_device_format(&b).unwrap().tag, "pcm");
         b[0..2].copy_from_slice(&WAVE_FORMAT_DOLBY_AC3_SPDIF.to_le_bytes());
         assert!(matches!(
             parse_wave_format(&b),

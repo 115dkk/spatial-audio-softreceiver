@@ -14,7 +14,11 @@
 # standard streaming I/O, and console cancellation. Per-app entrances
 # (ADR 0038, 107): audio session enumeration, process image names and the
 # private IAudioPolicyConfigFactory activation and calls.
-ssr-sys = 107
+# Checks of the installed driver (ADR 0022 addendum 2026-10-18, 134): the
+# endpoint property store's description, friendly name and DeviceFormat
+# (PROPVARIANT access), and IEC 61937 exclusive negotiation and E-AC-3
+# playback into PASS through IAudioClient, IAudioRenderClient and IAudioClock.
+ssr-sys = 134
 # The administrator tasks of ssr-setup (ADR 0032): COM endpoint enumeration
 # and the exclusive-mode property store, cfgmgr32 device nodes, SetupAPI root
 # device install and removal, the local machine certificate stores, and the

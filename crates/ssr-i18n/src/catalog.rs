@@ -1051,6 +1051,62 @@ pub mod live {
         }
     }
 
+    #[doc = "우리 엔드포인트에서 IEC 61937 비트스트림을 시험하거나 재생합니다."]
+    pub fn bitstream_about(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "우리 엔드포인트에서 IEC 61937 비트스트림을 시험하거나 재생합니다.",
+            Language::En => "Probe or play IEC 61937 bitstreams on our endpoints",
+        }
+    }
+
+    #[doc = "인코딩된 입력의 코덱(eac3)입니다."]
+    pub fn bitstream_codec_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "인코딩된 입력의 코덱(eac3)입니다.",
+            Language::En => "Encoded input codec (eac3)",
+        }
+    }
+
+    #[doc = "우리 패스스루 엔드포인트 번호(2)입니다."]
+    pub fn bitstream_endpoint_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "우리 패스스루 엔드포인트 번호(2)입니다.",
+            Language::En => "Our passthrough endpoint number (2)",
+        }
+    }
+
+    #[doc = "48 kHz, 5.1, 블록 6개로 된 원시 E-AC-3 동기 프레임입니다."]
+    pub fn bitstream_input_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "48 kHz, 5.1, 블록 6개로 된 원시 E-AC-3 동기 프레임입니다.",
+            Language::En => "Raw 48 kHz, 5.1, six-block E-AC-3 syncframes",
+        }
+    }
+
+    #[doc = "원시 E-AC-3 동기 프레임을 패스스루 엔드포인트로 재생합니다."]
+    pub fn bitstream_play_about(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "원시 E-AC-3 동기 프레임을 패스스루 엔드포인트로 재생합니다.",
+            Language::En => "Play raw E-AC-3 syncframes to the passthrough endpoint",
+        }
+    }
+
+    #[doc = "우리 엔드포인트에서 독점 모드의 IEC 61937 코덱 형식을 시험합니다."]
+    pub fn bitstream_probe_about(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "우리 엔드포인트에서 독점 모드의 IEC 61937 코덱 형식을 시험합니다.",
+            Language::En => "Probe exclusive IEC 61937 codec formats on our endpoints",
+        }
+    }
+
+    #[doc = "재생할 시간(초)입니다(0 초과, 3600 이하)."]
+    pub fn bitstream_seconds_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "재생할 시간(초)입니다(0 초과, 3600 이하).",
+            Language::En => "Seconds to play (greater than zero, at most 3600)",
+        }
+    }
+
     #[doc = "{name} 캡처 장치에 접근할 수 없습니다. 관리자 명령 프롬프트에서 실행하십시오"]
     pub fn capture_access_denied(language: Language, name: impl core::fmt::Display) -> String {
         match language {
@@ -1362,6 +1418,16 @@ pub mod live {
             }
             Language::En => {
                 "With set-formats: the driver's EndpointMask, bit n enables endpoint n (1-15)"
+            }
+        }
+    }
+
+    #[doc = "우리 엔드포인트의 장치 설명과 공유 장치 형식을 JSON으로 출력합니다."]
+    pub fn host_formats_about(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "우리 엔드포인트의 장치 설명과 공유 장치 형식을 JSON으로 출력합니다.",
+            Language::En => {
+                "Print our endpoints' device descriptions and shared device formats as JSON"
             }
         }
     }

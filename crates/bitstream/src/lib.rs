@@ -13,6 +13,8 @@
 //!
 //! PCM never comes through here; the engine routes it straight to `decode`.
 
+pub mod eac3;
+
 /// IEC 61937 data type, Pc bits 0..=6.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DataType {

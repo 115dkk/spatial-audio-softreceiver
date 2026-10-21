@@ -67,6 +67,52 @@ pub fn upmix_previous_state(state_dir: &Path, endpoint: u16) -> PathBuf {
     state_dir.join(format!("upmix-{endpoint}.previous.state"))
 }
 
+/// The hidden CI command is separate from the copyable UI launch options.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CommandLine {
+    App(Args),
+    UpdateOnce { result: PathBuf },
+}
+
+impl CommandLine {
+    pub fn parse<I, S>(args: I) -> Result<Self, String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let args: Vec<OsString> = args
+            .into_iter()
+            .map(|arg| arg.as_ref().to_owned())
+            .collect();
+        if !args
+            .iter()
+            .any(|arg| arg == "--update-once" || arg == "--result")
+        {
+            return Args::parse(&args).map(Self::App);
+        }
+        let mut once = false;
+        let mut result = None;
+        let mut args = args.iter();
+        while let Some(arg) = args.next() {
+            if arg == "--update-once" && !once {
+                once = true;
+            } else if arg == "--result" && result.is_none() {
+                let path = args.next().ok_or("--result requires a file path")?;
+                if path.is_empty() || path.to_string_lossy().starts_with("--") {
+                    return Err("--result requires a file path".to_owned());
+                }
+                result = Some(PathBuf::from(path));
+            } else {
+                return Err(format!("unexpected or repeated update argument {arg:?}"));
+            }
+        }
+        match (once, result) {
+            (true, Some(result)) => Ok(Self::UpdateOnce { result }),
+            _ => Err("--update-once and --result <file> must be supplied together".to_owned()),
+        }
+    }
+}
+
 /// The app's command line.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Args {
@@ -125,5 +171,60 @@ impl Args {
             }
         }
         Ok(parsed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_once_requires_exact_pair_and_no_ui_options() {
+        for args in [
+            vec!["--update-once", "--result", "a result.json"],
+            vec!["--result", "a result.json", "--update-once"],
+        ] {
+            assert_eq!(
+                CommandLine::parse(args),
+                Ok(CommandLine::UpdateOnce {
+                    result: PathBuf::from("a result.json"),
+                })
+            );
+        }
+        for args in [
+            vec!["--update-once"],
+            vec!["--result", "out.json"],
+            vec!["--update-once", "--result"],
+            vec!["--update-once", "--result", ""],
+            vec!["--update-once", "--result", "--smoke"],
+            vec!["--update-once", "--result", "out", "--minimized"],
+            vec!["--guarded", "--update-once", "--result", "out"],
+            vec!["--update-once", "--result", "out", "--resume"],
+            vec!["--update-once", "--result", "out", "--update-once"],
+            vec!["--update-once", "--result", "out", "--result", "other"],
+        ] {
+            assert!(CommandLine::parse(&args).is_err(), "{args:?}");
+        }
+        assert_eq!(
+            CommandLine::parse(["--smoke", "3"]),
+            Args::parse(["--smoke", "3"]).map(CommandLine::App)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn result_path_preserves_os_bytes() {
+        use std::os::unix::ffi::OsStringExt as _;
+        let path = OsString::from_vec(vec![b'f', 0xff]);
+        assert_eq!(
+            CommandLine::parse([
+                OsString::from("--update-once"),
+                OsString::from("--result"),
+                path.clone()
+            ]),
+            Ok(CommandLine::UpdateOnce {
+                result: path.into()
+            })
+        );
     }
 }

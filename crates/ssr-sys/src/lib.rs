@@ -31,6 +31,7 @@
 mod app_device_id;
 #[cfg(windows)]
 mod app_routing;
+pub mod bitstream;
 pub mod driver_ring;
 pub mod ks;
 mod playback_clock;

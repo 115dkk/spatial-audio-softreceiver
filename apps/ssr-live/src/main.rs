@@ -20,6 +20,7 @@
 //! The SAL device opens only from an administrator prompt.
 
 mod app_routing;
+mod bitstream_cli;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod host_json;
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -490,6 +491,8 @@ enum SetupKind {
 
 #[derive(Subcommand, Debug)]
 enum HostCommand {
+    /// Print our endpoints' device descriptions and shared device formats as JSON.
+    Formats,
     /// Print audio sessions and each app's persisted render endpoint.
     Apps,
     /// Set or clear an app's persisted render endpoint without changing communications.
@@ -756,6 +759,11 @@ mod host_tests {
 #[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
 enum Command {
+    /// Probe or play IEC 61937 bitstreams on our endpoints.
+    Bitstream {
+        #[command(subcommand)]
+        command: bitstream_cli::BitstreamCommand,
+    },
     /// Record a capture ring (the Spatial SoftReceiver driver or SAL) to a dump file (run as administrator).
     Record {
         /// Capture source; the Spatial SoftReceiver driver is the normal source.
@@ -875,10 +883,36 @@ fn localized_command(language: Language) -> clap::Command {
         ("devices", live::devices_about(language)),
         ("ks-probe", live::ks_probe_about(language)),
         ("host", live::host_about(language)),
+        ("bitstream", live::bitstream_about(language)),
     ] {
         command = command.mut_subcommand(name, |subcommand| subcommand.about(about));
     }
     command = command
+        .mut_subcommand("bitstream", |subcommand| {
+            subcommand
+                .mut_subcommand("probe", |nested| {
+                    nested
+                        .about(live::bitstream_probe_about(language))
+                        .mut_arg("json", |arg| arg.help(live::devices_json_help(language)))
+                })
+                .mut_subcommand("play", |nested| {
+                    nested
+                        .about(live::bitstream_play_about(language))
+                        .mut_arg("endpoint", |arg| {
+                            arg.help(live::bitstream_endpoint_help(language))
+                        })
+                        .mut_arg("codec", |arg| {
+                            arg.help(live::bitstream_codec_help(language))
+                        })
+                        .mut_arg("input", |arg| {
+                            arg.help(live::bitstream_input_help(language))
+                        })
+                        .mut_arg("seconds", |arg| {
+                            arg.help(live::bitstream_seconds_help(language))
+                        })
+                        .mut_arg("json", |arg| arg.help(live::devices_json_help(language)))
+                })
+        })
         .mut_subcommand("record", |subcommand| {
             subcommand
                 .mut_arg("source", |arg| arg.help(live::record_source_help(language)))
@@ -950,6 +984,7 @@ fn localized_command(language: Language) -> clap::Command {
         })
         .mut_subcommand("host", |mut subcommand| {
             for (name, about) in [
+                ("formats", live::host_formats_about(language)),
                 ("apps", live::host_apps_about(language)),
                 ("set-app", live::host_set_app_about(language)),
                 ("show", live::host_show_about(language)),
@@ -1073,6 +1108,7 @@ fn main() -> ExitCode {
         Err(error) => return parse_error_exit(error, language),
     };
     let result = match cli.command {
+        Command::Bitstream { command } => bitstream_cli::run(command),
         Command::Record {
             source,
             out,
@@ -1132,6 +1168,7 @@ fn main() -> ExitCode {
             json,
         } => platform::ks_probe(&output, seconds, json.as_deref()),
         Command::Host { command } => match command {
+            HostCommand::Formats => bitstream_cli::host_formats(),
             HostCommand::Apps => platform::host_apps(),
             HostCommand::SetApp { pid, endpoint } => platform::host_set_app(pid, &endpoint),
             HostCommand::Show { state_dir } => platform::host_show(state_dir),

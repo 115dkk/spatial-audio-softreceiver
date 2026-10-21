@@ -468,6 +468,52 @@ jobs:
           python tools/ci/app_routing_check.py --ssr-live target/release/ssr-live.exe --summary (Join-Path $env:RUNNER_TEMP 'app-routing.json')
           if ($LASTEXITCODE -ne 0) { throw "app_routing_check.py exited $LASTEXITCODE" }
 
+      # The format Windows settled on for each endpoint must be the OEMFormat
+      # the INF wrote (float32 7.1 on 0, float32 stereo on 1 and 2), which
+      # proves the property sits where the endpoint builder reads it, and each
+      # endpoint's sink description must be the EndpointName<N> the INF wrote
+      # (or the compiled English name). Endpoints are found by their KS filter
+      # reference, never by name.
+      - name: Device format and names of the installed endpoints (tools/ci/endpoint_format_check.py)
+        if: ${{ !cancelled() && steps.host-build.outcome == 'success' }}
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          python tools/ci/endpoint_format_check.py --ssr-live target/release/ssr-live.exe --summary (Join-Path $env:RUNNER_TEMP 'endpoint-format.json') --expect-mask 0x7
+          if ($LASTEXITCODE -ne 0) { throw "endpoint_format_check.py exited $LASTEXITCODE" }
+
+      # PASS negotiates IEC 61937 exclusive formats by its codec mask and
+      # refuses the rest; the main and music entrances refuse every bitstream.
+      # Then E-AC-3 played into PASS through WASAPI exclusive must reach the
+      # ring as the same syncframes, byte for byte and in order.
+      - name: PASS bitstream negotiation and E-AC-3 into the ring (tools/ci/bitstream_check.py)
+        if: ${{ !cancelled() && steps.host-build.outcome == 'success' }}
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          python tools/ci/bitstream_check.py --ssr-live target/release/ssr-live.exe --ssr-replay target/release/ssr-replay.exe --summary (Join-Path $env:RUNNER_TEMP 'bitstream.json')
+          if ($LASTEXITCODE -ne 0) { throw "bitstream_check.py exited $LASTEXITCODE" }
+
+      # An EndpointName<N> changed in the registry must become the sink
+      # description after a device restart, a name over 31 code units must
+      # fall back to the compiled English name, and the original values must
+      # come back. This restarts the device, so it runs after the checks that
+      # read the endpoints as installed.
+      - name: Registry endpoint names reach the sink after a restart (tools/ci/endpoint_name_check.py)
+        if: ${{ !cancelled() && steps.host-build.outcome == 'success' }}
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          python tools/ci/endpoint_name_check.py --ssr-live target/release/ssr-live.exe --summary (Join-Path $env:RUNNER_TEMP 'endpoint-name.json')
+          $code = $LASTEXITCODE
+          # The two restarts reload the image. Server 2025's `/dif ... /now`
+          # checks last only while the image stays loaded, so they start again
+          # for the Verifier steps below (Server 2022's volatile flags keep
+          # applying to later loads; there this does nothing).
+          . ./tools/ci/verifier.ps1
+          Enable-SsrVerifier -When Loaded | Out-Null
+          if ($code -ne 0) { throw "endpoint_name_check.py exited $code" }
+
       # ADR 0033: the guard process against a fake app. tools/ci/guard_check.py
       # points the three default roles at our main endpoint, writes a restore
       # point as the supervisor would, and lets ssr-guard run the fake app
@@ -581,6 +627,10 @@ jobs:
             ${{ runner.temp }}/ks-ring.json
             ${{ runner.temp }}/ks-ring-probe.json
             ${{ runner.temp }}/app-routing.json
+            ${{ runner.temp }}/endpoint-format.json
+            ${{ runner.temp }}/endpoint-name.json
+            ${{ runner.temp }}/bitstream.json
+            ${{ runner.temp }}/bitstream-*/*
             ${{ runner.temp }}/volume.json
             ${{ runner.temp }}/exclusive-policy.json
             ${{ runner.temp }}/aeb-trace

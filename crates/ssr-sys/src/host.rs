@@ -702,6 +702,148 @@ fn endpoint_role(role: Role) -> ERole {
     }
 }
 
+/// Endpoints identified by hardware owner and KS reference, never by labels.
+/// The caller must keep its COM apartment alive until these interfaces drop.
+pub(crate) fn our_render_devices() -> windows::core::Result<Vec<(u16, IMMDevice)>> {
+    let owners: Vec<String> = our_devnodes()
+        .into_iter()
+        .map(|node| node.instance_id)
+        .collect();
+    let mut devices: Vec<_> = render_devices()?
+        .into_iter()
+        .filter_map(|device| {
+            let endpoint = our_endpoint(&device, &owners)?;
+            (endpoint < 3).then_some((endpoint, device))
+        })
+        .collect();
+    devices.sort_by_key(|(endpoint, _)| *endpoint);
+    Ok(devices)
+}
+
+#[derive(Debug)]
+pub struct EndpointFormat {
+    pub endpoint: u16,
+    pub id: String,
+    pub state: &'static str,
+    pub device_desc: Option<String>,
+    pub friendly_name: Option<String>,
+    pub device_format: Option<ssr_abi::wave::DeviceFormat>,
+    pub device_format_error: Option<String>,
+}
+
+/// Reads the actual shared device format, not GetMixFormat or the OEM default.
+pub fn endpoint_formats() -> Result<Vec<EndpointFormat>, String> {
+    let _com = ComGuard::new().map_err(|e| e.to_string())?;
+    let devices = our_render_devices().map_err(|e| format!("enumerate:{:08X}", e.code().0))?;
+    devices
+        .into_iter()
+        .map(|(endpoint, device)| {
+            let wrapped =
+                wasapi::Device::from_immdevice(device.clone()).map_err(|e| e.to_string())?;
+            let id = wrapped.get_id().map_err(|e| e.to_string())?;
+            let state = match wrapped.get_state().map_err(|e| e.to_string())? {
+                wasapi::DeviceState::Active => "active",
+                wasapi::DeviceState::Disabled => "disabled",
+                wasapi::DeviceState::NotPresent => "not_present",
+                wasapi::DeviceState::Unplugged => "unplugged",
+            };
+            // SAFETY: live IMMDevice, read-only property store on this COM thread.
+            let store = unsafe { device.OpenPropertyStore(STGM_READ) };
+            let mut row = EndpointFormat {
+                endpoint,
+                id,
+                state,
+                device_desc: None,
+                friendly_name: None,
+                device_format: None,
+                device_format_error: None,
+            };
+            match store {
+                Err(e) => {
+                    row.device_format_error =
+                        Some(format!("open_property_store:0x{:08X}", e.code().0))
+                }
+                Ok(store) => {
+                    let name_key = |pid| PROPERTYKEY {
+                        fmtid: GUID::from_u128(0xa45c254e_df1c_4efd_8020_67d146a850e0),
+                        pid,
+                    };
+                    row.device_desc = read_property(&store, &name_key(2))
+                        .ok()
+                        .and_then(|v| v.text());
+                    row.friendly_name = read_property(&store, &name_key(14))
+                        .ok()
+                        .and_then(|v| v.text());
+                    let parsed = read_property(
+                        &store,
+                        &windows::Win32::Media::Audio::PKEY_AudioEngine_DeviceFormat,
+                    )
+                    .and_then(|value| match value {
+                        PropertyValue::Blob(bytes) => ssr_abi::wave::parse_device_format(&bytes)
+                            .map_err(|e| format!("invalid_wave_format:{e:?}")),
+                        PropertyValue::Text(_) => Err("device_format_not_blob".into()),
+                    });
+                    match parsed {
+                        Ok(format) => row.device_format = Some(format),
+                        Err(error) => row.device_format_error = Some(error),
+                    }
+                }
+            }
+            Ok(row)
+        })
+        .collect()
+}
+
+enum PropertyValue {
+    Text(String),
+    Blob(Vec<u8>),
+}
+impl PropertyValue {
+    fn text(self) -> Option<String> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Blob(_) => None,
+        }
+    }
+}
+
+fn read_property(store: &IPropertyStore, key: &PROPERTYKEY) -> Result<PropertyValue, String> {
+    use windows::Win32::System::Variant::{VT_BLOB, VT_LPWSTR};
+    // SAFETY: live store/key; this function owns and clears the returned value.
+    let mut value =
+        unsafe { store.GetValue(key) }.map_err(|e| format!("get_value:0x{:08X}", e.code().0))?;
+    // SAFETY: PROPVARIANT's tag is in the common non-DECIMAL header.
+    let inner = unsafe { &value.Anonymous.Anonymous };
+    let result = if inner.vt == VT_BLOB {
+        // SAFETY: VT_BLOB selects blob; its memory stays owned by value below.
+        let blob = unsafe { inner.Anonymous.blob };
+        if blob.cbSize == 0 || blob.pBlobData.is_null() || blob.cbSize > 65_536 {
+            Err("invalid_format_blob".into())
+        } else {
+            // SAFETY: GetValue returned cbSize readable bytes; bounded above,
+            // copied before PropVariantClear, with no alignment assumption.
+            let bytes = unsafe { std::slice::from_raw_parts(blob.pBlobData, blob.cbSize as usize) };
+            Ok(PropertyValue::Blob(bytes.to_vec()))
+        }
+    } else if inner.vt == VT_LPWSTR {
+        // SAFETY: VT_LPWSTR selects the NUL-terminated string member.
+        let pointer = unsafe { inner.Anonymous.pwszVal };
+        if pointer.is_null() {
+            Err("null_property_string".into())
+        } else {
+            // SAFETY: the property owns a NUL-terminated string until clear.
+            unsafe { pointer.to_string() }
+                .map(PropertyValue::Text)
+                .map_err(|_| "invalid_property_string".to_owned())
+        }
+    } else {
+        Err(format!("property_type:{}", inner.vt.0))
+    };
+    // SAFETY: value came from GetValue and is cleared exactly once after copying.
+    let _ = unsafe { PropVariantClear(&mut value) };
+    result
+}
+
 // ---------------------------------------------------------------- exclusive policy
 
 const ALLOW_EXCLUSIVE: PROPERTYKEY = PROPERTYKEY {

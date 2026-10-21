@@ -594,6 +594,105 @@ jobs:
         shell: bash
         run: rm -rf "$RUNNER_TEMP/upmix-plugin"
 
+  # The Velopack installer's whole life on a clean runner (app.installer):
+  # Setup.exe installs 0.0.1 silently, the installed app updates itself to
+  # 0.0.2 from a local feed (SSR_UPDATE_SOURCE, test only) through its hidden
+  # --update-once, and Update.exe uninstalls it. The cycle runs as a
+  # standard local user, as people install it: the runner's own account is
+  # an administrator and tools/ci/installer_cycle.ps1 refuses one. Both
+  # versions are packed from this commit's build; only the version differs.
+  installer:
+    name: installer install, update and uninstall (windows-2025)
+    needs: lint
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          cache-key: installer
+
+      - uses: ./.github/actions/ui-dist
+
+      - name: Build the app, the guard, the setup tool and the plugin host
+        run: cargo build --release --locked -p spatial-softreceiver --features spatial-softreceiver/updater -p ssr-guard -p ssr-setup -p ssr-plughost
+
+      - name: Stage the app folder
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force stage/profiles | Out-Null
+          Copy-Item target/release/spatial-softreceiver.exe, target/release/ssr-guard.exe, target/release/ssr-setup.exe, target/release/ssr-plughost.exe, LICENSE stage/
+          Copy-Item apps/spatial-softreceiver/icons/icon.ico stage/spatial-softreceiver.ico
+          Copy-Item docs/profiles/*.toml stage/profiles/
+
+      - name: Install vpk
+        run: dotnet tool install -g vpk
+
+      # The same flags as release.yml's app-installer job.
+      - name: Pack 0.0.1 and 0.0.2 into one local feed
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cycle = 'C:\ssr-cycle'
+          New-Item -ItemType Directory -Force "$cycle\releases", "$cycle\old" | Out-Null
+          foreach ($version in '0.0.1', '0.0.2') {
+            vpk pack --packId SpatialSoftReceiver --packVersion $version --packDir stage `
+              --mainExe spatial-softreceiver.exe --packTitle 'Spatial SoftReceiver' --packAuthors 115dkk `
+              --icon apps/spatial-softreceiver/icons/icon.ico --shortcuts StartMenuRoot `
+              --aumid io.github.115dkk.spatial-softreceiver --noPortable --outputDir "$cycle\releases"
+            if ($LASTEXITCODE -ne 0) { throw "vpk pack $version failed ($LASTEXITCODE)" }
+            if ($version -eq '0.0.1') {
+              $setup = Get-ChildItem "$cycle\releases" -Filter '*Setup.exe' | Select-Object -First 1
+              if (-not $setup) { throw 'vpk pack wrote no Setup.exe' }
+              Move-Item $setup.FullName "$cycle\old\Setup.exe"
+            }
+          }
+          Copy-Item tools/ci/installer_cycle.ps1 $cycle
+          Get-ChildItem -Recurse $cycle | Format-Table FullName, Length
+
+      - name: Install, update and uninstall as a standard user (tools/ci/installer_cycle.ps1)
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cycle = 'C:\ssr-cycle'
+          $user = 'ssrcycle'
+          $password = ConvertTo-SecureString ("Aa1!" + [guid]::NewGuid().ToString('N')) -AsPlainText -Force
+          New-LocalUser -Name $user -Password $password -PasswordNeverExpires -UserMayNotChangePassword | Out-Null
+          Add-LocalGroupMember -Group 'Users' -Member $user
+          # vpk writes each package in the runner account's temp folder and
+          # moves it here, so the files keep that folder's ACL; reset them to
+          # inherit from the cycle folder, then grant the account on it.
+          icacls $cycle /reset /T /C /Q | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "icacls /reset failed ($LASTEXITCODE)" }
+          icacls $cycle /grant "${user}:(OI)(CI)M" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "icacls /grant failed ($LASTEXITCODE)" }
+          $credential = [pscredential]::new("$env:COMPUTERNAME\$user", $password)
+          $pwsh = (Get-Command pwsh).Source
+          $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$cycle\installer_cycle.ps1",
+            '-Releases', "$cycle\releases", '-Setup', "$cycle\old\Setup.exe",
+            '-OldVersion', '0.0.1', '-NewVersion', '0.0.2', '-Summary', "$cycle\installer-cycle.json")
+          $process = Start-Process -FilePath $pwsh -ArgumentList $arguments -Credential $credential -LoadUserProfile `
+            -WorkingDirectory $cycle -RedirectStandardOutput "$cycle\cycle.out.log" -RedirectStandardError "$cycle\cycle.err.log" `
+            -Wait -PassThru
+          Get-Content "$cycle\cycle.out.log", "$cycle\cycle.err.log" -ErrorAction SilentlyContinue
+          if (Test-Path "$cycle\installer-cycle.json") { Get-Content "$cycle\installer-cycle.json" }
+          if ($process.ExitCode -ne 0) { throw "installer_cycle.ps1 exited $($process.ExitCode)" }
+
+      - name: Keep the cycle's summary and logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-cycle
+          path: |
+            C:\ssr-cycle\installer-cycle.json
+            C:\ssr-cycle\cycle.*.log
+            C:\ssr-cycle\update-once-*.json
+            C:\ssr-cycle\uninstall-hook-*.log
+          if-no-files-found: ignore
+
   docs:
     name: rustdoc (deny warnings)
     runs-on: ubuntu-latest
