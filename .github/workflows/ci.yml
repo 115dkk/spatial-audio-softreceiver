@@ -524,8 +524,9 @@ jobs:
       #    pace and nothing takes the frames.
       # 2. ssr-live first, the DAW joining: the engine takes the frames on the
       #    cable's clock, and the DLL never falls back to its own.
-      # 3. The DAW first, ssr-live joining and then killed: the engine takes
-      #    frames while it lives and the callbacks keep their pace throughout.
+      # 3. The DAW first, ssr-live joining and then killed: the callbacks keep
+      #    their pace throughout. The engine owns the shared control block, so
+      #    once it is killed the probe has no frame counters left to read.
       # This runs last of the device stages, after the soaks, so the killed
       # engine cannot disturb them.
       - name: ASIO entrance (ssrasio.dll loaded as a DAW does, fed into ssr-live)
@@ -577,7 +578,7 @@ jobs:
           sleep 5
           taskkill //F //IM ssr-live.exe || status=1
           wait $daw || status=1
-          python tools/ci/asio_probe_check.py "$asio/daw-first.json" --engine attached || status=1
+          python tools/ci/asio_probe_check.py "$asio/daw-first.json" --engine any || status=1
           echo "::endgroup::"
 
           {
