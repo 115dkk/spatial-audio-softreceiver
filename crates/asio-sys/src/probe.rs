@@ -8,6 +8,7 @@ use crate::{
     sdk::*,
 };
 use std::ffi::c_void;
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 use windows::{
@@ -120,24 +121,27 @@ pub use crate::probe_report::Report;
 #[derive(Debug)]
 struct Loaded {
     module: HMODULE,
-    object: *mut c_void,
+    /// Written by CreateInstance through `Option<NonNull>`'s null niche, which
+    /// has a raw pointer's layout, so a null result stays `None`.
+    object: Option<NonNull<c_void>>,
 }
 impl Drop for Loaded {
     fn drop(&mut self) {
-        if !self.object.is_null() {
+        if let Some(object) = self.object {
+            let object = object.as_ptr();
             // SAFETY: retained live IASIO reference.
-            let table = unsafe { vtable(self.object) };
+            let table = unsafe { vtable(object) };
             // SAFETY: idempotent best-effort teardown on failure path.
-            let stopped = unsafe { (table.stop)(self.object) };
+            let stopped = unsafe { (table.stop)(object) };
             // SAFETY: live object; disposal refuses when an active callback cannot drain.
-            let disposed = unsafe { (table.disposeBuffers)(self.object) };
+            let disposed = unsafe { (table.disposeBuffers)(object) };
             if stopped == ASE_HWMalfunction || disposed == ASE_HWMalfunction {
                 return;
             }
             DRIVER.store(std::ptr::null_mut(), Ordering::Release);
             // SAFETY: release our unique outstanding COM reference after draining.
             unsafe {
-                (table.unknown.release)(self.object);
+                (table.unknown.release)(object);
             }
         }
         // SAFETY: no active callbacks or objects remain in this loaded module.
@@ -174,34 +178,44 @@ pub fn run(
     };
     let mut loaded = Loaded {
         module,
-        object: std::ptr::null_mut(),
+        object: None,
     };
     // SAFETY: module is retained; export name is a fixed C string.
     let entry =
         unsafe { GetProcAddress(module, s!("DllGetClassObject")) }.ok_or("ASIO_PROBE_EXPORT")?;
-    type GetClass = unsafe extern "system" fn(*const Guid, *const Guid, *mut *mut c_void) -> i32;
+    // The output is `Option<NonNull>`, a raw pointer's layout with None as null.
+    type GetClass =
+        unsafe extern "system" fn(*const Guid, *const Guid, *mut Option<NonNull<c_void>>) -> i32;
     // SAFETY: standard COM export's exact signature on x64.
     let get_class: GetClass = unsafe { std::mem::transmute(entry) };
-    let mut factory = std::ptr::null_mut();
+    let mut factory = None;
     // SAFETY: valid class/IID and writable output pointer.
-    if unsafe { get_class(&CLASS, &FACTORY, &mut factory) } != 0 || factory.is_null() {
+    let result = unsafe { get_class(&CLASS, &FACTORY, &mut factory) };
+    let Some(factory) = factory.filter(|_| result == 0) else {
         return Err("ASIO_PROBE_FACTORY".into());
-    }
+    };
+    let factory = factory.as_ptr();
     // SAFETY: returned IClassFactory object starts with its vtable.
     let table = unsafe { factory.cast::<*const FactoryVtable>().read() };
     // SAFETY: live factory's immutable vtable.
     let table = unsafe { &*table };
     // SAFETY: valid output pointer, no aggregation, IASIO interface uses CLSID.
-    let result =
-        unsafe { (table.create)(factory, std::ptr::null_mut(), &CLASS, &mut loaded.object) };
+    let result = unsafe {
+        (table.create)(
+            factory,
+            std::ptr::null_mut(),
+            &CLASS,
+            (&raw mut loaded.object).cast(),
+        )
+    };
     // SAFETY: release one returned factory reference.
     unsafe {
         (table.unknown.release)(factory);
     }
-    if result != 0 || loaded.object.is_null() {
+    let Some(object) = loaded.object.filter(|_| result == 0) else {
         return Err("ASIO_PROBE_INSTANCE".into());
-    }
-    let object = loaded.object;
+    };
+    let object = object.as_ptr();
     // SAFETY: retained IASIO reference.
     let table = unsafe { vtable(object) };
     let mut report = Report {

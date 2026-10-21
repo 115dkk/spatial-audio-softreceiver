@@ -786,12 +786,20 @@ pub(crate) fn export_anchor() -> usize {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+    use std::ptr::NonNull;
     use std::sync::Mutex;
+
+    /// A COM output slot. `Option<NonNull<c_void>>` has the layout of a raw
+    /// pointer with `None` as null, so the callee writes it directly and a
+    /// pointer is only taken out of it once it is known to be non-null.
+    fn slot(out: &mut Option<NonNull<c_void>>) -> *mut *mut c_void {
+        (out as *mut Option<NonNull<c_void>>).cast()
+    }
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
     thread_local! {
         static CREATED: RefCell<Option<Arc<Fake>>> = const { RefCell::new(None) };
-        static CALLBACK_OBJECT: std::cell::Cell<*mut c_void> = const { std::cell::Cell::new(std::ptr::null_mut()) };
+        static CALLBACK_OBJECT: std::cell::Cell<Option<NonNull<c_void>>> = const { std::cell::Cell::new(None) };
     }
     const PANIC_INIT: u32 = 1;
     const PANIC_START: u32 = 2;
@@ -928,24 +936,25 @@ mod tests {
         }};
     }
     fn instance() -> (*mut c_void, Arc<Fake>) {
-        let mut factory = std::ptr::null_mut();
+        let mut factory = None;
         assert_eq!(
-            invoke!(DllGetClassObject(&CLASS, &FACTORY, &mut factory)),
+            invoke!(DllGetClassObject(&CLASS, &FACTORY, slot(&mut factory))),
             0
         );
-        let mut driver = std::ptr::null_mut();
+        let factory = factory.expect("DllGetClassObject wrote a factory").as_ptr();
+        let mut driver = None;
         assert_eq!(
             invoke!((FACTORY_VTABLE.create)(
                 factory,
                 std::ptr::null_mut(),
                 &CLASS,
-                &mut driver
+                slot(&mut driver)
             )),
             0
         );
         assert_eq!(invoke!(factory_release(factory)), 0);
         (
-            driver,
+            driver.expect("CreateInstance wrote an object").as_ptr(),
             CREATED.with(|slot| slot.borrow_mut().take().unwrap()),
         )
     }
@@ -957,17 +966,17 @@ mod tests {
     }
     unsafe extern "C" fn callback_return(_half: i32, _direct: i32) {}
     unsafe extern "C" fn callback_release(_half: i32, _direct: i32) {
-        CALLBACK_OBJECT.with(|object| {
-            assert_eq!(invoke!(dispose(object.get())), ASE_OK);
-            assert_eq!(invoke!(release(object.get())), 0);
-        });
+        if let Some(object) = CALLBACK_OBJECT.with(std::cell::Cell::get) {
+            assert_eq!(invoke!(dispose(object.as_ptr())), ASE_OK);
+            assert_eq!(invoke!(release(object.as_ptr())), 0);
+        }
     }
     #[test]
     fn callback_dispose_release_is_reclaimed_after_worker_drains() {
         let _serial = TEST_LOCK.lock().unwrap();
         let before = LIVE.load(Ordering::Acquire);
         let (object, driver) = instance();
-        CALLBACK_OBJECT.with(|slot| slot.set(object));
+        CALLBACK_OBJECT.with(|slot| slot.set(NonNull::new(object)));
         let mut info = BufferInfo {
             isInput: 0,
             channelNum: 0,
@@ -989,13 +998,13 @@ mod tests {
         retained.0.worker_finished();
         assert_eq!(LIVE.load(Ordering::Acquire), before);
         retained.0.worker_finished();
-        CALLBACK_OBJECT.with(|slot| slot.set(std::ptr::null_mut()));
+        CALLBACK_OBJECT.with(|slot| slot.set(None));
     }
     unsafe extern "C" fn callback_twice(_half: i32, _direct: i32) {
-        CALLBACK_OBJECT.with(|object| {
-            invoke!((VTABLE.outputReady)(object.get()));
-            invoke!((VTABLE.outputReady)(object.get()));
-        });
+        if let Some(object) = CALLBACK_OBJECT.with(std::cell::Cell::get) {
+            invoke!((VTABLE.outputReady)(object.as_ptr()));
+            invoke!((VTABLE.outputReady)(object.as_ptr()));
+        }
     }
     #[test]
     fn actual_com_entries_contain_panics_and_preserve_error_messages() {
@@ -1036,7 +1045,7 @@ mod tests {
             callback_twice,
         ] {
             let (object, driver) = instance();
-            CALLBACK_OBJECT.with(|slot| slot.set(object));
+            CALLBACK_OBJECT.with(|slot| slot.set(NonNull::new(object)));
             assert_eq!(
                 invoke!((VTABLE.init)(object, std::ptr::null_mut())),
                 ASIOTrue
@@ -1079,7 +1088,7 @@ mod tests {
             ));
             retained.0.reset_request();
             assert_eq!(invoke!(release(object)), 0);
-            CALLBACK_OBJECT.with(|slot| slot.set(std::ptr::null_mut()));
+            CALLBACK_OBJECT.with(|slot| slot.set(None));
         }
     }
     #[test]
@@ -1097,17 +1106,21 @@ mod tests {
     #[test]
     fn com_factory_identity_and_reference_lifetime() {
         let _serial = TEST_LOCK.lock().unwrap();
-        let mut output = std::ptr::null_mut();
+        let mut output = None;
         assert_eq!(
             // SAFETY: valid CLSID/IID and live writable output.
-            unsafe { DllGetClassObject(&CLASS, &FACTORY, &mut output) },
+            unsafe { DllGetClassObject(&CLASS, &FACTORY, slot(&mut output)) },
             0
         );
-        assert!(!output.is_null());
+        let output = output.expect("DllGetClassObject wrote a factory").as_ptr();
         assert_eq!(DllCanUnloadNow(), 1);
-        let mut unknown = std::ptr::null_mut();
-        // SAFETY: live factory reference and writable query output.
-        assert_eq!(unsafe { factory_query(output, &UNKNOWN, &mut unknown) }, 0);
+        let mut unknown = None;
+        assert_eq!(
+            // SAFETY: live factory reference and writable query output.
+            unsafe { factory_query(output, &UNKNOWN, slot(&mut unknown)) },
+            0
+        );
+        let unknown = unknown.expect("QueryInterface wrote the factory").as_ptr();
         assert_eq!(unknown, output);
         // SAFETY: release the QueryInterface reference.
         assert_eq!(unsafe { factory_release(unknown) }, 1);
