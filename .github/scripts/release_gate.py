@@ -69,11 +69,19 @@ SHIP = (
     "tools/ci/ring_stats.py",
     "tools/ci/numpy_compat.py",
     "tools/ci/report_check.py",
+    "tools/ci/endpoint_format_check.py",
+    "tools/ci/endpoint_name_check.py",
+    "tools/ci/bitstream_check.py",
     # The example profiles in the tools zip (release.yml build-windows).
     "docs/profiles/*",
 )
-# Shipped although they match NOT_SHIPPED: the kit's README.
-SHIP_ALWAYS = ("docs/testing/test-signed-pc.md",)
+# Shipped although they match NOT_SHIPPED: the kit's README and the
+# E-AC-3 fixture it carries.
+SHIP_ALWAYS = (
+    "docs/testing/test-signed-pc.md",
+    # driver-test-kit.ps1 copies it into the kit for bitstream_check.py.
+    "crates/decode/tests/fixtures/ddp/tones-5.1.eac3",
+)
 NOT_SHIPPED = ("*.md", "crates/ssr-policy/*")
 NOT_SHIPPED_DIRS = ("tests", "benches", "fuzz")
 
