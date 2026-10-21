@@ -140,6 +140,21 @@ try {
                 throw 'Use an unelevated disposable account for this per-user cycle'
             }
         } finally { $identity.Dispose() }
+        # Start-Process -Credential hands this process the caller's environment,
+        # so TEMP and LOCALAPPDATA still name the runner account's folders and
+        # Velopack's Setup is refused there. Take this account's own folders
+        # from its token before anything, Setup included, reads them.
+        $verify = [Environment+SpecialFolderOption]::DoNotVerify
+        $own = [ordered]@{
+            USERPROFILE = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile, $verify)
+            APPDATA = [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData, $verify)
+            LOCALAPPDATA = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData, $verify)
+        }
+        foreach ($name in @($own.Keys)) { if (-not $own[$name]) { throw "$name has no path for this account" } }
+        $own.TEMP = Join-Path $own.LOCALAPPDATA 'Temp'
+        $own.TMP = $own.TEMP
+        New-Item -ItemType Directory -Force -Path $own.TEMP | Out-Null
+        foreach ($name in @($own.Keys)) { [Environment]::SetEnvironmentVariable($name, $own[$name], 'Process') }
         if (-not $env:LOCALAPPDATA) { throw 'LOCALAPPDATA is missing' }
         $script:installRoot = Join-Path $env:LOCALAPPDATA 'SpatialSoftReceiver'
         $script:appLog = Join-Path $env:LOCALAPPDATA 'Spatial SoftReceiver\app.log'
