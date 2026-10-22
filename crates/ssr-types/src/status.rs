@@ -329,6 +329,8 @@ pub struct EngineStatus {
     pub output_late_resyncs: u64,
     /// Sample rate of the currently open output sink, or zero before open.
     pub output_rate: u32,
+    /// Frames in one period of the currently open output sink, or zero before open.
+    pub output_period_frames: u32,
     /// Whether the capture source accepted rate trim when the engine started.
     pub trim_available: bool,
     /// Layout of the currently open output sink.

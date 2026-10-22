@@ -24,6 +24,9 @@ pub enum BitstreamCommand {
         /// Seconds to play (greater than zero, at most 3600).
         #[arg(long, default_value_t = 8.0, value_parser = seconds)]
         seconds: f64,
+        /// Device period in milliseconds; the device's minimum when omitted.
+        #[arg(long, value_parser = period_ms)]
+        period_ms: Option<f64>,
         /// Emit machine-readable JSON.
         #[arg(long)]
         json: bool,
@@ -38,6 +41,16 @@ fn seconds(value: &str) -> Result<f64, String> {
             Err(ssr_i18n::live::invalid_seconds(ssr_i18n::cli_language()).to_owned())
         }
     })
+}
+
+fn period_ms(value: &str) -> Result<f64, String> {
+    value
+        .parse::<f64>()
+        .ok()
+        .filter(|period| period.is_finite() && *period > 0.0 && *period <= 100.0)
+        .ok_or_else(|| {
+            ssr_i18n::live::bitstream_invalid_period(ssr_i18n::cli_language()).to_owned()
+        })
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -83,7 +96,12 @@ pub fn run(command: BitstreamCommand) -> Result<(), String> {
         BitstreamCommand::Probe { .. } => ssr_sys::bitstream::probe()
             .map(probe_json)
             .map(|value| (value, true)),
-        BitstreamCommand::Play { input, seconds, .. } => (|| {
+        BitstreamCommand::Play {
+            input,
+            seconds,
+            period_ms,
+            ..
+        } => (|| {
             use std::io::Read;
             // Bound the input before expansion; all reading and framing precedes WASAPI.
             let file = std::fs::File::open(&input).map_err(|e| format!("input:{e}"))?;
@@ -95,10 +113,13 @@ pub fn run(command: BitstreamCommand) -> Result<(), String> {
                 return Err("input_too_large".to_owned());
             }
             let (bursts, count) = prepare(&bytes, seconds)?;
-            let result = ssr_sys::bitstream::play_eac3(&bursts, count)?;
+            let period =
+                period_ms.map(|period| std::time::Duration::from_secs_f64(period / 1_000.0));
+            let result = ssr_sys::bitstream::play_eac3(&bursts, count, period)?;
             Ok((
                 json!({"endpoint":2, "codec":"eac3", "sent_bursts":result.sent_bursts,
-                "sent_frames":result.sent_frames, "error_hr":result.error_hr.map(hresult)}),
+                "sent_frames":result.sent_frames, "period_frames":result.period_frames,
+                "late_periods":result.late_periods, "error_hr":result.error_hr.map(hresult)}),
                 result.error_hr.is_none(),
             ))
         })(),
@@ -189,6 +210,13 @@ mod tests {
             "--json",
         ];
         assert!(crate::Cli::try_parse_from(args).is_ok());
+        assert!(crate::Cli::try_parse_from(args.into_iter().chain(["--period-ms", "10"])).is_ok());
+        for period in ["0", "-1", "NaN", "inf", "100.01"] {
+            assert!(
+                crate::Cli::try_parse_from(args.into_iter().chain(["--period-ms", period]))
+                    .is_err()
+            );
+        }
         for (index, value) in [
             (4, "0"),
             (4, "3"),

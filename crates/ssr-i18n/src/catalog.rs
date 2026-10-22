@@ -1221,6 +1221,14 @@ pub mod live {
         }
     }
 
+    #[doc = "--period-ms에는 0보다 크고 100 이하인 밀리초가 필요합니다"]
+    pub fn bitstream_invalid_period(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "--period-ms에는 0보다 크고 100 이하인 밀리초가 필요합니다",
+            Language::En => "--period-ms must be greater than zero and at most 100 milliseconds",
+        }
+    }
+
     #[doc = "원시 E-AC-3 동기 프레임을 패스스루 엔드포인트로 재생합니다."]
     pub fn bitstream_play_about(language: Language) -> &'static str {
         match language {

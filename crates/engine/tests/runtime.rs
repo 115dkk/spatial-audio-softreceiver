@@ -709,6 +709,11 @@ struct SinkState {
     failure_observed: AtomicBool,
     played_numerator: AtomicU64,
     played_denominator: AtomicU64,
+    played_full_speed_at_period_frames: AtomicU64,
+    played_follows_qpc: AtomicBool,
+    restart_every: AtomicU64,
+    restart_below_period_frames: AtomicU64,
+    restart_limit_per_sink: AtomicU64,
 }
 
 impl SinkState {
@@ -740,6 +745,11 @@ impl SinkState {
             failure_observed: AtomicBool::new(false),
             played_numerator: AtomicU64::new(1),
             played_denominator: AtomicU64::new(0),
+            played_full_speed_at_period_frames: AtomicU64::new(u64::MAX),
+            played_follows_qpc: AtomicBool::new(false),
+            restart_every: AtomicU64::new(0),
+            restart_below_period_frames: AtomicU64::new(0),
+            restart_limit_per_sink: AtomicU64::new(u64::MAX),
         })
     }
 }
@@ -775,6 +785,8 @@ impl OutputOpener for TestOpener {
             state: Arc::clone(&self.state),
             format,
             buffer: vec![0.0; format.period_frames * usize::from(format.channels)],
+            periods: 0,
+            restarts: 0,
         })
     }
 
@@ -802,6 +814,8 @@ struct TestSink {
     state: Arc<SinkState>,
     format: OutputFormat,
     buffer: Vec<f32>,
+    periods: u64,
+    restarts: u64,
 }
 
 impl OutputSink for TestSink {
@@ -827,6 +841,19 @@ impl OutputSink for TestSink {
             || self.state.frames.load(Ordering::Acquire),
             |lockstep| lockstep.enter_period(self.format.period_frames as u64),
         );
+        self.periods += 1;
+        let restart_every = self.state.restart_every.load(Ordering::Acquire);
+        if restart_every != 0
+            && self.periods.is_multiple_of(restart_every)
+            && (self.format.period_frames as u64)
+                < self
+                    .state
+                    .restart_below_period_frames
+                    .load(Ordering::Acquire)
+            && self.restarts < self.state.restart_limit_per_sink.load(Ordering::Acquire)
+        {
+            self.restarts += 1;
+        }
         fill(&mut self.buffer);
         if self.state.inject_cadence_tail.swap(false, Ordering::AcqRel) {
             let frames = self.buffer.len() / usize::from(self.format.channels);
@@ -866,12 +893,32 @@ impl OutputSink for TestSink {
         Ok(playback_qpc + self.state.delay_frames)
     }
 
+    fn restarts(&self) -> u64 {
+        self.restarts
+    }
+
     fn played_frames(&self) -> Option<u64> {
         let denominator = self.state.played_denominator.load(Ordering::Acquire);
         if denominator == 0 {
             return None;
         }
-        let frames = self.state.frames.load(Ordering::Acquire);
+        let frames = if self.state.played_follows_qpc.load(Ordering::Acquire) {
+            self.state
+                .lockstep
+                .as_ref()
+                .map_or(0, |lockstep| lockstep.now_qpc())
+        } else {
+            self.periods
+                .saturating_mul(self.format.period_frames as u64)
+        };
+        if self.format.period_frames as u64
+            >= self
+                .state
+                .played_full_speed_at_period_frames
+                .load(Ordering::Acquire)
+        {
+            return Some(frames);
+        }
         let numerator = self.state.played_numerator.load(Ordering::Acquire);
         Some(frames.saturating_mul(numerator) / denominator)
     }
@@ -2806,10 +2853,183 @@ fn declined_cadence_change_keeps_asrc_live_and_a_later_layout_tail_fresh() {
     assert_eq!(report.output_reopens, 1);
 }
 
+fn restart_storm_engine(state: &Arc<SinkState>, lockstep: &Arc<Lockstep>) -> engine::Engine {
+    let mut records = vec![format_record(RATE), stream_start_record(ENDPOINT_PRIMARY)];
+    records.extend((0..2_000_u64).map(|block| data_record(block * BLOCK as u64, 0.25)));
+    let capture = RecordsCapture {
+        records,
+        next: 0,
+        trim_supported: false,
+        trims: None,
+        gate: None,
+        paced_by: Some(Pacing {
+            state: Arc::clone(state),
+            lead: 8,
+            scene_rate: RATE,
+        }),
+        lockstep: Some(Arc::clone(lockstep)),
+        stay_open: true,
+    };
+    start_with(
+        lockstep_config(ClockPreference::Asrc, Arc::clone(lockstep)),
+        capture,
+        opener_with_period(Arc::clone(state), RATE, 144),
+        StartOptions {
+            qpc_frequency: QPC_FREQUENCY,
+            prepared: Some(prepared(RATE)),
+        },
+    )
+    .unwrap()
+}
+
+fn step_until_opens(lockstep: &Lockstep, state: &SinkState, opens: usize) {
+    for _ in 0..500 {
+        lockstep.step_read(1);
+        lockstep.step_period(1);
+        if state.opened_formats.lock().unwrap().len() >= opens {
+            return;
+        }
+    }
+    panic!("output did not reach {opens} opens");
+}
+
 #[test]
-fn sustained_slow_cadence_grows_the_period_and_reopens_once() {
+fn restart_storm_grows_three_six_twelve_twenty_and_reports_the_period() {
     let lockstep = Arc::new(Lockstep::default());
     let state = SinkState::lockstep(0, Arc::clone(&lockstep));
+    state.restart_every.store(1, Ordering::Release);
+    state
+        .restart_below_period_frames
+        .store(961, Ordering::Release);
+    let engine = restart_storm_engine(&state, &lockstep);
+
+    step_until_opens(&lockstep, &state, 4);
+    for _ in 0..20 {
+        lockstep.step_read(1);
+        lockstep.step_period(1);
+    }
+    let status = engine.status();
+    let requested = state.requested_periods.lock().unwrap().clone();
+    let opened: Vec<_> = state
+        .opened_formats
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|format| format.period_frames)
+        .collect();
+    lockstep.release();
+    let report = engine.stop();
+
+    assert_eq!(
+        requested,
+        [
+            Duration::from_millis(6),
+            Duration::from_millis(12),
+            Duration::from_millis(20),
+        ]
+    );
+    assert_eq!(opened, [144, 288, 576, 960]);
+    assert_eq!(status.output_period_frames, 960);
+    assert_eq!(report.final_status.output_period_frames, 960);
+    assert_eq!(report.output_reopens, 3);
+}
+
+#[test]
+fn restart_storm_stops_growing_when_restarts_stop_at_twelve_ms() {
+    let lockstep = Arc::new(Lockstep::default());
+    let state = SinkState::lockstep(0, Arc::clone(&lockstep));
+    state.restart_every.store(1, Ordering::Release);
+    state
+        .restart_below_period_frames
+        .store(576, Ordering::Release);
+    let engine = restart_storm_engine(&state, &lockstep);
+
+    step_until_opens(&lockstep, &state, 3);
+    for _ in 0..30 {
+        lockstep.step_read(1);
+        lockstep.step_period(1);
+    }
+    let status = engine.status();
+    let requested = state.requested_periods.lock().unwrap().clone();
+    lockstep.release();
+    let report = engine.stop();
+
+    assert_eq!(
+        requested,
+        [Duration::from_millis(6), Duration::from_millis(12)]
+    );
+    assert_eq!(status.output_period_frames, 576);
+    assert_eq!(report.output_reopens, 2);
+}
+
+#[test]
+fn one_restart_does_not_change_the_output_period() {
+    let lockstep = Arc::new(Lockstep::default());
+    let state = SinkState::lockstep(0, Arc::clone(&lockstep));
+    state.restart_every.store(1, Ordering::Release);
+    state.restart_limit_per_sink.store(1, Ordering::Release);
+    state
+        .restart_below_period_frames
+        .store(u64::MAX, Ordering::Release);
+    let engine = restart_storm_engine(&state, &lockstep);
+
+    for _ in 0..30 {
+        lockstep.step_read(1);
+        lockstep.step_period(1);
+    }
+    let status = engine.status();
+    let requested = state.requested_periods.lock().unwrap().clone();
+    lockstep.release();
+    let report = engine.stop();
+
+    assert!(requested.is_empty());
+    assert_eq!(status.output_period_frames, 144);
+    assert_eq!(report.output_reopens, 0);
+}
+
+#[test]
+fn cadence_keeps_growing_after_restart_storm_growth() {
+    let lockstep = Arc::new(Lockstep::default());
+    let state = SinkState::lockstep(0, Arc::clone(&lockstep));
+    state.played_follows_qpc.store(true, Ordering::Release);
+    state.restart_every.store(1, Ordering::Release);
+    state
+        .restart_below_period_frames
+        .store(288, Ordering::Release);
+    state.played_numerator.store(4, Ordering::Release);
+    state.played_denominator.store(5, Ordering::Release);
+    let engine = restart_storm_engine(&state, &lockstep);
+
+    step_until_opens(&lockstep, &state, 2);
+    for _ in 0..1_500 {
+        lockstep.step_period(1);
+        lockstep.step_read(1);
+        if state.requested_periods.lock().unwrap().len() >= 3 {
+            break;
+        }
+    }
+    let status = engine.status();
+    let requested = state.requested_periods.lock().unwrap().clone();
+    lockstep.release();
+    let report = engine.stop();
+
+    assert_eq!(
+        requested,
+        [
+            Duration::from_millis(6),
+            Duration::from_millis(12),
+            Duration::from_millis(20),
+        ]
+    );
+    assert!(status.output_cadence_faults >= 2);
+    assert_eq!(report.output_reopens, 3);
+}
+
+#[test]
+fn sustained_slow_cadence_grows_the_period_to_twenty_ms_and_stops_there() {
+    let lockstep = Arc::new(Lockstep::default());
+    let state = SinkState::lockstep(0, Arc::clone(&lockstep));
+    state.played_follows_qpc.store(true, Ordering::Release);
     state.played_numerator.store(4, Ordering::Release);
     state.played_denominator.store(5, Ordering::Release);
     let mut records = vec![format_record(RATE), stream_start_record(ENDPOINT_PRIMARY)];
@@ -2845,16 +3065,15 @@ fn sustained_slow_cadence_grows_the_period_and_reopens_once() {
     )
     .unwrap();
 
-    // 10 ms synthetic periods make each cadence window one second. Four
-    // windows cross the sustained three-second threshold and leave room for
-    // the cadence-triggered reopen to complete.
+    // The synthetic playback position follows QPC, then scales to 80%, so
+    // cadence stays slow even while period size grows.
     for _ in 0..401 {
-        lockstep.step_read(1);
         lockstep.step_period(1);
+        lockstep.step_read(1);
     }
     while state.opened_formats.lock().unwrap().len() < 2 {
-        lockstep.step_read(1);
         lockstep.step_period(1);
+        lockstep.step_read(1);
     }
     let requested = state.requested_periods.lock().unwrap().clone();
     let opened: Vec<_> = state
@@ -2866,11 +3085,11 @@ fn sustained_slow_cadence_grows_the_period_and_reopens_once() {
         .collect();
     let status = engine.status();
 
-    // The reopened sink keeps reporting 80%, but this session must not ask for
-    // another period increase or another reopen.
-    for _ in 0..200 {
-        lockstep.step_read(1);
+    // The 20 ms sink keeps reporting 80%, but 20 ms is the cap: no other
+    // period or reopen is asked for.
+    for _ in 0..250 {
         lockstep.step_period(1);
+        lockstep.step_read(1);
     }
     let final_requested = state.requested_periods.lock().unwrap().len();
     let final_opened = state.opened_formats.lock().unwrap().len();
@@ -2939,6 +3158,162 @@ fn sustained_slow_cadence_grows_the_period_and_reopens_once() {
     assert_eq!(final_requested, 1);
     assert_eq!(final_opened, 2);
     assert!(resumed, "audio did not resume after the cadence reopen");
+}
+
+fn cadence_growth_engine(full_speed_at: u64) -> (Arc<Lockstep>, Arc<SinkState>, engine::Engine) {
+    let lockstep = Arc::new(Lockstep::default());
+    let state = SinkState::lockstep(0, Arc::clone(&lockstep));
+    state.played_follows_qpc.store(true, Ordering::Release);
+    state.played_numerator.store(3, Ordering::Release);
+    state.played_denominator.store(5, Ordering::Release);
+    state
+        .played_full_speed_at_period_frames
+        .store(full_speed_at, Ordering::Release);
+    let engine = restart_storm_engine(&state, &lockstep);
+    (lockstep, state, engine)
+}
+
+fn drive_until_period(
+    lockstep: &Lockstep,
+    state: &SinkState,
+    expected_period_frames: usize,
+    expected_opens: usize,
+) {
+    for _ in 0..4_000 {
+        lockstep.step_period(1);
+        lockstep.step_read(1);
+        if state.opened_formats.lock().unwrap().len() >= expected_opens
+            && state
+                .opened_formats
+                .lock()
+                .unwrap()
+                .last()
+                .is_some_and(|format| format.period_frames == expected_period_frames)
+        {
+            return;
+        }
+    }
+    panic!("output did not reach {expected_period_frames} frames");
+}
+
+#[test]
+fn slow_cadence_keeps_growing_the_period_until_it_holds() {
+    for (full_speed_at, final_period, expected_periods, expected_faults) in [
+        (
+            576,
+            576,
+            vec![Duration::from_millis(6), Duration::from_millis(12)],
+            2,
+        ),
+        (
+            u64::MAX,
+            960,
+            vec![
+                Duration::from_millis(6),
+                Duration::from_millis(12),
+                Duration::from_millis(20),
+            ],
+            3,
+        ),
+    ] {
+        let (lockstep, state, engine) = cadence_growth_engine(full_speed_at);
+        drive_until_period(&lockstep, &state, final_period, expected_periods.len() + 1);
+        let faults_at_final_period = engine.status().output_cadence_faults;
+        for _ in 0..400 {
+            lockstep.step_period(1);
+            lockstep.step_read(1);
+        }
+        let status = engine.status();
+        let requested = state.requested_periods.lock().unwrap().clone();
+        lockstep.release();
+        let report = engine.stop();
+
+        assert_eq!(requested, expected_periods);
+        assert_eq!(status.output_period_frames, final_period as u32);
+        assert_eq!(report.output_reopens, requested.len() as u64);
+        assert!(
+            status.output_cadence_faults >= expected_faults,
+            "{status:?}"
+        );
+        if full_speed_at == u64::MAX {
+            // Still slow at the cap: the guard faults again, and nothing reopens.
+            assert!(
+                status.output_cadence_faults > faults_at_final_period,
+                "{status:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_period_reopen_drops_the_backlog_the_slow_period_left() {
+    // Full speed from 12 ms. Below it the paced capture still hands over a
+    // 10 ms block a period, so a 3 or 6 ms period takes less than arrives and
+    // the backlog piles up, as on a device that plays 0.6 of the rate. The
+    // six-second ring holds it all: nothing overflows before a reopen.
+    let lockstep = Arc::new(Lockstep::default());
+    let state = SinkState::lockstep(0, Arc::clone(&lockstep));
+    state.played_follows_qpc.store(true, Ordering::Release);
+    state.played_numerator.store(3, Ordering::Release);
+    state.played_denominator.store(5, Ordering::Release);
+    state
+        .played_full_speed_at_period_frames
+        .store(576, Ordering::Release);
+    let mut records = vec![format_record(RATE), stream_start_record(ENDPOINT_PRIMARY)];
+    records.extend((0..4_000_u64).map(|block| data_record(block * BLOCK as u64, 0.25)));
+    let capture = RecordsCapture {
+        records,
+        next: 0,
+        trim_supported: false,
+        trims: None,
+        gate: None,
+        paced_by: Some(Pacing {
+            state: Arc::clone(&state),
+            lead: 8,
+            scene_rate: RATE,
+        }),
+        lockstep: Some(Arc::clone(&lockstep)),
+        stay_open: true,
+    };
+    let engine = start_with(
+        EngineConfig {
+            capacity_ms: 6_000.0,
+            ..lockstep_config(ClockPreference::Asrc, Arc::clone(&lockstep))
+        },
+        capture,
+        opener_with_period(Arc::clone(&state), RATE, 144),
+        StartOptions {
+            qpc_frequency: QPC_FREQUENCY,
+            prepared: Some(prepared(RATE)),
+        },
+    )
+    .unwrap();
+
+    drive_until_period(&lockstep, &state, 288, 2);
+    let at_six_ms = engine.status();
+    drive_until_period(&lockstep, &state, 576, 3);
+    // Long enough for the trough controller to publish two 0.2 s windows.
+    for _ in 0..40 {
+        lockstep.step_period(1);
+        lockstep.step_read(1);
+    }
+    let status = engine.status();
+    lockstep.release();
+    let report = engine.stop();
+
+    // Each reopen dropped what the slow period left above priming's keep
+    // (10 ms target, a 10 ms block, the period's take), and only then.
+    assert!(
+        status.output_overflow_frames >= u64::from(RATE) / 5,
+        "less than 200 ms dropped: {status:?}"
+    );
+    assert!(
+        status.output_overflow_frames > at_six_ms.output_overflow_frames,
+        "the 12 ms reopen dropped nothing: {status:?}"
+    );
+    assert!(status.ring_level_ms < 60.0, "{status:?}");
+    assert_eq!(status.output_period_frames, 576);
+    assert_eq!(report.output_overflow_frames, status.output_overflow_frames);
 }
 
 #[test]

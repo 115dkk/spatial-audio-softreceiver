@@ -185,6 +185,10 @@ pub(super) struct OutputState {
     /// target + one delivery + one period, then drop the exact-zero frames
     /// beyond that, so the trough starts at the target instead of at zero.
     pub(super) priming: bool,
+    /// Armed after reopening a device at a longer period and consumed once
+    /// that reopen's priming finishes. The backlog from the slow period is
+    /// already late, so its excess is dropped even when it is audible.
+    pub(super) drop_late_excess: bool,
     pub(super) period_stream_start: u64,
     pub(super) period_source_frames: usize,
     pub(super) period_had_audio: bool,
@@ -194,6 +198,7 @@ pub(super) struct OutputState {
     pub(super) have_last_output: bool,
     pub(super) latency: LatencyWriter,
     pub(super) cadence: CadenceGuard,
+    pub(super) restart_storm: RestartStorm,
     /// Periods of the resampler's tail still owed to the current sink, by a
     /// reopen or by the end of capture, whichever writes them.
     pub(super) tail_periods: usize,
@@ -241,6 +246,7 @@ impl OutputState {
             period_ring_level_frames: 0,
             period_trough_frames: 0,
             priming: false,
+            drop_late_excess: false,
             period_stream_start: 0,
             period_source_frames: 0,
             period_had_audio: false,
@@ -250,6 +256,7 @@ impl OutputState {
             have_last_output: false,
             latency,
             cadence: CadenceGuard::new(),
+            restart_storm: RestartStorm::new(),
             tail_periods: 0,
             drain_real_frames: 0,
             drain_fade_frames: 0,
@@ -289,6 +296,7 @@ impl OutputState {
                 self.cadence.reset();
             }
             Reprime::CrossingDiscarded { overflow_frames } => {
+                self.drop_late_excess = false;
                 self.asrc = AsrcClock::new(self.period_frames, self.device_rate, self.channels);
                 self.asrc.reset(crate::MIX_RATE, self.device_rate);
                 self.asrc_tail_pending = false;
@@ -300,6 +308,7 @@ impl OutputState {
                 self.fade_in_remaining = boundary_fade_frames(self.device_rate);
                 self.latency.reset(&self.shared);
                 self.cadence.reset();
+                self.restart_storm.reset();
             }
             Reprime::Reconfigured => {
                 self.controller.reset();
@@ -315,6 +324,7 @@ impl OutputState {
                 self.have_last_output = false;
                 self.latency.reset(&self.shared);
                 self.cadence.reset();
+                self.restart_storm.reset();
                 self.drain_fade_prepared = false;
                 self.tail_periods = 0;
                 self.asrc_tail_pending = false;
@@ -374,9 +384,14 @@ impl OutputState {
                 let Some(excess) = self.priming_excess(scene_rate, take) else {
                     return;
                 };
-                self.discard(excess);
+                if self.drop_late_excess {
+                    self.drop_late_frames(excess);
+                } else {
+                    self.discard(excess);
+                }
             }
             self.priming = false;
+            self.drop_late_excess = false;
             // What priming kept above the setpoint (a burst, a backlog, a
             // delivery larger than a period) is latency, not clock skew.
             self.controller.restart_reference();
@@ -606,6 +621,24 @@ impl OutputState {
         if discarded != 0 {
             self.period_stream_start = self.crossing.stream_frame;
         }
+    }
+
+    /// Drops `frames` from the head of the ring whatever they hold (a period
+    /// reopen's late backlog) and counts them as overflow.
+    fn drop_late_frames(&mut self, frames: usize) {
+        let dropped = self.crossing.drop_head(frames, self.layout, self.channels) as u64;
+        if dropped != 0 {
+            self.period_stream_start = self.crossing.stream_frame;
+            self.shared
+                .output_overflow_frames
+                .fetch_add(dropped, Ordering::Relaxed);
+            self.events
+                .push(RtEvent::OutputOverflow { frames: dropped });
+        }
+    }
+
+    pub(super) fn drop_late_excess_on_priming(&mut self) {
+        self.drop_late_excess = true;
     }
 
     fn apply_fade_in(&mut self, buffer: &mut [f32], audible_frames: usize) {

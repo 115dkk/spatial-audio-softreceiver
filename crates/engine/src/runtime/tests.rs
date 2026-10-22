@@ -19,6 +19,27 @@ fn output_format(rate: u32) -> OutputFormat {
 }
 
 #[test]
+fn restart_storm_detects_only_three_recent_restarts_and_resets() {
+    let mut storm = RestartStorm::new();
+    assert!(!storm.record(0, 1, 1_000));
+    assert!(!storm.record(1_000, 1, 1_000));
+    assert!(storm.record(2_000, 1, 1_000));
+    assert!(!storm.record(2_001, 1, 1_000));
+    assert!(!storm.record(2_002, 1, 1_000));
+    assert!(storm.record(2_003, 1, 1_000));
+
+    storm.reset();
+    assert!(!storm.record(0, 1, 1_000));
+    assert!(!storm.record(2_001, 1, 1_000));
+    assert!(!storm.record(4_002, 1, 1_000));
+    assert!(storm.record(4_002, 3, 1_000));
+
+    storm.reset();
+    assert!(!storm.record(9_000, 2, 1_000));
+    assert!(storm.record(9_000, 1, 1_000));
+}
+
+#[test]
 fn the_asrc_drain_fade_ends_on_the_last_real_frame() {
     // 44.1 kHz output: 117 real frames in the drain, an 88-frame fade.
     let (real, fade) = (117, 88);
@@ -1412,6 +1433,123 @@ fn an_overflow_burst_reports_its_frames_without_flooding_the_event_queue() {
 }
 
 #[test]
+fn a_growth_doubles_the_period_up_to_twenty_ms_and_never_repeats_it() {
+    assert_eq!(grown_period(144, 48_000), Some(Duration::from_millis(6)));
+    assert_eq!(grown_period(576, 48_000), Some(Duration::from_millis(20)));
+    assert_eq!(grown_period(441, 44_100), Some(Duration::from_millis(20)));
+    // At the cap, and at a device's alignment of a 20 ms request.
+    assert_eq!(grown_period(960, 48_000), None);
+    assert_eq!(grown_period(882, 44_100), None);
+    assert_eq!(grown_period(955, 48_000), None);
+    assert_eq!(grown_period(1_920, 96_000), None);
+}
+
+#[test]
+fn drop_head_discards_audible_frames_without_crossing_a_layout_boundary() {
+    let (mut audio_in, audio) = RingBuffer::<f32>::new(16);
+    for sample in [0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.4, 0.5] {
+        audio_in.push(sample).unwrap();
+    }
+    let (mut timing_in, timing) = RingBuffer::<TimingMarker>::new(TIMING_QUEUE_CAPACITY);
+    timing_in
+        .push(TimingMarker {
+            stream_frame: 0,
+            frames: 3,
+            source_qpc: 11,
+            layout: OutputLayout::STEREO,
+        })
+        .unwrap();
+    let mono = OutputLayout {
+        channels: 1,
+        channel_mask: 0,
+    };
+    timing_in
+        .push(TimingMarker {
+            stream_frame: 3,
+            frames: 2,
+            source_qpc: 22,
+            layout: mono,
+        })
+        .unwrap();
+    let mut crossing = CrossingConsumer::from_parts(audio, timing, 8);
+    crossing.refresh_markers();
+    crossing.discard_stale_markers();
+
+    assert_eq!(crossing.drop_head(5, OutputLayout::STEREO, 2), 3);
+    assert_eq!(crossing.stream_frame, 3);
+    assert_eq!(
+        crossing.pending_marker.map(|marker| marker.layout),
+        Some(mono)
+    );
+    assert_eq!(crossing.audio.slots(), 2);
+    assert_eq!(crossing.drop_head(1, OutputLayout::STEREO, 2), 0);
+}
+
+#[test]
+fn late_excess_drop_is_consumed_by_one_priming() {
+    let shared = Arc::new(Shared::new());
+    shared.scene_rate.store(48_000, Ordering::Release);
+    shared
+        .target_ms_bits
+        .store(0.0_f32.to_bits(), Ordering::Release);
+    shared
+        .clock_mode
+        .store(ClockMode::Trim.as_u32(), Ordering::Release);
+    shared.arrival_frames.store(2, Ordering::Release);
+    let (mut audio_in, audio) = RingBuffer::<f32>::new(64);
+    let (mut timing_in, timing) = RingBuffer::<TimingMarker>::new(TIMING_QUEUE_CAPACITY);
+    for marker in 0..4_u64 {
+        timing_in
+            .push(TimingMarker {
+                stream_frame: marker * 2,
+                frames: 2,
+                source_qpc: marker,
+                layout: OutputLayout::STEREO,
+            })
+            .unwrap();
+        for _ in 0..4 {
+            audio_in.push(0.25).unwrap();
+        }
+    }
+    let (events, _events_out) = RingBuffer::<RtEvent>::new(EVENT_QUEUE_CAPACITY);
+    let mut output = OutputState::new(
+        CrossingConsumer::from_parts(audio, timing, 32),
+        48_000,
+        2,
+        0.0,
+        DEFAULT_QPC_FREQUENCY,
+        events,
+        Arc::clone(&shared),
+        OutputLayout::STEREO,
+        32,
+    );
+    output.scene_started = true;
+    output.drop_late_excess_on_priming();
+    output.fill_system(&mut [0.0; 4]);
+    assert_eq!(shared.output_overflow_frames.load(Ordering::Acquire), 4);
+    assert!(!output.drop_late_excess);
+
+    for marker in 4..8_u64 {
+        timing_in
+            .push(TimingMarker {
+                stream_frame: marker * 2,
+                frames: 2,
+                source_qpc: marker,
+                layout: OutputLayout::STEREO,
+            })
+            .unwrap();
+        for _ in 0..4 {
+            audio_in.push(0.5).unwrap();
+        }
+    }
+    output.reprime(Reprime::SinkRestarted);
+    output.fill_system(&mut [0.0; 4]);
+
+    assert_eq!(shared.output_overflow_frames.load(Ordering::Acquire), 4);
+    assert_eq!(output.crossing.queued_frames(2), 8);
+}
+
+#[test]
 fn priming_never_discards_sound() {
     fn discarded(samples: &[f32], frames: usize) -> (u64, Vec<f32>) {
         let shared = Arc::new(Shared::new());
@@ -2025,7 +2163,12 @@ fn a_reopen_gives_way_to_finishing_once_everything_is_rendered() {
         OutputStep::Continue
     ));
     assert!(matches!(
-        end_before_reopen(OutputStep::GrowCadence(Duration::from_millis(20)), true),
+        end_before_reopen(
+            OutputStep::GrowPeriod {
+                period: Duration::from_millis(20),
+            },
+            true,
+        ),
         OutputStep::Continue
     ));
     assert!(matches!(
@@ -2037,8 +2180,13 @@ fn a_reopen_gives_way_to_finishing_once_everything_is_rendered() {
         OutputStep::ChangeLayout(_)
     ));
     assert!(matches!(
-        end_before_reopen(OutputStep::GrowCadence(Duration::from_millis(20)), false),
-        OutputStep::GrowCadence(_)
+        end_before_reopen(
+            OutputStep::GrowPeriod {
+                period: Duration::from_millis(20),
+            },
+            false,
+        ),
+        OutputStep::GrowPeriod { .. }
     ));
 }
 

@@ -73,7 +73,13 @@ pub struct PlayReport {
     pub sent_bursts: u64,
     /// Each prepared burst contains exactly one raw E-AC-3 syncframe.
     pub sent_frames: u64,
+    pub period_frames: u32,
+    pub late_periods: u64,
     pub error_hr: Option<i32>,
+}
+
+fn position_reached(position: u64, submitted_frames: u64, frequency: u64) -> bool {
+    u128::from(position) * 192_000 >= u128::from(submitted_frames) * u128::from(frequency)
 }
 
 #[cfg(windows)]
@@ -159,6 +165,7 @@ mod win {
         device: &IMMDevice,
         carrier: CodecCarrier,
         event: &Event,
+        requested_period: Option<std::time::Duration>,
     ) -> Result<IAudioClient, HRESULT> {
         let format = IecFormat::new(carrier);
         let mut client = activate(device).map_err(|e| e.code())?;
@@ -167,6 +174,10 @@ mod win {
         unsafe { client.GetDevicePeriod(None, Some(&mut period)) }.map_err(|e| e.code())?;
         if period <= 0 {
             return Err(E_UNEXPECTED);
+        }
+        if let Some(requested) = requested_period {
+            let requested = i64::try_from(requested.as_nanos() / 100).map_err(|_| E_UNEXPECTED)?;
+            period = period.max(requested);
         }
         let mut hr = initialize(&client, &format, period);
         if hr == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED {
@@ -224,7 +235,7 @@ mod win {
                         // Event declared first and dropped last, including failed open.
                         Some(match Event::new() {
                             Err(e) => e.code().0,
-                            Ok(event) => match open(&device, carrier, &event) {
+                            Ok(event) => match open(&device, carrier, &event, None) {
                                 Ok(_client) => 0,
                                 Err(hr) => hr.0,
                             },
@@ -252,7 +263,11 @@ mod win {
     /// Input is prepared off-thread: whole 24,576-byte bursts, one validated
     /// 48 kHz/5.1/six-block syncframe each. Does not acquire the control device,
     /// allowing a simultaneous `record` command to own the capture ring.
-    pub fn play_eac3(bytes: &[u8], bursts: u64) -> Result<PlayReport, String> {
+    pub fn play_eac3(
+        bytes: &[u8],
+        bursts: u64,
+        period: Option<std::time::Duration>,
+    ) -> Result<PlayReport, String> {
         let mut transfer = Transfer::new(bytes, 24_576, bursts).ok_or("invalid_burst_stream")?;
         if bursts > 112_500 {
             return Err("duration_out_of_range".into());
@@ -272,8 +287,8 @@ mod win {
             .find(|c| c.mask == ssr_abi::FORMAT_EAC3)
             .expect("EAC3 carrier");
         let event = Event::new().map_err(|e| format!("event:0x{:08X}", e.code().0))?;
-        let client =
-            open(&device, carrier, &event).map_err(|hr| format!("initialize:0x{:08X}", hr.0))?;
+        let client = open(&device, carrier, &event, period)
+            .map_err(|hr| format!("initialize:0x{:08X}", hr.0))?;
         // SAFETY: initialized live client, no outstanding buffer.
         let frames = unsafe { client.GetBufferSize() }.map_err(|e| e.to_string())?;
         if frames == 0 || frames > carrier.rate * 5 {
@@ -291,7 +306,7 @@ mod win {
         }
         let mut buffer = vec![0u8; frames as usize * 4];
         let _priority = crate::mmcss::promote("Pro Audio").map_err(|e| e.to_string())?;
-        let hr = run(
+        let (hr, late_periods) = run(
             &client,
             &render,
             &clock,
@@ -304,6 +319,8 @@ mod win {
         Ok(PlayReport {
             sent_bursts: transfer.sent_bursts(),
             sent_frames: transfer.sent_bursts(),
+            period_frames: frames,
+            late_periods,
             error_hr: (hr.0 != 0).then_some(hr.0),
         })
     }
@@ -336,18 +353,18 @@ mod win {
         frames: u32,
         buffer: &mut [u8],
         transfer: &mut Transfer<'_>,
-    ) -> HRESULT {
+    ) -> (HRESULT, u64) {
         let first = transfer.fill(buffer);
         let hr = submit(render, frames, buffer);
         if hr.0 != 0 {
-            return hr;
+            return (hr, 0);
         }
         transfer.commit(first);
         let mut submitted_frames = u64::from(frames);
         // SAFETY: initialized event stream with its first full buffer submitted.
         let hr = unsafe { (client.vtable().Start)(client.as_raw()) };
         if hr.0 != 0 {
-            return hr;
+            return (hr, 0);
         }
         // No fallible Result<_, windows::Error> wrappers in this loop: their
         // error construction can allocate. Carry raw HRESULTs out instead.
@@ -355,26 +372,22 @@ mod win {
             + std::time::Duration::from_secs_f64(
                 transfer.total_bytes as f64 / 768_000.0 * 2.0 + 15.0,
             );
+        let mut late_periods = 0;
         let result = loop {
             if !event.wait() || std::time::Instant::now() >= deadline {
                 break HRESULT(0x800705b4u32 as i32);
             }
+            let mut position = 0;
+            // SAFETY: live running clock; position output is writable, no QPC output.
+            let hr = unsafe {
+                (clock.vtable().GetPosition)(clock.as_raw(), &mut position, std::ptr::null_mut())
+            };
+            if hr.is_err() {
+                break hr;
+            }
+            let reached = position_reached(position, submitted_frames, frequency);
             if transfer.done() {
-                let mut position = 0;
-                // SAFETY: live running clock; position output is writable, no QPC output.
-                let hr = unsafe {
-                    (clock.vtable().GetPosition)(
-                        clock.as_raw(),
-                        &mut position,
-                        std::ptr::null_mut(),
-                    )
-                };
-                if hr.is_err() {
-                    break hr;
-                }
-                if u128::from(position) * 192_000
-                    >= u128::from(submitted_frames) * u128::from(frequency)
-                {
+                if reached {
                     break HRESULT(0);
                 }
                 buffer.fill(0);
@@ -383,6 +396,7 @@ mod win {
                     break hr;
                 }
             } else {
+                late_periods += u64::from(reached);
                 let count = transfer.fill(buffer);
                 let hr = submit(render, frames, buffer);
                 if hr.0 != 0 {
@@ -394,7 +408,8 @@ mod win {
         };
         // SAFETY: started client, Stop is attempted on success and every failure.
         let stopped = unsafe { (client.vtable().Stop)(client.as_raw()) };
-        if result.0 != 0 { result } else { stopped }
+        let result = if result.0 != 0 { result } else { stopped };
+        (result, late_periods)
     }
 }
 
@@ -404,6 +419,22 @@ mod tests {
 
     #[global_allocator]
     static ALLOCATOR: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
+
+    #[test]
+    fn playback_position_reaches_submitted_frames_at_scaled_boundary() {
+        assert!(!position_reached(1_999, 2_000, 192_000));
+        assert!(position_reached(2_000, 2_000, 192_000));
+        assert!(position_reached(2_001, 2_000, 192_000));
+        assert!(!position_reached(999, 2_000, 96_000));
+        assert!(position_reached(1_000, 2_000, 96_000));
+    }
+
+    #[test]
+    fn playback_position_check_never_allocates() {
+        assert_no_alloc::assert_no_alloc(|| {
+            assert!(position_reached(u64::MAX, u64::MAX, 192_000));
+        });
+    }
 
     #[test]
     fn buffer_transfer_never_allocates() {
