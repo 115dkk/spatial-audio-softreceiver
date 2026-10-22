@@ -6,6 +6,7 @@
 //! decode, render and convolver chain as the live app and writes the binaural
 //! WAV; it links no Windows code, so it runs in Linux CI.
 
+mod mat_analyze;
 mod scene_inspect;
 mod scene_log;
 
@@ -70,6 +71,16 @@ impl EndpointArg {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Compare MAT observations with spatial excitation truth (not a decoder).
+    MatAnalyze {
+        /// Diagnostic record dump.
+        dump: PathBuf,
+        /// Signal truth JSON recorded by mat-probe.
+        truth: PathBuf,
+        /// Write analysis candidates as JSON.
+        #[arg(long)]
+        json: Option<PathBuf>,
+    },
     /// Print a JSON summary of a dump: formats per endpoint and epoch, record counts, losses.
     Inspect {
         /// Diagnostic record dump.
@@ -875,6 +886,13 @@ fn localized_command(language: Language) -> clap::Command {
 
     let command = Cli::command()
         .about(replay::about(language))
+        .mut_subcommand("mat-analyze", |subcommand| {
+            subcommand
+                .about(replay::mat_about(language))
+                .mut_arg("dump", |arg| arg.help(replay::dump_help(language)))
+                .mut_arg("truth", |arg| arg.help(replay::mat_truth_help(language)))
+                .mut_arg("json", |arg| arg.help(replay::mat_json_help(language)))
+        })
         .mut_subcommand("inspect", |subcommand| {
             subcommand
                 .about(replay::inspect_about(language))
@@ -911,6 +929,9 @@ fn parse_cli(language: Language) -> Result<Cli, clap::Error> {
 
 fn run(cli: Cli, language: Language) -> Result<(), String> {
     match cli.command {
+        Command::MatAnalyze { dump, truth, json } => {
+            mat_analyze::run(&dump, &truth, json.as_deref())?
+        }
         Command::Inspect { dump } => {
             let bytes =
                 std::fs::read(&dump).map_err(|error| format!("{}: {error}", dump.display()))?;

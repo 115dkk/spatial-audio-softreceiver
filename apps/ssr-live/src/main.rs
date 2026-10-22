@@ -28,6 +28,7 @@ mod bitstream_cli;
 mod host_json;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod ks_lifecycle;
+mod mat_probe;
 #[cfg(any(windows, test))]
 mod silence;
 
@@ -840,6 +841,21 @@ enum Command {
         #[command(subcommand)]
         command: bitstream_cli::BitstreamCommand,
     },
+    /// Observe spatial audio input and record MAT bursts with signal truth.
+    MatProbe {
+        /// Driver endpoint number (resolved by KS filter identity).
+        #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(u16).range(0..=2))]
+        endpoint: u16,
+        /// Seconds of spatial excitation (maximum 3600).
+        #[arg(long, default_value_t = 12.0, value_parser = ks_lifecycle::positive_seconds)]
+        seconds: f64,
+        /// Output file (`.ssrdump`).
+        #[arg(long)]
+        out: PathBuf,
+        /// Output signal truth JSON file.
+        #[arg(long)]
+        truth: PathBuf,
+    },
     /// Record a capture ring (the Spatial SoftReceiver driver or SAL) to a dump file (run as administrator).
     Record {
         /// Capture source; the Spatial SoftReceiver driver is the normal source.
@@ -972,6 +988,7 @@ fn localized_command(language: Language) -> clap::Command {
 
     let mut command = Cli::command().about(live::about(language));
     for (name, about) in [
+        ("mat-probe", live::mat_probe_about(language)),
         ("record", live::record_about(language)),
         ("play", live::play_about(language)),
         ("asio-probe", live::asio_probe_about(language)),
@@ -1007,6 +1024,15 @@ fn localized_command(language: Language) -> clap::Command {
                         })
                         .mut_arg("json", |arg| arg.help(live::devices_json_help(language)))
                 })
+        })
+        .mut_subcommand("mat-probe", |subcommand| {
+            subcommand
+                .mut_arg("endpoint", |arg| {
+                    arg.help(live::mat_endpoint_help(language))
+                })
+                .mut_arg("seconds", |arg| arg.help(live::mat_seconds_help(language)))
+                .mut_arg("out", |arg| arg.help(live::record_out_help(language)))
+                .mut_arg("truth", |arg| arg.help(live::mat_truth_help(language)))
         })
         .mut_subcommand("record", |subcommand| {
             subcommand
@@ -1214,6 +1240,12 @@ fn main() -> ExitCode {
     };
     let result = match cli.command {
         Command::Bitstream { command } => bitstream_cli::run(command),
+        Command::MatProbe {
+            endpoint,
+            seconds,
+            out,
+            truth,
+        } => mat_probe::run(endpoint, seconds, &out, &truth),
         Command::Record {
             source,
             out,

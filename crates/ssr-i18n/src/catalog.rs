@@ -1818,6 +1818,113 @@ pub mod live {
         }
     }
 
+    #[doc = "미리 확보한 관찰 버퍼가 찼습니다. 그때까지의 원래 신호 정보를 저장합니다."]
+    pub fn mat_capacity(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "미리 확보한 관찰 버퍼가 찼습니다. 그때까지의 원래 신호 정보를 저장합니다."
+            }
+            Language::En => {
+                "The preallocated observation buffer is full; the partial truth is saved."
+            }
+        }
+    }
+
+    #[doc = "녹화 스레드가 실패했습니다."]
+    pub fn mat_capture_failed(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "녹화 스레드가 실패했습니다.",
+            Language::En => "The recording thread failed.",
+        }
+    }
+
+    #[doc = "소리 설정에서 이 엔드포인트의 공간 음향을 Dolby Atmos for home theater로 켠 뒤 다시 실행하십시오. Dolby와 Dolby Atmos는 Dolby Laboratories의 상표입니다. 상세: {detail}"]
+    pub fn mat_enable_spatial(language: Language, detail: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!(
+                "소리 설정에서 이 엔드포인트의 공간 음향을 Dolby Atmos for home theater로 켠 뒤 다시 실행하십시오. Dolby와 Dolby Atmos는 Dolby Laboratories의 상표입니다. 상세: {detail}"
+            ),
+            Language::En => format!(
+                "In Sound settings, enable Dolby Atmos for home theater for this endpoint, then retry. Dolby and Dolby Atmos are trademarks of Dolby Laboratories. Details: {detail}"
+            ),
+        }
+    }
+
+    #[doc = "드라이버 엔드포인트 번호(KS 필터 식별자로 찾음)."]
+    pub fn mat_endpoint_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "드라이버 엔드포인트 번호(KS 필터 식별자로 찾음).",
+            Language::En => "Driver endpoint number (resolved by KS filter identity)",
+        }
+    }
+
+    #[doc = "덤프: {dump}; 원래 신호: {truth}; MAT 버스트: {bursts}; 형식: {formats}; 녹화 손실 바이트: {lost}"]
+    pub fn mat_finished(
+        language: Language,
+        dump: impl core::fmt::Display,
+        truth: impl core::fmt::Display,
+        bursts: impl core::fmt::Display,
+        formats: impl core::fmt::Display,
+        lost: impl core::fmt::Display,
+    ) -> String {
+        match language {
+            Language::Ko => format!(
+                "덤프: {dump}; 원래 신호: {truth}; MAT 버스트: {bursts}; 형식: {formats}; 녹화 손실 바이트: {lost}"
+            ),
+            Language::En => format!(
+                "Dump: {dump}; truth: {truth}; MAT bursts: {bursts}; formats: {formats}; recorder lost bytes: {lost}"
+            ),
+        }
+    }
+
+    #[doc = "관찰 매개변수나 소리 개수가 지원 범위를 벗어났거나 출력 파일이 이미 있습니다."]
+    pub fn mat_invalid(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "관찰 매개변수나 소리 개수가 지원 범위를 벗어났거나 출력 파일이 이미 있습니다."
+            }
+            Language::En => {
+                "Invalid probe parameters, unsupported sound count, or output file already exists."
+            }
+        }
+    }
+
+    #[doc = "공간 음향 입력을 관찰하고 MAT 버스트와 원래 신호 정보를 기록합니다."]
+    pub fn mat_probe_about(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "공간 음향 입력을 관찰하고 MAT 버스트와 원래 신호 정보를 기록합니다.",
+            Language::En => "Observe spatial audio input and record MAT bursts with signal truth",
+        }
+    }
+
+    #[doc = "공간 음향 신호를 보낼 시간(초, 최대 3600)."]
+    pub fn mat_seconds_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "공간 음향 신호를 보낼 시간(초, 최대 3600).",
+            Language::En => "Seconds of spatial excitation (maximum 3600)",
+        }
+    }
+
+    #[doc = "모든 소리의 단독 재생과 움직임을 관찰하기에는 시간이 짧습니다. --seconds {seconds} 이상으로 다시 실행하십시오."]
+    pub fn mat_short(language: Language, seconds: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!(
+                "모든 소리의 단독 재생과 움직임을 관찰하기에는 시간이 짧습니다. --seconds {seconds} 이상으로 다시 실행하십시오."
+            ),
+            Language::En => format!(
+                "This duration does not cover all isolated sounds and motion. Repeat with --seconds {seconds} or longer."
+            ),
+        }
+    }
+
+    #[doc = "원래 신호 정보를 저장할 JSON 파일."]
+    pub fn mat_truth_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "원래 신호 정보를 저장할 JSON 파일.",
+            Language::En => "Output signal truth JSON file",
+        }
+    }
+
     #[doc = "아니요"]
     pub fn no(language: Language) -> &'static str {
         match language {
@@ -2535,6 +2642,141 @@ pub mod replay {
             Language::En => {
                 "Print a JSON summary of a dump: formats per endpoint and epoch, record counts, losses"
             }
+        }
+    }
+
+    #[doc = "MAT 관찰 결과와 원래 공간 음향 신호를 비교합니다(디코더 아님)."]
+    pub fn mat_about(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "MAT 관찰 결과와 원래 공간 음향 신호를 비교합니다(디코더 아님).",
+            Language::En => {
+                "Compare MAT observations with spatial excitation truth (not a decoder)"
+            }
+        }
+    }
+
+    #[doc = "관찰 후보"]
+    pub fn mat_candidate(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "관찰 후보",
+            Language::En => "candidate only",
+        }
+    }
+
+    #[doc = "관찰 후보이며 MAT 규격이 아닙니다. 표본 폭, 바이트 순서, 위상이 달라도 같은 상관값이 나올 수 있습니다. 움직임이나 무음 구간이 없으면 필드를 식별할 수 없습니다. JSON의 경고와 근거를 확인하십시오."]
+    pub fn mat_caution(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "관찰 후보이며 MAT 규격이 아닙니다. 표본 폭, 바이트 순서, 위상이 달라도 같은 상관값이 나올 수 있습니다. 움직임이나 무음 구간이 없으면 필드를 식별할 수 없습니다. JSON의 경고와 근거를 확인하십시오."
+            }
+            Language::En => {
+                "These are observational candidates, not a MAT specification. Width, byte-order and phase aliases can tie. Missing motion or silence prevents field identification; inspect JSON warnings and evidence before drawing conclusions."
+            }
+        }
+    }
+
+    #[doc = "일정"]
+    pub fn mat_constant(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "일정",
+            Language::En => "constant",
+        }
+    }
+
+    #[doc = "원래 신호 JSON이나 QPC 주파수가 유효하지 않거나 덤프와 맞지 않습니다."]
+    pub fn mat_invalid_truth(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "원래 신호 JSON이나 QPC 주파수가 유효하지 않거나 덤프와 맞지 않습니다.",
+            Language::En => "Invalid or incompatible signal truth JSON or QPC frequency.",
+        }
+    }
+
+    #[doc = "분석 후보를 JSON으로 저장합니다."]
+    pub fn mat_json_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "분석 후보를 JSON으로 저장합니다.",
+            Language::En => "Write analysis candidates as JSON",
+        }
+    }
+
+    #[doc = "낮은 확신"]
+    pub fn mat_low(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "낮은 확신",
+            Language::En => "low confidence",
+        }
+    }
+
+    #[doc = "신뢰할 후보 없음 / 단독 재생 구간 없음"]
+    pub fn mat_missing(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "신뢰할 후보 없음 / 단독 재생 구간 없음",
+            Language::En => "no reliable candidate / isolated interval missing",
+        }
+    }
+
+    #[doc = "바이트 범위(끝 제외) | 무음 중 값 유지 여부"]
+    pub fn mat_ranges_heading(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "바이트 범위(끝 제외) | 무음 중 값 유지 여부",
+            Language::En => "Byte range (end exclusive) | silence stability",
+        }
+    }
+
+    #[doc = "소리 | 오프셋 | 표본 형식/바이트 순서 | 보폭 | 상관값 | 지연(표본) | 확신"]
+    pub fn mat_samples_heading(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "소리 | 오프셋 | 표본 형식/바이트 순서 | 보폭 | 상관값 | 지연(표본) | 확신"
+            }
+            Language::En => {
+                "Sound | offset | encoding/order | stride | correlation | lag (samples) | confidence"
+            }
+        }
+    }
+
+    #[doc = "MAT 프레임: {frames}; 내용물 크기: {sizes}; 무음 프레임: {silence}"]
+    pub fn mat_summary(
+        language: Language,
+        frames: impl core::fmt::Display,
+        sizes: impl core::fmt::Display,
+        silence: impl core::fmt::Display,
+    ) -> String {
+        match language {
+            Language::Ko => {
+                format!("MAT 프레임: {frames}; 내용물 크기: {sizes}; 무음 프레임: {silence}")
+            }
+            Language::En => {
+                format!("MAT frames: {frames}; content sizes: {sizes}; silent frames: {silence}")
+            }
+        }
+    }
+
+    #[doc = "이 스트림은 TrueHD입니다(MLP major sync 발견). PCM 배치 분석을 중단했습니다."]
+    pub fn mat_truehd(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "이 스트림은 TrueHD입니다(MLP major sync 발견). PCM 배치 분석을 중단했습니다."
+            }
+            Language::En => {
+                "This stream is TrueHD (MLP major sync found); PCM layout analysis stopped."
+            }
+        }
+    }
+
+    #[doc = "mat-probe가 기록한 원래 신호 JSON."]
+    pub fn mat_truth_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "mat-probe가 기록한 원래 신호 JSON.",
+            Language::En => "Signal truth JSON recorded by mat-probe",
+        }
+    }
+
+    #[doc = "변함"]
+    pub fn mat_varying(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "변함",
+            Language::En => "varying",
         }
     }
 

@@ -19,7 +19,10 @@
 # (PROPVARIANT access), and IEC 61937 exclusive negotiation and E-AC-3
 # playback into PASS through IAudioClient, IAudioRenderClient and IAudioClock.
 # ASIO control/ring mappings, events and peer handles (ADR 0025, +26).
-ssr-sys = 160
+# MAT observation tool (ADR 0022 addendum 2026-10-21, +19): ISpatialAudioClient
+# activation through a VT_BLOB PROPVARIANT, the object render stream and its
+# event, and the static and dynamic object buffers.
+ssr-sys = 179
 # The administrator tasks of ssr-setup (ADR 0032): COM endpoint enumeration
 # and the exclusive-mode property store, cfgmgr32 device nodes, SetupAPI root
 # device install and removal, the local machine certificate stores, and the

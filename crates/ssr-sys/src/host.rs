@@ -608,6 +608,27 @@ fn render_devices() -> windows::core::Result<Vec<IMMDevice>> {
         .collect())
 }
 
+/// Resolve our endpoint through the same KS topology/owner checks as the host.
+/// The caller must hold a COM apartment on this thread.
+pub(crate) fn probe_endpoint(endpoint: u16) -> windows::core::Result<IMMDevice> {
+    let owners: Vec<_> = our_devnodes()
+        .into_iter()
+        .map(|node| node.instance_id)
+        .collect();
+    let mut matches = render_devices()?
+        .into_iter()
+        .filter(|device| our_endpoint(device, &owners) == Some(endpoint));
+    let device = matches
+        .next()
+        .ok_or_else(|| windows::core::Error::from_hresult(ERROR_NOT_FOUND.to_hresult()))?;
+    if matches.next().is_some() {
+        return Err(windows::core::Error::from_hresult(
+            windows::Win32::Foundation::E_UNEXPECTED,
+        ));
+    }
+    Ok(device)
+}
+
 /// One endpoint as the supervisor sees it; `None` when Windows will not give
 /// its id or state.
 fn describe(device: IMMDevice, owners: &[String]) -> Option<OutputDevice> {

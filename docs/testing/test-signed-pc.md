@@ -385,6 +385,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\volume_check.ps1 -Summary 
 
 목록에 없으면 그 자체가 중요한 결과입니다. 스크린샷과 `collect.ps1` 결과를 보내 주십시오.
 
+## 3-1. MAT 안의 PCM 배치 관찰 (블랙박스, ADR 0005)
+
+Windows 공간 음향이 MAT 2.x 안에 PCM을 담는 배치는 공개 문서가 없습니다. 그래서 알고 있는 신호와 위치를 Windows 공간 음향에 넣고, 드라이버 링에 들어온 MAT를 녹화해 둘을 맞춰 봅니다. 이 녹화가 MAT 안의 PCM 디코더를 만드는 근거가 됩니다. 3단계에서 "Dolby Atmos for home theater"를 켤 수 있었던 엔드포인트에서만 합니다.
+
+1. 3단계처럼 엔드포인트 0(`Spatial SoftReceiver`)의 공간 오디오를 "Dolby Atmos for home theater"로 켭니다. 다른 재생 앱과 게임은 모두 닫습니다. 녹화에 시험 신호만 들어가야 하기 때문입니다.
+2. 도구 zip의 `ssr-live.exe`와 `ssr-replay.exe`를 드라이버 묶음 폴더에 두고, 관리자 PowerShell에서 실행합니다:
+
+   ```powershell
+   .\ssr-live.exe mat-probe --endpoint 0 --seconds 12 --out mat-probe-ep0.ssrdump --truth mat-probe-ep0.truth.json
+   ```
+
+   처음 1초는 무음, 그다음 소리마다 0.5초씩 하나만, 이어서 모두 함께 재생하고, 끝에는 움직이는 소리가 돕니다. 소리 개수가 많아 12초로 모자라면 도구가 필요한 최소 시간을 알려 줍니다. 그때는 다른 파일 이름으로 그 시간 이상을 주고 다시 실행합니다.
+3. 같은 폴더에서 분석합니다(관리자 권한은 필요 없습니다):
+
+   ```powershell
+   .\ssr-replay.exe mat-analyze mat-probe-ep0.ssrdump mat-probe-ep0.truth.json --json mat-probe-ep0.analysis.json
+   ```
+
+4. 엔드포인트 1(`Spatial SoftReceiver Music`)도 공간 오디오를 켤 수 있었다면 `--endpoint 1`과 `-ep1` 파일 이름으로 1~3을 한 번 더 합니다.
+
+**합격 기준**
+- `mat-probe`가 끝에 찍는 MAT 버스트 수가 0보다 크고, 형식이 MAT 2.0 또는 MAT 2.1
+- `mat-analyze`가 끝까지 돌아 JSON을 씀. 찾은 배치의 확신이 낮다고 나와도 실패가 아닙니다. 판정은 저장소 소유자가 덤프로 합니다
+- 공간 음향을 켤 수 없다는 문구가 나오면 그 문구와 3단계의 스크린샷을 결과에 붙입니다
+
+보낼 것은 `.ssrdump`, `.truth.json`, `.analysis.json`, 두 명령의 화면 출력, Windows 빌드 번호와 고른 공간 음향 형식입니다. 덤프에는 시험 신호만 들어 있지만, 다른 덤프처럼 공개 이슈에 올리지 말고 저장소 소유자에게 따로 보냅니다.
+
 ## 4. 비트스트림 패스스루 형식
 
 CI는 코덱 비트 1~8을 세 엔드포인트에 독점 형식으로 질의하고, PASS에서 지원된 형식을 실제로 초기화합니다. 이어 공개 E-AC-3 자료를 IEC 61937 burst로 재생하면서 드라이버 링을 녹화해, 192 kHz·2채널 E-AC-3 형식과 원본 sync frame의 순서·바이트가 90% 이상 그대로 도착하는지 검사합니다.

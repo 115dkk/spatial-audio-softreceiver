@@ -72,3 +72,10 @@ ADR 0025의 첫 PR에서 격리 크레이트 `asio-sys`를 더하고 숫자를 �
 - **`ssr-sys`는 107에서 133이 됩니다(+26).** 앱 쪽 ASIO 호스트의 제어 블록과 링 매핑, 이벤트, 피어 핸들입니다. 바로 앞 덧붙임의 M3·M4 마무리(134)와 합치면 160입니다.
 - **`ssr-setup-sys`는 52에서 57이 됩니다(+5).** ASIO 등록의 레지스트리 작업 다섯입니다(ADR 0032의 관리자 작업).
 - **`asio-sys`의 라이선스는 `GPL-3.0-or-later AND GPL-3.0-only`입니다.** SDK 정의를 손으로 옮긴 `sdk.rs`가 `GPL-3.0-only`이고, 크레이트에 GPLv3 전문(`LICENSE`)을 둡니다(ADR 0025).
+
+## 2026-10-21 덧붙임: MAT 관찰 도구, `ssr-sys` 179
+
+Windows 공간 음향이 MAT 2.x 안에 PCM을 담는 배치는 공개 문서가 없습니다. 그래서 알고 있는 신호와 위치를 공간 음향에 넣고 드라이버 링에 들어온 MAT와 맞춰 보는 블랙박스 관찰 도구 `ssr-live mat-probe`를 둡니다(ADR 0005가 허락한 관찰). 이 도구가 `ssr-sys`에 19를 더해 160에서 179가 됩니다.
+
+- **공간 음향 클라이언트(19):** `IMMDevice::Activate`로 `ISpatialAudioClient`를 얻습니다. `SpatialAudioObjectRenderStreamActivationParams`를 `VT_BLOB` `PROPVARIANT`로 넘겨 스트림을 열고, 이벤트마다 정적·동적 소리의 버퍼를 채웁니다. 모두 `crates/ssr-sys/src/spatial.rs` 한 파일에 있습니다.
+- **나머지는 Linux에서 시험합니다.** 신호 수열, 일정, 진실 파일 구조는 `decode::mat_probe`에 있습니다. 분석기 `ssr-replay mat-analyze`는 `cfg(windows)` 밖에 두었습니다. 둘 다 합성 배치로 시험합니다.
