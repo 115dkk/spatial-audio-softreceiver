@@ -2494,18 +2494,16 @@ mod platform {
             // (counted from the first read, which is after `before`). A late
             // release delays only its own stamp, so each one is checked
             // against its due time rather than against the one before it.
-            for due_ms in [10, 20] {
-                let n = paced.read(&mut out, Duration::from_millis(500)).unwrap();
-                assert_eq!(n, ssr_abi::record_size(16));
+            let released = released_data(&mut paced, 2);
+            for (&(payload, _, stamp), (expected, due_ms)) in
+                released.iter().zip([(1, 10), (2, 20)])
+            {
+                assert_eq!(payload, expected);
                 assert!(
-                    record_qpc(&out) - before >= due(frequency, due_ms),
+                    stamp - before >= due(frequency, due_ms),
                     "released before {due_ms} ms"
                 );
             }
-            assert_eq!(
-                ssr_abi::raw_records(&out).next().unwrap().unwrap().payload[0],
-                2
-            );
 
             assert!(!ended.load(Ordering::Acquire));
             assert_eq!(
@@ -2521,13 +2519,23 @@ mod platform {
             frequency * ms / 1000
         }
 
-        fn record_pos(bytes: &[u8]) -> u64 {
-            ssr_abi::raw_records(bytes)
-                .next()
-                .unwrap()
-                .unwrap()
-                .header
-                .byte_pos
+        /// Reads until `count` data records have been released and returns
+        /// each one's first payload byte, byte position and stamp. A read
+        /// that comes late hands out every record that fell due meanwhile,
+        /// so the records are checked one by one rather than read by read.
+        fn released_data(paced: &mut DumpCapture, count: usize) -> Vec<(u8, u64, u64)> {
+            let mut out = vec![0_u8; 4096];
+            let mut released = Vec::new();
+            while released.len() < count {
+                let n = paced.read(&mut out, Duration::from_millis(500)).unwrap();
+                assert!(n > 0, "a record falls due within 500 ms");
+                for raw in ssr_abi::raw_records(&out[..n]) {
+                    let raw = raw.unwrap();
+                    assert_eq!(raw.size, ssr_abi::record_size(16));
+                    released.push((raw.payload[0], raw.header.byte_pos, raw.header.qpc));
+                }
+            }
+            released
         }
 
         #[test]
@@ -2560,23 +2568,20 @@ mod platform {
                 paced.read(&mut out, Duration::ZERO).unwrap(),
                 ssr_abi::record_size(0)
             );
-            for (pass, payload, pos, due_ms) in [
-                (0, 1, 0, 10),
-                (0, 2, 16, 20),
-                (1, 1, 32, 30),
-                (1, 2, 48, 40),
-                (2, 1, 64, 50),
-            ] {
-                let n = paced.read(&mut out, Duration::from_millis(500)).unwrap();
-                assert_eq!(n, ssr_abi::record_size(16), "pass {pass}");
-                assert_eq!(
-                    ssr_abi::raw_records(&out).next().unwrap().unwrap().payload[0],
-                    payload,
-                    "pass {pass}"
-                );
-                assert_eq!(record_pos(&out), pos, "pass {pass}");
+            let released = released_data(&mut paced, 5);
+            for (&(payload, pos, stamp), (pass, expected, expected_pos, due_ms)) in
+                released.iter().zip([
+                    (0, 1, 0, 10),
+                    (0, 2, 16, 20),
+                    (1, 1, 32, 30),
+                    (1, 2, 48, 40),
+                    (2, 1, 64, 50),
+                ])
+            {
+                assert_eq!(payload, expected, "pass {pass}");
+                assert_eq!(pos, expected_pos, "pass {pass}");
                 assert!(
-                    record_qpc(&out) - before >= due(frequency, due_ms),
+                    stamp - before >= due(frequency, due_ms),
                     "released before {due_ms} ms in pass {pass}"
                 );
             }
@@ -2650,12 +2655,12 @@ mod platform {
                 true,
             )
             .unwrap();
-            let mut out = vec![0_u8; 4096];
-            for pos in [0, 16, 32, 48, 64] {
-                let n = paced.read(&mut out, Duration::from_millis(500)).unwrap();
-                assert_eq!(n, ssr_abi::record_size(16));
-                assert_eq!(record_pos(&out), pos);
-            }
+            let positions = released_data(&mut paced, 5)
+                .iter()
+                .map(|&(_, pos, _)| pos)
+                .take(5)
+                .collect::<Vec<_>>();
+            assert_eq!(positions, [0, 16, 32, 48, 64]);
             assert!(!ended.load(Ordering::Acquire));
         }
 
