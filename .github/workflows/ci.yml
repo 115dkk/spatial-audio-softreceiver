@@ -517,6 +517,34 @@ jobs:
           ./tools/ci/restart-stress.ps1 -SsrLive target/release/ssr-live.exe
           -Fixtures (Join-Path $env:RUNNER_TEMP 'fx') -Symbols (Resolve-Path target/release).Path
 
+      # A device that cannot hold its minimum exclusive period (ADR 0019,
+      # 2026-10-22 addendum). Without --period-ms ssr-live opens the cable at
+      # its 3 ms minimum, where it restarts over and over, as it does at 6 ms
+      # (ADR 0026). The engine must double the period after restarts that keep
+      # coming until one holds (12 ms on this cable), not restart ten times a
+      # second for good; tools/ci/period_growth_check.py judges the report.
+      - name: The cable at its minimum exclusive period (the period grows until it holds)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          fx="$RUNNER_TEMP/fx"
+          report="$RUNNER_TEMP/min-period-report.json"
+          log="$RUNNER_TEMP/min-period.log"
+          target/release/ssr-live.exe play --from-dump "$fx/pcm71.ssrdump" --loop \
+            --profile "$fx/profile.toml" --output "VB-Audio Virtual Cable" --seconds 15 \
+            --report "$report" > "$log" 2>&1
+          status=$?
+          tail -n 25 "$log"
+          [ "$status" = 0 ] || { echo "::error::ssr-live exited $status"; exit 1; }
+          python tools/ci/period_growth_check.py "$report" || status=1
+          {
+            echo "## The cable at its minimum exclusive period (${{ matrix.os }})"
+            echo
+            jq -r '"period \(.output_period_frames) frames, \(.output_reopens) reopens, \(.output_restarts) restarts, \(.underruns_while_streaming) underruns while streaming"' "$report" 2>/dev/null || echo "no report"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
       # The ASIO entrance (ADR 0025). asio_probe loads the DLL the release
       # ships the way a DAW does (DllGetClassObject, IASIO, buffers, start)
       # and counts its callbacks; tools/ci/asio_probe_check.py judges each run.
@@ -621,6 +649,8 @@ jobs:
             ${{ runner.temp }}/dumps
             ${{ runner.temp }}/asio/*.json
             ${{ runner.temp }}/asio/*.log
+            ${{ runner.temp }}/min-period-report.json
+            ${{ runner.temp }}/min-period.log
             target/release/ssr_live.pdb
             target/release/ssr_replay.pdb
             target/release/ssrasio.pdb

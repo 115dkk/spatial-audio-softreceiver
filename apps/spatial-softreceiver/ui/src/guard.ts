@@ -428,6 +428,7 @@ const engineStatus = object<EngineStatus>({
   output_restarts: number,
   output_late_resyncs: number,
   output_rate: number,
+  output_period_frames: number,
   trim_available: boolean,
   output_channels: number,
   output_channel_mask: number,

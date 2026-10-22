@@ -223,6 +223,10 @@ output_late_resyncs: number;
  */
 output_rate: number;
 /**
+ * Frames in one period of the currently open output sink, or zero before open.
+ */
+output_period_frames: number;
+/**
  * Whether the capture source accepted rate trim when the engine started.
  */
 trim_available: boolean;

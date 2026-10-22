@@ -12,6 +12,10 @@ use super::{ClockPreference, MAX_ASRC_INPUT_FRAMES, MAX_OUTPUT_PERIOD_FRAMES, MI
 const ASRC_MAX_RELATIVE_RATIO: f64 = 1.002_1;
 const CADENCE_WINDOW_SECONDS: f64 = 2.0;
 const CADENCE_FAULT_SECONDS: f64 = 3.0;
+/// Sink restarts that keep coming (ADR 0019, 2026-10-22 addendum): the
+/// device cannot hold this period, so restarting it does not help.
+pub(super) const STORM_RESTARTS: usize = 3;
+pub(super) const STORM_WINDOW_SECONDS: f64 = 2.0;
 pub(super) const PI_LIMIT_PPM: f64 = 2_000.0;
 pub(super) const PI_KP: f64 = 60.0;
 pub(super) const PI_KI: f64 = 3.0;
@@ -535,6 +539,47 @@ impl TroughController {
         self.trough_ms = f64::INFINITY;
         self.seconds = 0.0;
         Some((trough_ms, ppm))
+    }
+}
+
+pub(super) struct RestartStorm {
+    qpcs: [u64; STORM_RESTARTS],
+    len: usize,
+}
+
+impl RestartStorm {
+    pub(super) fn new() -> Self {
+        Self {
+            qpcs: [0; STORM_RESTARTS],
+            len: 0,
+        }
+    }
+
+    pub(super) fn reset(&mut self) {
+        self.len = 0;
+    }
+
+    /// Records `count` restarts first seen at `qpc`. True when the last
+    /// `STORM_RESTARTS` restarts fall within `STORM_WINDOW_SECONDS`; it then
+    /// forgets them, so the next storm needs `STORM_RESTARTS` new ones.
+    pub(super) fn record(&mut self, qpc: u64, count: u64, qpc_frequency: u64) -> bool {
+        for _ in 0..count.min(STORM_RESTARTS as u64) {
+            if self.len < STORM_RESTARTS {
+                self.qpcs[self.len] = qpc;
+                self.len += 1;
+            } else {
+                self.qpcs.copy_within(1.., 0);
+                self.qpcs[STORM_RESTARTS - 1] = qpc;
+            }
+            if self.len == STORM_RESTARTS {
+                let window = qpc.saturating_sub(self.qpcs[0]) as f64 / qpc_frequency as f64;
+                if window <= STORM_WINDOW_SECONDS {
+                    self.reset();
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 

@@ -53,3 +53,11 @@
 
 - CI의 2분 CPU 부하 소크에서, 멀쩡한 가상 케이블의 독점 스트림이 첫 1초 안에 한 번 다시 시작했습니다(언더런 0, 잃은 바이트 0). 대기 시간은 이벤트를 기다린 시간만 재므로, 스레드가 늦게 호출되면 버퍼가 비어 있어 대기가 오히려 짧습니다. 그러니 이 재시작은 시작 직후의 첫 대기(장치 기동)나, 이벤트가 온 뒤 부하로 스레드가 늦게 깬 한 번의 대기 때문입니다. 재시작은 장치에 쌓인 소리를 버리므로 이런 한 번에는 하지 않아야 합니다.
 - 이제 문턱(주기 두 개, 최소 10 ms)을 넘는 대기가 세 번 이어져야 멈춤으로 보고, 시작 뒤의 첫 대기는 세지 않습니다(`ssr-sys`의 `stall_guard.rs`, 모든 OS에서 시험). 위의 USB DAC는 멈춘 뒤 계속 33 ms마다 신호를 보내므로 세 번째 대기, 곧 100 ms 남짓 뒤에 다시 시작합니다.
+
+## 수정 (2026-10-22, 재시작이 되풀이되면 주기를 늘린다)
+
+- CI에서 `ssr-live play --asio`가 VB-CABLE을 장치 최소 주기(3 ms)로 열자 12초 동안 출력을 137번 다시 시작했습니다. 다시 시작할 때마다 ASIO 세대가 바뀌어 DAW의 프레임을 버렸습니다(ADR 0025). VB-CABLE은 3 ms와 5 ms에서 재시작을 되풀이하고 10 ms부터 주기를 지킵니다(ADR 0026). 앱도 배타 모드를 장치 최소 주기로 엽니다. 이런 장치는 다시 시작해도 곧 또 멈추므로, 재시작이 이어진다는 것은 그 주기를 지킬 수 없다는 뜻입니다.
+- 이제 출력 스레드가 싱크의 재시작을 셉니다. 2초 안에 세 번이면 주기를 두 배로(최대 20 ms) 늘려 장치를 다시 엽니다. 새 싱크의 재시작은 처음부터 다시 셉니다. 그래서 3 ms로 연 VB-CABLE은 6 ms를 거쳐 12 ms에서 머뭅니다(`engine::restart_storm_grows_three_six_twelve_twenty_and_reports_the_period`, `engine::restart_storm_stops_growing_when_restarts_stop_at_twelve_ms`, 감지기는 `engine::restart_storm_detects_only_three_recent_restarts_and_resets`). 20 ms에서도 되풀이되면 더 늘리지 않고, 싱크가 지금처럼 다시 시작합니다.
+- 마감을 한 번 놓친 장치(위의 USB DAC)는 재시작 한 번으로 돌아오므로 이 규칙에 걸리지 않습니다(`engine::one_restart_does_not_change_the_output_period`).
+- 박자 감시가 주기를 한 번만 늘리는 규칙(ADR 0012)은 그대로입니다. 재시작 때문에 늘린 주기는 그 한 번에 셈하지 않습니다. 재시작으로 늘린 뒤에도 박자 감시는 자기 몫의 한 번을 쓸 수 있습니다(`engine::cadence_can_grow_once_after_restart_storm_growth`). 두 경로는 다시 열기의 이벤트(`OutputCadenceReopen`)를 함께 쓰고, `output_reopens`는 이제 레이아웃 때문에 다시 연 것(ADR 0030)뿐 아니라 주기를 늘려 다시 연 것도 셉니다.
+- 지금 쓰는 출력 주기를 `EngineStatus.output_period_frames`와 `ssr-live` 보고서의 `output_period_frames`로 내보냅니다. CI의 live audio 잡은 주기를 정하지 않고 케이블을 연 뒤, 주기가 10~20 ms에서 멈추고 재시작이 그쳤는지 봅니다(`tools/ci/period_growth_check.py`).

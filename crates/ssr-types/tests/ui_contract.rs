@@ -588,6 +588,7 @@ fn engine_status(language: Language) -> EngineStatus {
         output_restarts: 0,
         output_late_resyncs: 0,
         output_rate: 48_000,
+        output_period_frames: 480,
         trim_available: true,
         output_channels: 2,
         output_channel_mask: 3,

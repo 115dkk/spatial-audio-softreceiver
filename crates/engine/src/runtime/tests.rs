@@ -19,6 +19,27 @@ fn output_format(rate: u32) -> OutputFormat {
 }
 
 #[test]
+fn restart_storm_detects_only_three_recent_restarts_and_resets() {
+    let mut storm = RestartStorm::new();
+    assert!(!storm.record(0, 1, 1_000));
+    assert!(!storm.record(1_000, 1, 1_000));
+    assert!(storm.record(2_000, 1, 1_000));
+    assert!(!storm.record(2_001, 1, 1_000));
+    assert!(!storm.record(2_002, 1, 1_000));
+    assert!(storm.record(2_003, 1, 1_000));
+
+    storm.reset();
+    assert!(!storm.record(0, 1, 1_000));
+    assert!(!storm.record(2_001, 1, 1_000));
+    assert!(!storm.record(4_002, 1, 1_000));
+    assert!(storm.record(4_002, 3, 1_000));
+
+    storm.reset();
+    assert!(!storm.record(9_000, 2, 1_000));
+    assert!(storm.record(9_000, 1, 1_000));
+}
+
+#[test]
 fn the_asrc_drain_fade_ends_on_the_last_real_frame() {
     // 44.1 kHz output: 117 real frames in the drain, an 88-frame fade.
     let (real, fade) = (117, 88);
@@ -2025,7 +2046,13 @@ fn a_reopen_gives_way_to_finishing_once_everything_is_rendered() {
         OutputStep::Continue
     ));
     assert!(matches!(
-        end_before_reopen(OutputStep::GrowCadence(Duration::from_millis(20)), true),
+        end_before_reopen(
+            OutputStep::GrowPeriod {
+                period: Duration::from_millis(20),
+                cadence_fault: true,
+            },
+            true,
+        ),
         OutputStep::Continue
     ));
     assert!(matches!(
@@ -2037,8 +2064,14 @@ fn a_reopen_gives_way_to_finishing_once_everything_is_rendered() {
         OutputStep::ChangeLayout(_)
     ));
     assert!(matches!(
-        end_before_reopen(OutputStep::GrowCadence(Duration::from_millis(20)), false),
-        OutputStep::GrowCadence(_)
+        end_before_reopen(
+            OutputStep::GrowPeriod {
+                period: Duration::from_millis(20),
+                cadence_fault: true,
+            },
+            false,
+        ),
+        OutputStep::GrowPeriod { .. }
     ));
 }
 

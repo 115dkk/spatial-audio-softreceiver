@@ -194,6 +194,7 @@ pub(super) struct OutputState {
     pub(super) have_last_output: bool,
     pub(super) latency: LatencyWriter,
     pub(super) cadence: CadenceGuard,
+    pub(super) restart_storm: RestartStorm,
     /// Periods of the resampler's tail still owed to the current sink, by a
     /// reopen or by the end of capture, whichever writes them.
     pub(super) tail_periods: usize,
@@ -250,6 +251,7 @@ impl OutputState {
             have_last_output: false,
             latency,
             cadence: CadenceGuard::new(),
+            restart_storm: RestartStorm::new(),
             tail_periods: 0,
             drain_real_frames: 0,
             drain_fade_frames: 0,
@@ -300,6 +302,7 @@ impl OutputState {
                 self.fade_in_remaining = boundary_fade_frames(self.device_rate);
                 self.latency.reset(&self.shared);
                 self.cadence.reset();
+                self.restart_storm.reset();
             }
             Reprime::Reconfigured => {
                 self.controller.reset();
@@ -315,6 +318,7 @@ impl OutputState {
                 self.have_last_output = false;
                 self.latency.reset(&self.shared);
                 self.cadence.reset();
+                self.restart_storm.reset();
                 self.drain_fade_prepared = false;
                 self.tail_periods = 0;
                 self.asrc_tail_pending = false;

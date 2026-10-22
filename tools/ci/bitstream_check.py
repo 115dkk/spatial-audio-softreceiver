@@ -509,7 +509,8 @@ def play_report_problems(document, seconds):
     problems = []
     if not isinstance(document, dict):
         return ["play JSON must be an object"]
-    required = {"endpoint", "codec", "sent_bursts", "sent_frames"}
+    required = {"endpoint", "codec", "sent_bursts", "sent_frames",
+                "period_frames", "late_periods"}
     if not required <= set(document):
         return [f"play JSON is missing {sorted(required - set(document))}"]
     if document.get("endpoint") != 2 or document.get("codec") != "eac3":
@@ -526,6 +527,10 @@ def play_report_problems(document, seconds):
         problems.append(f"play JSON sent_bursts {bursts} != sent_frames {frames}")
     if frames != expected:
         problems.append(f"play JSON sent_frames {frames!r}, expected {expected}")
+    for field in ("period_frames", "late_periods"):
+        value = document.get(field)
+        if not _integer(value) or value < 0:
+            problems.append(f"play JSON {field} must be a nonnegative integer")
     return problems
 
 
@@ -585,36 +590,33 @@ def _write_summary(path, result):
     print(text)
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--ssr-live", required=True, type=Path)
-    parser.add_argument("--ssr-replay", required=True, type=Path)
-    parser.add_argument("--summary", required=True, type=Path)
-    parser.add_argument("--seconds", type=float, default=8.0)
-    args = parser.parse_args(argv)
-    if not math.isfinite(args.seconds) or not 0 < args.seconds <= 3600:
-        parser.error("--seconds must be a positive finite number no greater than 3600")
+def _play_command(args, fixture_path):
+    command = [str(args.ssr_live), "bitstream", "play", "--endpoint", "2",
+               "--codec", "eac3", "--input", str(fixture_path), "--seconds",
+               str(args.seconds), "--json"]
+    if args.period_ms != 0:
+        command.extend(("--period-ms", str(args.period_ms)))
+    return command
 
-    summary_path = args.summary.resolve()
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    artifacts = Path(tempfile.mkdtemp(prefix=summary_path.stem + "-", dir=summary_path.parent))
+
+def _run_attempt(args, fixture_path, source_frames, artifacts, attempt_number):
+    attempt_dir = artifacts / f"attempt-{attempt_number}"
+    attempt_dir.mkdir()
     paths = {
-        "dump": artifacts / "capture.ssrdump",
-        "probe_stdout": artifacts / "probe.stdout.json",
-        "probe_stderr": artifacts / "probe.stderr.log",
-        "record_stdout": artifacts / "record.stdout.log",
-        "record_stderr": artifacts / "record.stderr.log",
-        "play_stdout": artifacts / "play.stdout.json",
-        "play_stderr": artifacts / "play.stderr.log",
-        "inspect_stdout": artifacts / "inspect.stdout.json",
-        "inspect_stderr": artifacts / "inspect.stderr.log",
+        "dump": attempt_dir / "capture.ssrdump",
+        "record_stdout": attempt_dir / "record.stdout.log",
+        "record_stderr": attempt_dir / "record.stderr.log",
+        "play_stdout": attempt_dir / "play.stdout.json",
+        "play_stderr": attempt_dir / "play.stderr.log",
+        "inspect_stdout": attempt_dir / "inspect.stdout.json",
+        "inspect_stderr": attempt_dir / "inspect.stderr.log",
     }
     result = {
-        "seconds": args.seconds,
+        "attempt": attempt_number,
         "artifacts": {key: str(path) for key, path in paths.items()},
-        "fixture": None,
-        "probe": None,
         "play": None,
+        "period_frames": None,
+        "late_periods": None,
         "inspect": None,
         "capture": None,
         "comparison": None,
@@ -622,72 +624,49 @@ def main(argv=None):
         "errors": [],
         "passed": False,
     }
-    record = None
+    record_process = None
     record_stdout = None
     record_stderr = None
+    capture_seconds = args.seconds + 4.0
     try:
-        fixture_path, fixture_data, source_frames = load_fixture()
-        result["fixture"] = {
-            "path": str(fixture_path),
-            "sha256": FIXTURE_SHA256,
-            "bytes": len(fixture_data),
-            "frames": len(source_frames),
-            "frame_bytes": sorted(set(map(len, source_frames))),
-            "sample_rate": 48_000,
-            "channels": 6,
-            "samples_per_frame": 1536,
-        }
-
-        probe_command = [str(args.ssr_live), "bitstream", "probe", "--json"]
-        result["subprocesses"]["probe"] = _run_logged(
-            probe_command, paths["probe_stdout"], paths["probe_stderr"], 60)
-        result["probe"] = _decode_json_file(paths["probe_stdout"], "bitstream probe")
-        probe_errors = probe_problems(result["probe"])
-        result["errors"].extend(probe_errors)
-        if probe_errors:
-            raise RuntimeError("probe validation failed")
-
-        try:
-            paths["dump"].unlink()
-        except FileNotFoundError:
-            pass
-        capture_seconds = args.seconds + 4.0
         record_command = [str(args.ssr_live), "record", "--source", "driver", "--out",
                           str(paths["dump"]), "--seconds", str(capture_seconds)]
         record_stdout = paths["record_stdout"].open("wb")
         record_stderr = paths["record_stderr"].open("wb")
         try:
-            record = subprocess.Popen(record_command, stdout=record_stdout, stderr=record_stderr)
+            record_process = subprocess.Popen(
+                record_command, stdout=record_stdout, stderr=record_stderr)
         except OSError as error:
             raise RuntimeError(f"cannot start {' '.join(record_command)}: {error}") from error
         result["subprocesses"]["record"] = {
             "command": record_command,
             "capture_seconds": capture_seconds,
         }
-        _wait_record_ready(record, paths["dump"])
+        _wait_record_ready(record_process, paths["dump"])
 
-        play_command = [str(args.ssr_live), "bitstream", "play", "--endpoint", "2",
-                        "--codec", "eac3", "--input", str(fixture_path), "--seconds",
-                        str(args.seconds), "--json"]
+        play_command = _play_command(args, fixture_path)
         result["subprocesses"]["play"] = _run_logged(
             play_command, paths["play_stdout"], paths["play_stderr"], args.seconds + 30)
         result["play"] = _decode_json_file(paths["play_stdout"], "bitstream play")
+        if isinstance(result["play"], dict):
+            result["period_frames"] = result["play"].get("period_frames")
+            result["late_periods"] = result["play"].get("late_periods")
         play_errors = play_report_problems(result["play"], args.seconds)
         result["errors"].extend(play_errors)
-        if record.poll() is not None:
+        if record_process.poll() is not None:
             result["errors"].append(
-                f"record exited before playback completed with {record.returncode}")
-        if play_errors or result["errors"]:
+                f"record exited before playback completed with {record_process.returncode}")
+        if result["errors"]:
             raise RuntimeError("playback validation failed")
 
         try:
-            record_returncode = record.wait(timeout=capture_seconds + 15)
+            record_returncode = record_process.wait(timeout=capture_seconds + 15)
         except subprocess.TimeoutExpired as error:
             raise RuntimeError("record did not finish before its timeout") from error
         result["subprocesses"]["record"]["returncode"] = record_returncode
         if record_returncode != 0:
             raise RuntimeError(f"record exited with {record_returncode}")
-        record = None
+        record_process = None
         record_stdout.close()
         record_stderr.close()
         record_stdout = record_stderr = None
@@ -710,7 +689,8 @@ def main(argv=None):
                 result["errors"].append(f"E-AC-3 segment {index}: {error}")
         result["capture"]["bursts"] = len(payloads)
         if not capture["data_bytes"]:
-            result["errors"].append("capture has no endpoint 2 data recorded under E-AC-3 format")
+            result["errors"].append(
+                "capture has no endpoint 2 data recorded under E-AC-3 format")
         if not payloads:
             result["errors"].append("capture has no complete E-AC-3 IEC 61937 bursts")
         if not result["errors"]:
@@ -721,14 +701,13 @@ def main(argv=None):
                 result["errors"].append(str(error))
     except Exception as error:
         message = str(error) or type(error).__name__
-        if message not in result["errors"] and message not in (
-                "probe validation failed", "playback validation failed"):
+        if message not in result["errors"] and message != "playback validation failed":
             result["errors"].append(message)
     finally:
-        if record is not None and record.poll() is None:
-            record.kill()
+        if record_process is not None and record_process.poll() is None:
+            record_process.kill()
             try:
-                record.wait(timeout=10)
+                record_process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 result["errors"].append("record could not be reaped after kill")
         if record_stdout is not None:
@@ -736,6 +715,97 @@ def main(argv=None):
         if record_stderr is not None:
             record_stderr.close()
         result["passed"] = not result["errors"]
+    return result
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--ssr-live", required=True, type=Path)
+    parser.add_argument("--ssr-replay", required=True, type=Path)
+    parser.add_argument("--summary", required=True, type=Path)
+    parser.add_argument("--seconds", type=float, default=8.0)
+    parser.add_argument("--period-ms", type=float, default=10.0)
+    args = parser.parse_args(argv)
+    if not math.isfinite(args.seconds) or not 0 < args.seconds <= 3600:
+        parser.error("--seconds must be a positive finite number no greater than 3600")
+    if not math.isfinite(args.period_ms) or not 0 <= args.period_ms <= 100:
+        parser.error("--period-ms must be a finite number from 0 to 100")
+
+    summary_path = args.summary.resolve()
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    artifacts = Path(tempfile.mkdtemp(prefix=summary_path.stem + "-", dir=summary_path.parent))
+    probe_paths = {
+        "probe_stdout": artifacts / "probe.stdout.json",
+        "probe_stderr": artifacts / "probe.stderr.log",
+    }
+    result = {
+        "seconds": args.seconds,
+        "period_ms": args.period_ms,
+        "artifacts": {key: str(path) for key, path in probe_paths.items()},
+        "fixture": None,
+        "probe": None,
+        "play": None,
+        "period_frames": None,
+        "late_periods": None,
+        "inspect": None,
+        "capture": None,
+        "comparison": None,
+        "subprocesses": {},
+        "attempts": [],
+        "errors": [],
+        "passed": False,
+    }
+    try:
+        fixture_path, fixture_data, source_frames = load_fixture()
+        result["fixture"] = {
+            "path": str(fixture_path),
+            "sha256": FIXTURE_SHA256,
+            "bytes": len(fixture_data),
+            "frames": len(source_frames),
+            "frame_bytes": sorted(set(map(len, source_frames))),
+            "sample_rate": 48_000,
+            "channels": 6,
+            "samples_per_frame": 1536,
+        }
+
+        probe_command = [str(args.ssr_live), "bitstream", "probe", "--json"]
+        result["subprocesses"]["probe"] = _run_logged(
+            probe_command, probe_paths["probe_stdout"], probe_paths["probe_stderr"], 60)
+        result["probe"] = _decode_json_file(
+            probe_paths["probe_stdout"], "bitstream probe")
+        probe_errors = probe_problems(result["probe"])
+        result["errors"].extend(probe_errors)
+        if probe_errors:
+            raise RuntimeError("probe validation failed")
+
+        for attempt_number in (1, 2):
+            attempt = _run_attempt(
+                args, fixture_path, source_frames, artifacts, attempt_number)
+            result["attempts"].append(attempt)
+            for field in ("play", "period_frames", "late_periods", "inspect",
+                          "capture", "comparison"):
+                result[field] = attempt[field]
+            result["artifacts"].update(attempt["artifacts"])
+            result["subprocesses"].update(attempt["subprocesses"])
+            if attempt["passed"]:
+                result["errors"] = []
+                break
+            if (not _integer(attempt["late_periods"])
+                    or attempt["late_periods"] <= 0):
+                result["errors"] = list(attempt["errors"])
+                break
+            if attempt_number == 2:
+                result["errors"] = list(attempt["errors"])
+                result["errors"].append(
+                    f"player was late by {attempt['late_periods']} periods; "
+                    "the capture contains stale buffer contents")
+        result["passed"] = not result["errors"] and bool(
+            result["attempts"] and result["attempts"][-1]["passed"])
+    except Exception as error:
+        message = str(error) or type(error).__name__
+        if message not in result["errors"] and message != "probe validation failed":
+            result["errors"].append(message)
+    finally:
         try:
             _write_summary(summary_path, result)
         except OSError as error:

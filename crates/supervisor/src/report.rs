@@ -198,6 +198,7 @@ impl SessionReport {
             "clock_requested": request.clock_requested,
             "output_mode_requested": request.output_mode_requested,
             "output_sample_rate": status.output_rate,
+            "output_period_frames": status.output_period_frames,
             "trim_available": status.trim_available,
         })
     }
@@ -209,7 +210,36 @@ mod tests {
 
     use ssr_types::{ChainErrorCounts, ChainErrorKind};
 
-    use super::chain_errors_json;
+    use super::{RequestFields, SessionReport, chain_errors_json};
+
+    #[test]
+    fn report_includes_the_current_output_period_frames() {
+        let status = ssr_types::EngineStatus {
+            output_period_frames: 960,
+            ..Default::default()
+        };
+        let report = SessionReport {
+            seconds: 1.0,
+            engine: engine::StopReport {
+                final_status: status,
+                ..Default::default()
+            },
+            figures: Default::default(),
+            output_kind: engine::OutputKind::Headphones,
+            output_channels: 2,
+            output_channel_mask: 0x3,
+            recorder_lost_bytes: 0,
+            driver: None,
+            driver_stats_error: None,
+        };
+        let json = report.to_json(&RequestFields {
+            source: "fixture".to_owned(),
+            clock_requested: "auto".to_owned(),
+            output_mode_requested: "exclusive".to_owned(),
+            direct_layouts: Vec::new(),
+        });
+        assert_eq!(json["output_period_frames"], 960);
+    }
 
     #[test]
     fn scene_figures_keep_first_seen_sources_and_ignore_room_motion() {

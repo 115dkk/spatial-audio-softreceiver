@@ -377,6 +377,7 @@ mod endpoint_tests {
             engine: engine::StopReport {
                 final_status: ssr_types::EngineStatus {
                     output_rate: 44_100,
+                    output_period_frames: 441,
                     trim_available: true,
                     ..Default::default()
                 },
@@ -417,6 +418,7 @@ mod endpoint_tests {
                     assert_eq!(fields["clock_requested"], clock_name);
                     assert_eq!(fields["output_mode_requested"], mode);
                     assert_eq!(fields["output_sample_rate"], 44_100);
+                    assert_eq!(fields["output_period_frames"], 441);
                     assert_eq!(fields["trim_available"], true);
                     assert_eq!(fields["direct_layouts"], serde_json::json!([]));
                 }
@@ -1021,6 +1023,9 @@ fn localized_command(language: Language) -> clap::Command {
                         })
                         .mut_arg("seconds", |arg| {
                             arg.help(live::bitstream_seconds_help(language))
+                        })
+                        .mut_arg("period_ms", |arg| {
+                            arg.help(live::play_period_ms_help(language))
                         })
                         .mut_arg("json", |arg| arg.help(live::devices_json_help(language)))
                 })

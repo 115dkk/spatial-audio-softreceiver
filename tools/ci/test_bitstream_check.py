@@ -1,5 +1,6 @@
 """Linux unit tests for bitstream_check; no Windows device or third-party modules."""
 
+import argparse
 import copy
 import json
 from pathlib import Path
@@ -458,6 +459,72 @@ class FormatAndDumpTests(unittest.TestCase):
             self.assertTrue(any(phrase in problem for problem in problems), problems)
 
 
+class AttemptPolicyTests(unittest.TestCase):
+    @staticmethod
+    def attempt(passed, late_periods, error="capture mismatch"):
+        return {
+            "artifacts": {}, "play": {"late_periods": late_periods},
+            "period_frames": 1920, "late_periods": late_periods,
+            "inspect": {}, "capture": {}, "comparison": None,
+            "subprocesses": {}, "errors": [] if passed else [error],
+            "passed": passed,
+        }
+
+    def run_main(self, attempts, period_ms=10.0):
+        with tempfile.TemporaryDirectory() as directory:
+            summary = Path(directory) / "summary.json"
+            fixture = Path(directory) / "fixture.eac3"
+            fixture.write_bytes(b"fixture")
+            fixture_result = (fixture, b"fixture", [b"frame"])
+            with (mock.patch.object(check, "load_fixture", return_value=fixture_result),
+                  mock.patch.object(check, "_run_logged", return_value={
+                      "command": ["live", "bitstream", "probe"], "returncode": 0}),
+                  mock.patch.object(check, "_decode_json_file", return_value=valid_probe()),
+                  mock.patch.object(check, "_run_attempt", side_effect=attempts) as run_attempt,
+                  mock.patch("builtins.print")):
+                returncode = check.main([
+                    "--ssr-live", "live", "--ssr-replay", "replay",
+                    "--summary", str(summary), "--period-ms", str(period_ms)])
+            return returncode, json.loads(summary.read_text(encoding="utf-8")), run_attempt
+
+    def test_failed_late_attempt_retries_once_and_second_success_passes(self):
+        returncode, document, run_attempt = self.run_main([
+            self.attempt(False, 1), self.attempt(True, 0)])
+        self.assertEqual(returncode, 0)
+        self.assertEqual(run_attempt.call_count, 2)
+        self.assertTrue(document["passed"])
+        self.assertEqual(len(document["attempts"]), 2)
+        self.assertEqual(document["late_periods"], 0)
+
+    def test_failed_on_time_attempt_does_not_retry(self):
+        returncode, document, run_attempt = self.run_main([self.attempt(False, 0)])
+        self.assertEqual(returncode, 1)
+        self.assertEqual(run_attempt.call_count, 1)
+        self.assertEqual(document["errors"], ["capture mismatch"])
+
+    def test_two_failed_late_attempts_report_stale_buffer_failure(self):
+        returncode, document, run_attempt = self.run_main([
+            self.attempt(False, 1), self.attempt(False, 2)])
+        self.assertEqual(returncode, 1)
+        self.assertEqual(run_attempt.call_count, 2)
+        self.assertTrue(any("late by 2 periods" in error and "stale buffer" in error
+                            for error in document["errors"]), document["errors"])
+
+    def test_success_with_late_periods_passes_without_retry(self):
+        returncode, document, run_attempt = self.run_main([self.attempt(True, 3)])
+        self.assertEqual(returncode, 0)
+        self.assertEqual(run_attempt.call_count, 1)
+        self.assertEqual(document["late_periods"], 3)
+
+    def test_zero_period_omits_player_period_argument(self):
+        args = argparse.Namespace(ssr_live=Path("live"), seconds=8.0, period_ms=0.0)
+        command = check._play_command(args, Path("fixture.eac3"))
+        self.assertNotIn("--period-ms", command)
+        args.period_ms = 10.0
+        self.assertEqual(check._play_command(args, Path("fixture.eac3"))[-2:],
+                         ["--period-ms", "10.0"])
+
+
 class MainFailureTests(unittest.TestCase):
     def test_play_failure_kills_recorder_and_preserves_summary(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -512,7 +579,7 @@ class MainFailureTests(unittest.TestCase):
 class ReportTests(unittest.TestCase):
     def test_play_report_requires_exact_counts(self):
         report = {"endpoint": 2, "codec": "eac3", "sent_bursts": 250,
-                  "sent_frames": 250}
+                  "sent_frames": 250, "period_frames": 1920, "late_periods": 0}
         self.assertEqual(check.play_report_problems(report, 8), [])
         report["sent_bursts"] = 248
         report["sent_frames"] = 249
@@ -521,6 +588,17 @@ class ReportTests(unittest.TestCase):
         self.assertTrue(any("!=" in problem for problem in problems), problems)
         self.assertTrue(any("expected 250" in problem for problem in problems), problems)
         self.assertTrue(any("error_hr" in problem for problem in problems), problems)
+
+    def test_play_report_requires_nonnegative_integer_timing_fields(self):
+        report = {"endpoint": 2, "codec": "eac3", "sent_bursts": 250,
+                  "sent_frames": 250, "period_frames": 1920, "late_periods": 0}
+        for field, value in (("period_frames", -1), ("period_frames", 1.0),
+                             ("late_periods", -1), ("late_periods", True)):
+            with self.subTest(field=field, value=value):
+                changed = dict(report)
+                changed[field] = value
+                self.assertTrue(any(field in problem for problem in
+                                    check.play_report_problems(changed, 8)))
 
     def test_inspect_requires_empty_errors_and_zero_loss(self):
         report = {"errors": [], "lost_bytes": 0, "recorder_lost_bytes": 0,

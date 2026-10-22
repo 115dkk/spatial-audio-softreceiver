@@ -114,6 +114,7 @@ fn dump_session_report_keeps_the_live_cli_key_contract() {
         "clock_requested",
         "output_mode_requested",
         "output_sample_rate",
+        "output_period_frames",
         "trim_available",
     ]
     .into_iter()
