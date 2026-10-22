@@ -16,7 +16,7 @@ use ssr_types::{
     BitstreamCodec, BitstreamFormat, Direction, Layout, MAX_OBJECTS, Object, PcmFormat, Position,
     SampleType, SceneBlock, SourceFormat,
 };
-use streamring::{Consumer, Geometry, InProcessEvent, Producer, RegionBuf};
+use vst_audio_ring::{Consumer, Geometry, InProcessEvent, Producer, RegionBuf, SampleFormat};
 
 #[global_allocator]
 static ALLOCATOR: AllocDisabler = AllocDisabler;
@@ -533,6 +533,7 @@ fn upmix_stages_do_not_allocate() {
     // Endpoint 1's upmixer is a ring whose host runs on this thread between
     // records, outside the guard.
     let geometry = Geometry {
+        sample_format: SampleFormat::F32,
         lanes: 1,
         input_channels: 2,
         output_channels: 6,

@@ -28,14 +28,15 @@ name: CI
 #             under full page heap) that must end without faults, restarts or
 #             underruns
 #   plughost  Windows Server 2022 and 2025 (x64) and Windows 11 (ARM64): the
-#             plugin host process (ssr-plughost) loads the repository's own
-#             test plugin (plughost-testplugin, never shipped) as VST 2 and as
-#             VST 3, and the #[ignore]d tests drive it end to end: processing
-#             through the shared-memory ring, state, editor, crash, hang and
-#             NaN (ADR 0021, 0035). On x64 it also loads a third-party VST 3
+#             plugin host we ship (ssr-plughost, vst-audio's worker) runs
+#             vst-audio's #[ignore]d native tests from the exact source of the
+#             vst-audio release Cargo.lock locks: vst-audio's test plugin
+#             (never shipped) as VST 2 and as VST 3, processing through the
+#             shared-memory ring, state, editor, crash, hang and NaN (ADR
+#             0021, 0035, 0039). On x64 it also loads a third-party VST 3
 #             upmixer kept encrypted in tools/ci/private/, decrypted into the
 #             runner's temp folder only when the secret is there; it is never
-#             uploaded, cached or logged. Nothing is downloaded.
+#             uploaded, cached or logged.
 #   docs      rustdoc with warnings denied (broken intra-doc links included),
 #             for Linux and for the Windows target
 #   miri      the pure parsing crates under Miri
@@ -669,7 +670,7 @@ jobs:
       matrix:
         os: [windows-2022, windows-2025, windows-11-arm]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
@@ -677,9 +678,40 @@ jobs:
         with:
           cache-key: plughost
 
-      - name: Build the plugin host and the test plugin
+      - name: Build the plugin host we ship
         shell: bash
-        run: cargo build --locked -p ssr-plughost -p plughost-testplugin
+        run: cargo build --locked -p ssr-plughost
+
+      # The tests and the test plugin are vst-audio's (ADR 0039). They come
+      # from the commit the locked crates.io release was packaged from (the
+      # worker runtime's .cargo_vcs_info.json; vst-audio publishes all its
+      # crates from one commit), so they match the worker built above.
+      - name: Fetch the vst-audio source of the locked release
+        id: vst_audio
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n '/^name = "vst-audio-worker-runtime"$/{n;s/^version = "\(.*\)"$/\1/p;}' Cargo.lock)"
+          test -n "$version"
+          cargo_home="$(cygpath -u "${CARGO_HOME:-$HOME/.cargo}")"
+          info="$(ls "$cargo_home"/registry/src/*/"vst-audio-worker-runtime-$version/.cargo_vcs_info.json")"
+          sha="$(sed -n 's/.*"sha1": *"\([0-9a-f]\{40\}\)".*/\1/p' "$info")"
+          test -n "$sha"
+          dir="$RUNNER_TEMP/vst-audio"
+          git init --quiet "$dir"
+          git -C "$dir" fetch --quiet --depth 1 https://github.com/115dkk/vst-audio "$sha"
+          git -C "$dir" checkout --quiet FETCH_HEAD
+          grep -qx "version = \"$version\"" "$dir/Cargo.toml"
+          echo "vst-audio $version at $sha"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      # One target directory, so the cache covers both workspaces.
+      - name: Build vst-audio's test plugin
+        shell: bash
+        working-directory: ${{ steps.vst_audio.outputs.dir }}
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: cargo build --locked -p vst-audio-testplugin
 
       # The third-party upmixer is x64 only and is not open source: it stays
       # in $RUNNER_TEMP, outside the checkout and the cache, and nothing
@@ -697,19 +729,22 @@ jobs:
       # processes, and the crash test counts failures over wall-clock time.
       # The same test DLL carries both entry points; the VST 3 copy only
       # needs the bundle-less .vst3 name.
-      - name: Plugin host end to end (ignored tests)
+      - name: Plugin host end to end (vst-audio's ignored native tests)
         shell: bash
+        working-directory: ${{ steps.vst_audio.outputs.dir }}
         env:
-          SSR_THIRD_PARTY_VST3: ${{ steps.third_party.outputs.path }}
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+          VST_AUDIO_THIRD_PARTY_VST3: ${{ steps.third_party.outputs.path }}
         run: |
           set -euo pipefail
-          export SSR_PLUGHOST_EXE="$PWD/target/debug/ssr-plughost.exe"
-          export SSR_TEST_PLUGIN_VST2="$PWD/target/debug/ssr_testplugin.dll"
-          export SSR_TEST_PLUGIN_VST3="$PWD/target/debug/ssr_testplugin.vst3"
-          cp "$SSR_TEST_PLUGIN_VST2" "$SSR_TEST_PLUGIN_VST3"
-          test -f "$SSR_PLUGHOST_EXE"
-          if [ -z "$SSR_THIRD_PARTY_VST3" ]; then unset SSR_THIRD_PARTY_VST3; fi
-          cargo test --locked -p plughost --test windows -- --ignored --test-threads=1
+          debug="$(cygpath -u "$CARGO_TARGET_DIR")/debug"
+          export VST_AUDIO_WORKER="$debug/ssr-plughost.exe"
+          export VST_AUDIO_TEST_VST2="$debug/vst_audio_testplugin.dll"
+          export VST_AUDIO_TEST_VST3="$debug/vst_audio_testplugin.vst3"
+          cp "$VST_AUDIO_TEST_VST2" "$VST_AUDIO_TEST_VST3"
+          test -f "$VST_AUDIO_WORKER"
+          if [ -z "$VST_AUDIO_THIRD_PARTY_VST3" ]; then unset VST_AUDIO_THIRD_PARTY_VST3; fi
+          cargo test --locked -p vst-audio --test native -- --ignored --test-threads=1
 
       - name: Remove the decrypted third-party upmixer
         if: always() && runner.arch == 'X64'

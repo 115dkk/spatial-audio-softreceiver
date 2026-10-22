@@ -79,3 +79,11 @@ Windows 공간 음향이 MAT 2.x 안에 PCM을 담는 배치는 공개 문서가
 
 - **공간 음향 클라이언트(19):** `IMMDevice::Activate`로 `ISpatialAudioClient`를 얻습니다. `SpatialAudioObjectRenderStreamActivationParams`를 `VT_BLOB` `PROPVARIANT`로 넘겨 스트림을 열고, 이벤트마다 정적·동적 소리의 버퍼를 채웁니다. 모두 `crates/ssr-sys/src/spatial.rs` 한 파일에 있습니다.
 - **나머지는 Linux에서 시험합니다.** 신호 수열, 일정, 진실 파일 구조는 `decode::mat_probe`에 있습니다. 분석기 `ssr-replay mat-analyze`는 `cfg(windows)` 밖에 두었습니다. 둘 다 합성 배치로 시험합니다.
+
+## 2026-10-22 덧붙임: `plughost` 계열이 빠짐
+
+ADR 0039로 플러그인 호스팅을 crates.io의 vst-audio에 맡깁니다. `plughost-sys`(181)와 `plughost-testplugin`(126)이 `unsafe-budget.toml`에서 빠지고, 격리 크레이트는 `ssr-sys`, `ssr-setup-sys`, `asio-sys` 셋이 됩니다. `upmix-sys`는 여전히 ADR 0020의 조건을 채울 때만 만듭니다.
+
+- **Windows 의존성 게이트:** 허용 목록에서 `plughost-sys`를 뺍니다.
+- **링크 규칙:** `plughost-sys`와 `plughost`의 규칙 대신, 플러그인을 적재하는 `vst-audio-worker-runtime`과 `vst-audio-worker-sys`는 `apps/ssr-plughost`만, `vst-audio`와 `vst-audio-transport-sys`는 앱만 링크합니다. 엔진은 unsafe가 없는 `vst-audio-ring`만 씁니다.
+- **독립성:** `streamring`과 `ssr-plughost`는 `ssr-*`에 의존하지 않습니다.

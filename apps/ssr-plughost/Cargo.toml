@@ -11,4 +11,4 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-plughost.workspace = true
+vst-audio-worker-runtime.workspace = true

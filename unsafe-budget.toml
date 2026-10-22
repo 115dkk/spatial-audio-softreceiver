@@ -30,13 +30,6 @@ ssr-sys = 179
 # one wrapper in `win.rs`.
 # ASIO registration adds five registry operations (ADR 0025).
 ssr-setup-sys = 57
-# Plugin isolation: previous 84 + VST 3 module/COM calls and host callbacks (98),
-# less the temporary ring producer (1) that streamring's owned Publisher and
-# `RegionMemory for SharedRegion` replaced.
-# Part B budget; lead records the ADR 0022 addendum at integration.
-plughost-sys = 181
-# Test only: VST 2 (22) + VST 3 factory, component/controller/view and buffers (104).
-plughost-testplugin = 126
 # ASIO SDK ABI, in-process COM server, callback buffers, Windows transport and
 # the optional DLL-path probe (ADR 0022, 0025). Count includes SDK function types.
 # Audit fixes: native worker/module lifetime, deferred COM reclamation, combined

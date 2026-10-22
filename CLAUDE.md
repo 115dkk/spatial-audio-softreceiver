@@ -4,9 +4,10 @@
 
 ## 지킬 것
 
-- unsafe는 격리 크레이트(`unsafe-budget.toml`에 오른 `-sys` 크레이트, 지금은 `ssr-sys`, `ssr-setup-sys`, `plughost-sys`, 시험 전용 `plughost-testplugin`)에만 둡니다. 격리 크레이트를 뺀 새 크레이트 루트에는 `#![forbid(unsafe_code)]`를 걸고 Cargo.toml에 `[lints] workspace = true`를 둡니다. 격리 크레이트는 `ssr-sys`처럼 `#![deny(unsafe_code)]`와 자기 lint 표를 씁니다(ADR 0022). 숫자를 올리거나 격리 크레이트를 더하려면 ADR이 먼저입니다. `asio-sys`, `upmix-sys`는 ADR 0022가 허용했고, 처음 만드는 PR에서 숫자와 게이트를 함께 정합니다.
-- Windows API 의존성(`windows`, `windows-sys`, `wasapi`)은 `ssr-sys`, `ssr-setup-sys`, `plughost-sys`만 가집니다(`asio-sys`가 생기면 그 크레이트도). `plughost-sys`는 `plughost`(Windows에서만)와 시험용 플러그인만 링크하고, `plughost`는 앱만 링크합니다(ADR 0022, 0035). `ssr-setup-sys`는 관리자 작업만 담고 `apps/ssr-setup`만 링크합니다(ADR 0032). `engine` 이하는 Linux에서 빌드되고 테스트되어야 합니다.
-- 외부 플러그인(VST 2, VST 3)은 엔진 프로세스에서 돌리지 않고 `ssr-plughost`에서만 돌립니다(ADR 0021). `streamring`과 `plughost` 계열 크레이트는 `ssr-*`에 의존하지 않습니다. 저장소의 시험용 플러그인(`plughost-testplugin`)은 설치본에 싣지 않습니다.
+- unsafe는 격리 크레이트(`unsafe-budget.toml`에 오른 `-sys` 크레이트, 지금은 `ssr-sys`, `ssr-setup-sys`, `asio-sys`)에만 둡니다. 격리 크레이트를 뺀 새 크레이트 루트에는 `#![forbid(unsafe_code)]`를 걸고 Cargo.toml에 `[lints] workspace = true`를 둡니다. 격리 크레이트는 `ssr-sys`처럼 `#![deny(unsafe_code)]`와 자기 lint 표를 씁니다(ADR 0022). 숫자를 올리거나 격리 크레이트를 더하려면 ADR이 먼저입니다. `upmix-sys`는 ADR 0022가 허용했고, 처음 만드는 PR에서 숫자와 게이트를 함께 정합니다.
+- Windows API 의존성(`windows`, `windows-sys`, `wasapi`)은 첫 파티 크레이트 가운데 `ssr-sys`, `ssr-setup-sys`, `asio-sys`만 가집니다(ADR 0022). `ssr-setup-sys`는 관리자 작업만 담고 `apps/ssr-setup`만 링크합니다(ADR 0032). `engine` 이하는 Linux에서 빌드되고 테스트되어야 합니다.
+- 외부 플러그인(VST 2, VST 3)은 엔진 프로세스에서 돌리지 않고 `ssr-plughost`에서만 돌립니다(ADR 0021). 호스팅은 crates.io의 vst-audio이고 판은 `Cargo.lock`이 정합니다(ADR 0039). 플러그인을 적재하는 `vst-audio-worker-runtime`, `vst-audio-worker-sys`는 `apps/ssr-plughost`만, `vst-audio`는 앱만 링크하고, 엔진은 `vst-audio-ring`만 씁니다. `streamring`과 `ssr-plughost`는 `ssr-*`에 의존하지 않습니다.
+- 호스팅(워커, 프로세스와 Job, 파이프, 링, 시한과 실패 판단, VST 어댑터, 편집기, 상태 저장)을 고칠 일은 vst-audio 저장소에서 고치고, crates.io에 나온 뒤 여기서 `Cargo.lock`의 판을 올립니다. `[patch]`나 git 의존성으로 덮어써 커밋하지 않습니다. 두 저장소를 함께 고치는 동안 붙이는 법은 ADR 0039에 있습니다. 시험용 플러그인(`vst-audio-testplugin`)은 CI가 그 판의 vst-audio 태그에서 빌드하고, 설치본에 싣지 않습니다.
 - ASIO SDK 파일은 저장소에 넣지 않고 빌드 때 받아 SHA-256으로 고정합니다. EqualizerAPO-XT의 ASIO 래퍼에서 옮긴 커밋에는 원본 파일과 커밋을 적습니다(ADR 0025).
 - 라이선스: 소스는 MIT입니다. ASIO SDK에 닿는 코드는 `asio-sys`에만 두고 파일 머리에 `// SPDX-License-Identifier: GPL-3.0-or-later`를 적습니다(SDK 정의를 손으로 옮긴 파일은 `GPL-3.0-only`). 다른 크레이트에는 GPL 코드를 들이지 않습니다(ADR 0003, 0025).
 - 기능을 더하면 `features.toml`에 등록하고, `implemented`로 표시할 때는 실제로 있는 테스트를 가리킵니다.

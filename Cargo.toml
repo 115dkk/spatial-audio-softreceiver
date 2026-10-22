@@ -30,6 +30,14 @@ ssr-i18n = { path = "crates/ssr-i18n" }
 ssr-abi = { path = "crates/ssr-abi" }
 bitstream = { path = "crates/bitstream" }
 streamring = { path = "crates/streamring" }
+# Plugin hosting is the vst-audio crates from crates.io (ADR 0039): the app
+# links vst-audio's application side, the engine only vst-audio-ring, and
+# ssr-plughost is vst-audio's worker. vst-audio pins its own crates exactly,
+# so they all resolve to the one version Cargo.lock records.
+vst-audio = "0.1.1"
+vst-audio-protocol = "0.1.1"
+vst-audio-ring = "0.1.1"
+vst-audio-worker-runtime = "0.1.1"
 asio-proto = { path = "crates/asio-proto" }
 asio-sys = { path = "crates/asio-sys" }
 decode = { path = "crates/decode" }
@@ -43,10 +51,6 @@ supervisor = { path = "crates/supervisor" }
 ssr-guard = { path = "apps/ssr-guard" }
 ssr-sys = { path = "crates/ssr-sys" }
 ssr-setup-sys = { path = "crates/ssr-setup-sys" }
-plughost-proto = { path = "crates/plughost-proto" }
-plughost-sys = { path = "crates/plughost-sys" }
-plughost = { path = "crates/plughost" }
-vst3 = "=0.3.0"
 
 windows = { version = "0.62", features = [
     "Data_Xml_Dom",

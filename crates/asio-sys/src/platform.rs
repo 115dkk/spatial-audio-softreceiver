@@ -2,7 +2,8 @@
 // Naming/launch adaptation: EqualizerAPO-XT asio/HostProtocol.h,
 // asio/AsioRegistration.cpp and asio/Clock.h, commit
 // 3a6a213cf83a0606f00b8cce03b6781ee48d8c03 (115dkk, authorized MIT port).
-// Atomic view isolation follows this repository's plughost-sys mapping/events.
+// Atomic view isolation follows the mapping/events of plughost-sys (removed by
+// ADR 0039; its successor is vst-audio-transport-sys).
 #![allow(unsafe_code)]
 use asio_proto::{CONTROL_BYTES, CONTROL_NAME, CONTROL_WORDS, Control, ControlMemory};
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};

@@ -916,6 +916,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-queue"
+version = "0.3.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03e8bd762f7479489c70ed6c768ddca99d7296857de437a68dcb2a94365b3fae"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crossbeam-utils"
 version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1316,6 +1325,7 @@ dependencies = [
  "streamring",
  "thiserror 2.0.21",
  "toml 1.1.8+spec-1.1.0",
+ "vst-audio-ring",
 ]
 
 [[package]]
@@ -1667,6 +1677,16 @@ checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
  "typenum",
  "version_check",
+]
+
+[[package]]
+name = "gethostname"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bd49230192a3797a9a4d6abe9b3eed6f7fa4c8a8a4947977c6f80025f92cbd8"
+dependencies = [
+ "rustix",
+ "windows-link",
 ]
 
 [[package]]
@@ -3095,40 +3115,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "plughost"
-version = "0.24.1"
-dependencies = [
- "clap",
- "plughost-proto",
- "plughost-sys",
- "streamring",
- "thiserror 2.0.21",
- "vst3",
-]
-
-[[package]]
-name = "plughost-proto"
-version = "0.24.1"
-
-[[package]]
-name = "plughost-sys"
-version = "0.24.1"
-dependencies = [
- "streamring",
- "thiserror 2.0.21",
- "vst3",
- "windows",
-]
-
-[[package]]
-name = "plughost-testplugin"
-version = "0.24.1"
-dependencies = [
- "plughost-sys",
- "vst3",
-]
-
-[[package]]
 name = "png"
 version = "0.17.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4041,8 +4027,6 @@ name = "spatial-softreceiver"
 version = "0.24.1"
 dependencies = [
  "engine",
- "plughost",
- "plughost-proto",
  "serde",
  "serde_json",
  "speakers",
@@ -4057,6 +4041,8 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-single-instance",
  "velopack",
+ "vst-audio",
+ "vst-audio-protocol",
 ]
 
 [[package]]
@@ -4183,7 +4169,7 @@ dependencies = [
 name = "ssr-plughost"
 version = "0.24.1"
 dependencies = [
- "plughost",
+ "vst-audio-worker-runtime",
 ]
 
 [[package]]
@@ -4191,6 +4177,7 @@ name = "ssr-policy"
 version = "0.24.1"
 dependencies = [
  "serde",
+ "serde_json",
  "toml 1.1.8+spec-1.1.0",
 ]
 
@@ -5364,6 +5351,82 @@ dependencies = [
 ]
 
 [[package]]
+name = "vst-audio"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c513ae20484fa90a3e5bf042b0ba06ce80b9c545e07c7dced6dd8403e944b12"
+dependencies = [
+ "rtrb",
+ "thiserror 2.0.21",
+ "vst-audio-protocol",
+ "vst-audio-ring",
+ "vst-audio-transport-sys",
+]
+
+[[package]]
+name = "vst-audio-protocol"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd2eba49e0b7680cbf96ed43b6429aa879c83af3fa323b592bfb127bc20917b1"
+dependencies = [
+ "thiserror 2.0.21",
+ "vst-audio-ring",
+ "vst3",
+]
+
+[[package]]
+name = "vst-audio-ring"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26221e80cc0fc5bf36c75475e18bc3072d163fa2b1dabc7ffd2a0b6e9fdbc4ee"
+
+[[package]]
+name = "vst-audio-transport-sys"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78be9ff970381d6f11c3850dc79bd42807f614e855b0514b6f523f76c93f19c1"
+dependencies = [
+ "libc",
+ "tempfile",
+ "thiserror 2.0.21",
+ "vst-audio-ring",
+ "windows",
+]
+
+[[package]]
+name = "vst-audio-worker-runtime"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29177ea1873960cfaa5c3474f4a539b91cf50a076321364ab497301ae13dd72b"
+dependencies = [
+ "clap",
+ "thiserror 2.0.21",
+ "vst-audio-protocol",
+ "vst-audio-ring",
+ "vst-audio-transport-sys",
+ "vst-audio-worker-sys",
+]
+
+[[package]]
+name = "vst-audio-worker-sys"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5e5cf98bfc819eb6732a36e91e97e17e30bd0f67c5c152f52ab4580772387d7"
+dependencies = [
+ "crossbeam-queue",
+ "libc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "thiserror 2.0.21",
+ "vst-audio-protocol",
+ "vst-audio-ring",
+ "vst3",
+ "windows",
+ "x11rb",
+]
+
+[[package]]
 name = "vst3"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6173,6 +6236,23 @@ dependencies = [
  "once_cell",
  "pkg-config",
 ]
+
+[[package]]
+name = "x11rb"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9993aa5be5a26815fe2c3eacfc1fde061fc1a1f094bf1ad2a18bf9c495dd7414"
+dependencies = [
+ "gethostname",
+ "rustix",
+ "x11rb-protocol",
+]
+
+[[package]]
+name = "x11rb-protocol"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "xml"

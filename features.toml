@@ -3,6 +3,10 @@
 #   * an id repeats, or a kind or status is not one of the values below,
 #   * a feature marked "implemented" lists no tests,
 #   * a listed test ("crate-name::test_fn") does not exist in that crate.
+# A test's crate is a first-party crate, or one of the vst-audio crates
+# Cargo.lock locks (EXTERNAL_TEST_CRATES in crates/ssr-policy): those are found
+# in that release's source through `cargo metadata`, and ci.yml's plughost job
+# runs them against the ssr-plughost.exe we ship (ADR 0039).
 # Marking a feature implemented without a verification test is a CI failure by
 # design. Statuses: planned, partial, implemented.
 
@@ -91,8 +95,8 @@ id = "policy.plugin_protocol_independence"
 kind = "policy"
 milestone = "M4"
 status = "implemented"
-tests = ["ssr-policy::streamring_and_plughost_crates_stay_independent_of_ssr_crates"]
-note = "streamring and plughost-* remain reusable protocol crates and may not depend on ssr-* crates (ADR 0021)"
+tests = ["ssr-policy::streamring_and_the_plugin_worker_stay_independent_of_ssr_crates"]
+note = "streamring and the plugin worker (ssr-plughost) may not depend on ssr-* crates (ADR 0021, 0039)"
 
 # ---- Contract (M0) ----
 
@@ -939,7 +943,7 @@ tests = [
   "engine::upmix_stages_do_not_allocate",
   "engine::upmixer_changes_are_drained_without_allocating",
 ]
-note = "ADR 0021 and ADR 0035 (2026-10-16 correction): on endpoints 0, 1 and 2 (main, music, PASS), stereo and mono content (at most two objects besides LFE) is upmixed whether it arrives as PCM or as a decoded bitstream, judged from each decoded scene's shape; native surround is always transparent, and a bitstream's stereo/surround flip restarts the lane. Scenes are panned onto the upmixer's input layout with the renderer's PanGeometry (gains interpolated across each scene; LFE to the input LFE, or around the upmixer delayed the same). Constant delay of 2 blocks + plugin latency + 2 ms with as many frames out as in, so lane accounting is unchanged. Fallback (the folded input delayed by the plugin latency, laid onto the outputs) for the first block after a restart and for missed blocks, 2 ms fade-out from a held-back plugin tail and fade-back, fallback mode after three misses, non-finite samples zeroed and counted (ADR 0021). Transparent and undelayed when the output kind does not apply upmixing, the rate differs from the upmixer's, or no upmixer is installed; changes between upmixing and transparent restart the lane. Upmixers: MatrixUpmixer (fake) and RingUpmixer (streamring producer of a plugin host)"
+note = "ADR 0021 and ADR 0035 (2026-10-16 correction): on endpoints 0, 1 and 2 (main, music, PASS), stereo and mono content (at most two objects besides LFE) is upmixed whether it arrives as PCM or as a decoded bitstream, judged from each decoded scene's shape; native surround is always transparent, and a bitstream's stereo/surround flip restarts the lane. Scenes are panned onto the upmixer's input layout with the renderer's PanGeometry (gains interpolated across each scene; LFE to the input LFE, or around the upmixer delayed the same). Constant delay of 2 blocks + plugin latency + 2 ms with as many frames out as in, so lane accounting is unchanged. Fallback (the folded input delayed by the plugin latency, laid onto the outputs) for the first block after a restart and for missed blocks, 2 ms fade-out from a held-back plugin tail and fade-back, fallback mode after three misses, non-finite samples zeroed and counted (ADR 0021). Transparent and undelayed when the output kind does not apply upmixing, the rate differs from the upmixer's, or no upmixer is installed; changes between upmixing and transparent restart the lane. Upmixers: MatrixUpmixer (fake) and RingUpmixer (vst-audio-ring producer of a plugin host)"
 
 [[feature]]
 id = "upmix.first_party"
@@ -977,47 +981,59 @@ tests = [
   "spatial-softreceiver::states_rotate_through_two_files_and_clear",
   "spatial-softreceiver::hosting_is_unavailable_off_windows",
 ]
-note = "ADR 0035 (2026-10-16 correction) and ADR 0021: supervisor::upmix keeps each endpoint's choice (main, music, PASS; None follows DEFAULT_UPMIXER, Off until the first-party upmixer exists), its scanned plugin and each output kind's apply switch in Settings.upmix (older settings load the defaults), and runs the VST upmixers through the PluginHost port. SetUpmixer refuses endpoint 3 and FirstParty; ChoosePlugin takes a .vst3 file or bundle or a VST 2 .dll, scans it and keeps the first class (a different plugin forgets the old saved state); OpenPluginEditor needs a host that is up; a profile.toml locks none of them. While the engine runs, every endpoint whose effective choice is a plugin has a host started at its source rate (48 kHz before any FormatChanged of mono or stereo PCM or a bitstream) and an UpmixStage built on the control thread; a rate change, a new plugin latency and the watch's respawn restart the host and reinstall the stage, a host with no more outputs than inputs or a failed start is Failed(plugin_not_upmixer / plugin_scan_failed), and the watch's three-failure disable is Failed(plugin_disabled) until the user chooses again or the app restarts. The kind in use's switch reaches the engine as LiveChange::UpmixApply at start and on kind changes while the hosts stay up; a change the full queue refuses is handed over on the next tick; engine stop shuts every host down and polls it until it exits (Quit waits up to 2.5 s). Snapshot.upmix shows the fixtures' shapes (state, bypass and latency from Engine::upmix_status, inputs and outputs as the host last reported them). Tested on Linux with a fake host over MatrixUpmixer. The Windows adapter (apps/spatial-softreceiver plugin_host) starts each host on a thread of its own around plughost::PluginProcess, builds the RingUpmixer from the Started ring, maps wave bits to speakers, carries the ControlWatch across respawns and keeps two state files per endpoint; its file rotation, respawn state choice and speaker mapping are tested on Linux, the process paths are type-checked by the Windows-target clippy"
+note = "ADR 0035 (2026-10-16 correction) and ADR 0021: supervisor::upmix keeps each endpoint's choice (main, music, PASS; None follows DEFAULT_UPMIXER, Off until the first-party upmixer exists), its scanned plugin and each output kind's apply switch in Settings.upmix (older settings load the defaults), and runs the VST upmixers through the PluginHost port. SetUpmixer refuses endpoint 3 and FirstParty; ChoosePlugin takes a .vst3 file or bundle or a VST 2 .dll, scans it and keeps the first class (a different plugin forgets the old saved state); OpenPluginEditor needs a host that is up; a profile.toml locks none of them. While the engine runs, every endpoint whose effective choice is a plugin has a host started at its source rate (48 kHz before any FormatChanged of mono or stereo PCM or a bitstream) and an UpmixStage built on the control thread; a rate change, a new plugin latency and the watch's respawn restart the host and reinstall the stage, a host with no more outputs than inputs or a failed start is Failed(plugin_not_upmixer / plugin_scan_failed), and the watch's three-failure disable is Failed(plugin_disabled) until the user chooses again or the app restarts. The kind in use's switch reaches the engine as LiveChange::UpmixApply at start and on kind changes while the hosts stay up; a change the full queue refuses is handed over on the next tick; engine stop shuts every host down and polls it until it exits (Quit waits up to 2.5 s). Snapshot.upmix shows the fixtures' shapes (state, bypass and latency from Engine::upmix_status, inputs and outputs as the host last reported them). Tested on Linux with a fake host over MatrixUpmixer. The Windows adapter (apps/spatial-softreceiver plugin_host) starts each host on a thread of its own around vst_audio::PluginProcess, builds the RingUpmixer from the Started ring, maps wave bits to speakers, carries the ControlWatch across respawns and keeps two state files per endpoint; its file rotation, respawn state choice and speaker mapping are tested on Linux, the process paths are type-checked by the Windows-target clippy"
+
+[[feature]]
+id = "plughost.worker"
+kind = "platform"
+milestone = "M4"
+status = "implemented"
+tests = [
+  "ssr-policy::vst_audio_link_rules_keep_plugin_code_in_ssr_plughost",
+  "spatial-softreceiver::only_main_buses_are_hosted",
+  "vst-audio-worker-runtime::parses_inherited_handles",
+]
+note = "ssr-plughost.exe is vst-audio's worker (vst_audio_worker_runtime::host::main) at the version Cargo.lock records; only it links the worker runtime and the foreign plugin loader, only apps link vst-audio's application side, and the engine links vst-audio-ring alone. vst-audio 0.1.1 activates every declared bus, so the app refuses a plugin that declares a sidechain or an auxiliary output until vst-audio can leave them inactive (ADR 0039)"
 
 [[feature]]
 id = "plughost.isolation"
 kind = "platform"
 milestone = "M4"
 status = "implemented"
-tests = ["plughost::frame_session_and_ring_round_trip", "plughost::watch_detects_hang_and_three_crashes", "plughost::crash_respawn_and_disable", "plughost::hung_process_is_killed", "plughost::shutdown_exits_zero_without_respawn"]
-note = "one ssr-plughost process per plugin under a job object; shared-memory ring one block behind, the engine never waits; crash and hang restart with state restore (ADR 0021)"
+tests = ["vst-audio-worker-runtime::frame_session_and_ring_round_trip", "vst-audio::watch_detects_hang_and_three_crashes", "vst-audio::crash_respawn_and_disable", "vst-audio::hung_process_is_killed", "vst-audio::shutdown_exits_zero_without_respawn"]
+note = "one ssr-plughost process per plugin under a job object; shared-memory ring one block behind, the engine never waits; crash and hang restart with state restore (ADR 0021). Hosted by vst-audio; the plughost CI job runs these tests against ssr-plughost.exe (ADR 0039)"
 
 [[feature]]
 id = "plughost.vst3"
 kind = "platform"
 milestone = "M4"
 status = "implemented"
-tests = ["plughost::scan_vst3_lists_one_audio_effect_class", "plughost::vst3_bus_arrangements_end_at_stereo_in_surround_out", "plughost::vst3_state_framing_round_trip", "plughost::loaded_main_bus_layouts_come_from_plugin", "plughost::start_and_process_matrix_with_latency", "plughost::state_round_trip", "plughost::editor_round_trip", "plughost-sys::stream_buffer_read_write_seek_bounds"]
-note = "VST 3 adapter through the vst3 crate (bindings generated from the MIT-licensed SDK 3.8)"
+tests = ["vst-audio::scan_vst3_lists_one_audio_effect_class", "vst-audio::vst3_bus_arrangements_end_at_stereo_in_surround_out", "vst-audio-protocol::vst3_state_framing_round_trip", "vst-audio-worker-runtime::loaded_main_bus_layouts_come_from_plugin", "vst-audio::start_and_process_matrix_with_latency", "vst-audio::state_round_trip", "vst-audio::editor_round_trip", "vst-audio-worker-sys::stream_buffer_read_write_seek_bounds"]
+note = "vst-audio's VST 3 adapter through the vst3 crate (bindings generated from the MIT-licensed SDK 3.8) (ADR 0039)"
 
 [[feature]]
 id = "plughost.no_silence_during_control"
 kind = "platform"
 milestone = "M4"
 status = "implemented"
-tests = ["plughost::closed_admission_keeps_sequences_pending_and_heartbeat_alive"]
-note = "Closed admission leaves sequences pending while heartbeat advances; reopening drains in order so the engine uses fallback rather than completed silence."
+tests = ["vst-audio-worker-runtime::closed_admission_keeps_sequences_pending_and_heartbeat_alive"]
+note = "Closed admission leaves sequences pending while heartbeat advances; reopening drains in order so the engine uses fallback rather than completed silence (vst-audio, ADR 0039)."
 
 [[feature]]
 id = "plughost.vst2"
 kind = "platform"
 milestone = "M4"
 status = "implemented"
-tests = ["plughost::common_layouts", "plughost::unknown_layouts_are_errors", "plughost::start_and_process_matrix_with_latency", "plughost::state_round_trip", "plughost::editor_round_trip", "plughost::scan_returns_name_and_vendor"]
-note = "VST 2 adapter from Xaymar's clean-room header at 339d4f31590bf77c0d0d248e09a380ac6285e069 (BSD-3-Clause), never the Steinberg SDK"
+tests = ["vst-audio-protocol::common_layouts", "vst-audio-protocol::unknown_layouts_are_errors", "vst-audio::start_and_process_matrix_with_latency", "vst-audio::state_round_trip", "vst-audio::editor_round_trip", "vst-audio::scan_returns_name_and_vendor"]
+note = "vst-audio's VST 2 adapter from Xaymar's clean-room header at 339d4f31590bf77c0d0d248e09a380ac6285e069 (BSD-3-Clause), never the Steinberg SDK (ADR 0039)"
 
 [[feature]]
 id = "plughost.testplugin"
 kind = "platform"
 milestone = "M4"
 status = "implemented"
-tests = ["plughost::start_and_process_matrix_with_latency", "plughost::nan_is_preserved_for_app_sanitization", "plughost::failed_restore_uses_previous_state"]
-note = "Test-only stereo-to-5.1 cdylib with 64-frame delay and state-selected crash, hang and NaN modes; never shipped"
+tests = ["vst-audio::start_and_process_matrix_with_latency", "vst-audio::nan_is_preserved_for_app_sanitization", "vst-audio::failed_restore_uses_previous_state"]
+note = "vst-audio's test-only stereo-to-5.1 cdylib (vst-audio-testplugin) with 64-frame delay and state-selected crash, hang and NaN modes, built by the plughost CI job from the source of the locked release; never shipped (ADR 0039)"
 
 [[feature]]
 id = "app.default_device_guard"
@@ -1336,7 +1352,7 @@ tests = [
   "streamring::producer_per_block_path_does_not_allocate",
   "streamring::publisher_and_owned_region_cross_threads_after_announcement",
 ]
-note = "cross-process block ring ported with the author's permission from EqualizerAPO-XT StreamRing commit 1432f61cc437c99fde8e8e84e10e648fe516d4ce; shared by the plugin host and the ASIO entrance"
+note = "cross-process block ring ported with the author's permission from EqualizerAPO-XT StreamRing commit 1432f61cc437c99fde8e8e84e10e648fe516d4ce; retained only for the ASIO entrance, while plugin hosting uses vst-audio-ring (ADR 0039)"
 
 [[feature]]
 id = "plughost.proto"
@@ -1344,16 +1360,16 @@ kind = "platform"
 milestone = "M4"
 status = "implemented"
 tests = [
-  "plughost-proto::codec_round_trips_every_message",
-  "plughost-proto::malicious_frames_are_rejected_and_unknown_kinds_skip",
-  "plughost-proto::every_deadline_fires_at_its_edge",
-  "plughost-proto::backoff_sequence_and_three_failures_window",
-  "plughost-proto::fallback_enters_after_exactly_three_and_leaves_on_delivery",
-  "plughost-proto::state_save_timing_and_previous_fallback",
-  "plughost-proto::a_requested_stop_is_not_a_failure",
-  "plughost-proto::every_pending_request_has_its_own_deadline",
+  "vst-audio-protocol::codec_round_trips_every_message",
+  "vst-audio-protocol::malicious_frames_are_rejected_and_unknown_kinds_skip",
+  "vst-audio-protocol::every_deadline_fires_at_its_edge",
+  "vst-audio-protocol::backoff_sequence_and_three_failures_window",
+  "vst-audio-protocol::fallback_enters_after_exactly_three_and_leaves_on_delivery",
+  "vst-audio-protocol::state_save_timing_and_previous_fallback",
+  "vst-audio-protocol::a_requested_stop_is_not_a_failure",
+  "vst-audio-protocol::every_pending_request_has_its_own_deadline",
 ]
-note = "ADR 0021 control framing, deterministic deadlines, fallback and restart policy, and two-generation state history"
+note = "ADR 0021 control framing, deterministic deadlines, fallback and restart policy, and two-generation state history, in vst-audio-protocol (ADR 0039)"
 
 [[feature]]
 id = "asio.entrance"
