@@ -518,11 +518,15 @@ jobs:
           -Fixtures (Join-Path $env:RUNNER_TEMP 'fx') -Symbols (Resolve-Path target/release).Path
 
       # A device that cannot hold its minimum exclusive period (ADR 0019,
-      # 2026-10-22 addendum). Without --period-ms ssr-live opens the cable at
-      # its 3 ms minimum, where it restarts over and over, as it does at 6 ms
-      # (ADR 0026). The engine must double the period after restarts that keep
-      # coming until one holds (12 ms on this cable), not restart ten times a
-      # second for good; tools/ci/period_growth_check.py judges the report.
+      # 2026-10-22 addenda). Without --period-ms ssr-live opens the cable at
+      # its 3 ms minimum, where it restarts over and over. At 6 ms it stops
+      # restarting but takes 0.6 of the nominal rate, and on windows-2025 it
+      # does the same at 12 ms. The engine must double the period on restarts
+      # that keep coming and on a cadence that stays slow, up to 20 ms, and
+      # drop the backlog the slow periods left; tools/ci/period_growth_check.py
+      # judges the report (period, restarts, last cadence window, latency
+      # since the last reopen). Each slow period takes the cadence guard about
+      # four seconds, so the run leaves room after a growth to 20 ms.
       - name: The cable at its minimum exclusive period (the period grows until it holds)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: bash
@@ -532,16 +536,16 @@ jobs:
           report="$RUNNER_TEMP/min-period-report.json"
           log="$RUNNER_TEMP/min-period.log"
           target/release/ssr-live.exe play --from-dump "$fx/pcm71.ssrdump" --loop \
-            --profile "$fx/profile.toml" --output "VB-Audio Virtual Cable" --seconds 15 \
+            --profile "$fx/profile.toml" --output "VB-Audio Virtual Cable" --seconds 25 \
             --report "$report" > "$log" 2>&1
           status=$?
-          tail -n 25 "$log"
+          tail -n 40 "$log"
           [ "$status" = 0 ] || { echo "::error::ssr-live exited $status"; exit 1; }
           python tools/ci/period_growth_check.py "$report" || status=1
           {
             echo "## The cable at its minimum exclusive period (${{ matrix.os }})"
             echo
-            jq -r '"period \(.output_period_frames) frames, \(.output_reopens) reopens, \(.output_restarts) restarts, \(.underruns_while_streaming) underruns while streaming"' "$report" 2>/dev/null || echo "no report"
+            jq -r '"period \(.output_period_frames) frames, \(.output_reopens) reopens, \(.output_restarts) restarts, cadence \(.output_cadence_ratio), latency p99 \(.latency_p99_ms) ms, \(.output_overflow_frames) frames dropped, \(.underruns_while_streaming) underruns while streaming"' "$report" 2>/dev/null || echo "no report"
           } >> "$GITHUB_STEP_SUMMARY"
           exit $status
 

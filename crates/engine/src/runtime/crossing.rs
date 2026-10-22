@@ -263,6 +263,26 @@ impl CrossingConsumer {
         self.discard_stale_markers();
         silent
     }
+    pub(super) fn drop_head(
+        &mut self,
+        frames: usize,
+        layout: OutputLayout,
+        channels: usize,
+    ) -> usize {
+        let dropped = frames
+            .min(self.current_layout_frames(layout, channels))
+            .min(self.audio.slots() / channels);
+        if dropped == 0 {
+            return 0;
+        }
+        let Ok(chunk) = self.audio.read_chunk(dropped * channels) else {
+            return 0;
+        };
+        chunk.commit(dropped * channels);
+        self.stream_frame = self.stream_frame.saturating_add(dropped as u64);
+        self.discard_stale_markers();
+        dropped
+    }
     /// Reports the latency of every marker that starts inside `period` and
     /// moves past the markers it finished.
     pub(super) fn consume_markers(&mut self, period: PeriodPlayback, mut latency: impl FnMut(f32)) {

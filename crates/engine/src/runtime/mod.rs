@@ -2349,10 +2349,7 @@ fn wait_for_stop(shared: &Shared, duration: Duration) -> bool {
 #[derive(Clone, Copy, Debug)]
 enum ReopenStep {
     ChangeLayout(OutputLayout),
-    GrowPeriod {
-        period: Duration,
-        cadence_fault: bool,
-    },
+    GrowPeriod { period: Duration },
 }
 
 /// The open sink's own counters when it was opened or last read, so that a
@@ -2377,10 +2374,7 @@ enum OutputStep {
     Continue,
     ChangeLayout(OutputLayout),
     Lost(OutputError),
-    GrowPeriod {
-        period: Duration,
-        cadence_fault: bool,
-    },
+    GrowPeriod { period: Duration },
 }
 
 fn output_rt_step<S: OutputSink>(
@@ -2390,7 +2384,6 @@ fn output_rt_step<S: OutputSink>(
     shared: &Shared,
     qpc_frequency: u64,
     sink_baseline: &mut SinkBaseline,
-    cadence_period_grown: bool,
 ) -> OutputStep {
     if let Some(layout) = output.pending_layout_change() {
         return OutputStep::ChangeLayout(layout);
@@ -2466,17 +2459,10 @@ fn output_rt_step<S: OutputSink>(
         if output.cadence.faulted() {
             shared.output_cadence_faults.fetch_add(1, Ordering::Relaxed);
             output.events.push(RtEvent::OutputCadenceFault { ratio });
-            if !cadence_period_grown && sink.format().mode == OutputMode::Exclusive {
-                let current = Duration::from_secs_f64(
-                    output.period_frames as f64 / f64::from(output.device_rate),
-                );
-                let grown = current.mul_f64(2.0).min(Duration::from_millis(20));
-                if grown > current {
-                    return OutputStep::GrowPeriod {
-                        period: grown,
-                        cadence_fault: true,
-                    };
-                }
+            if sink.format().mode == OutputMode::Exclusive
+                && let Some(period) = grown_period(output.period_frames, output.device_rate)
+            {
+                return OutputStep::GrowPeriod { period };
             }
         }
     }
@@ -2485,18 +2471,23 @@ fn output_rt_step<S: OutputSink>(
             .restart_storm
             .record(qpc, new_restarts, qpc_frequency)
         && sink.format().mode == OutputMode::Exclusive
+        && let Some(period) = grown_period(output.period_frames, output.device_rate)
     {
-        let current =
-            Duration::from_secs_f64(output.period_frames as f64 / f64::from(output.device_rate));
-        let grown = current.mul_f64(2.0).min(Duration::from_millis(20));
-        if grown > current {
-            return OutputStep::GrowPeriod {
-                period: grown,
-                cadence_fault: false,
-            };
-        }
+        return OutputStep::GrowPeriod { period };
     }
     OutputStep::Continue
+}
+
+/// The longest period a growth asks for (ADR 0019).
+const MAX_GROWN_PERIOD: Duration = Duration::from_millis(20);
+
+/// Twice the current period, at most [`MAX_GROWN_PERIOD`], or `None` when that
+/// is not more than a tenth longer: a device that aligned the last request to
+/// 19.9 ms would otherwise be reopened at the same period over and over.
+fn grown_period(period_frames: usize, device_rate: u32) -> Option<Duration> {
+    let current = Duration::from_secs_f64(period_frames as f64 / f64::from(device_rate));
+    let grown = current.mul_f64(2.0).min(MAX_GROWN_PERIOD);
+    (grown > current.mul_f64(1.1)).then_some(grown)
 }
 
 fn write_reopen_tail_period<S: OutputSink>(
@@ -2542,13 +2533,7 @@ fn end_before_reopen(step: OutputStep, ended: bool) -> OutputStep {
 fn complete_reopen_step(reopen: ReopenStep) -> OutputStep {
     match reopen {
         ReopenStep::ChangeLayout(layout) => OutputStep::ChangeLayout(layout),
-        ReopenStep::GrowPeriod {
-            period,
-            cadence_fault,
-        } => OutputStep::GrowPeriod {
-            period,
-            cadence_fault,
-        },
+        ReopenStep::GrowPeriod { period } => OutputStep::GrowPeriod { period },
     }
 }
 
@@ -2703,7 +2688,6 @@ fn output_thread_main<O: OutputOpener>(
     };
 
     shared.publish_output_format(format);
-    let mut cadence_period_grown = false;
     let mut sink_baseline = SinkBaseline::of(&sink);
     let mut output = OutputState::new(
         crossing,
@@ -2782,7 +2766,6 @@ fn output_thread_main<O: OutputOpener>(
                     &shared,
                     qpc_frequency,
                     &mut sink_baseline,
-                    cadence_period_grown,
                 )
             });
         };
@@ -2818,15 +2801,8 @@ fn output_thread_main<O: OutputOpener>(
         if draining_reopen.is_none() {
             let reopen = match step {
                 OutputStep::ChangeLayout(layout) => Some(ReopenStep::ChangeLayout(layout)),
-                OutputStep::GrowPeriod {
-                    period,
-                    cadence_fault,
-                } if opener.set_period(period) => {
-                    cadence_period_grown |= cadence_fault;
-                    Some(ReopenStep::GrowPeriod {
-                        period,
-                        cadence_fault,
-                    })
+                OutputStep::GrowPeriod { period } if opener.set_period(period) => {
+                    Some(ReopenStep::GrowPeriod { period })
                 }
                 OutputStep::GrowPeriod { .. } => {
                     step = OutputStep::Continue;
@@ -3033,6 +3009,7 @@ fn output_thread_main<O: OutputOpener>(
                                 format,
                             ) {
                                 Ok(()) => {
+                                    output.drop_late_excess_on_priming();
                                     if let Some(asio) = &mut asio_output {
                                         asio.reconfigure(format, reopened.latency_frames());
                                     }
