@@ -86,10 +86,10 @@ pub fn speakers_of(bits: &[u32]) -> Result<Vec<Speaker>, String> {
 }
 
 /// Refuses a host whose plugin has more than one active bus in a direction
-/// (ADR 0039). vst-audio 0.1.1 activates every bus a plugin declares, so a
-/// sidechain would join the upmixer's input speakers (a mono one as a centre)
-/// and an auxiliary output its output speakers. The engine folds scenes onto
-/// the main buses alone, as `plughost` did.
+/// (ADR 0039). Hosts start with `BusSelector::main_only()`, so this holds
+/// unless a plugin reports more than it was given; a sidechain would then join
+/// the upmixer's input speakers (a mono one as a centre) and an auxiliary
+/// output its output speakers. The engine folds scenes onto the main buses.
 pub fn only_main_buses(setup: &ProcessingSetup) -> Result<(), String> {
     let active = |buses: &[vst_audio_protocol::BusConfiguration]| {
         buses.iter().filter(|bus| bus.active).count()
@@ -228,7 +228,10 @@ mod windows {
         PluginClass, PluginEvent, PluginHost, PluginHostError, PluginInstance, PluginSetting,
     };
     use vst_audio::watch::ControlWatch;
-    use vst_audio::{ControlEvent, PluginControl, PluginProcess, SharedEvent, StartError, Started};
+    use vst_audio::{
+        BusSelector, ControlEvent, PluginControl, PluginProcess, ProcessingOptions, SharedEvent,
+        StartError, Started,
+    };
     use vst_audio_protocol::{Action, Frame, Message};
 
     use super::{StateStore, only_main_buses, respawn_state, speakers_of};
@@ -255,6 +258,26 @@ mod windows {
             PluginFormat::Vst2 => vst_audio::PluginFormat::Vst2,
             PluginFormat::Vst3 => vst_audio::PluginFormat::Vst3,
         }
+    }
+
+    /// Starts a host on the main buses alone (ADR 0039): a sidechain or an
+    /// auxiliary output stays inactive, so it never joins the speakers. The
+    /// quantum is 10 ms, as `PluginProcess::start` chooses.
+    fn start(
+        exe: &Path,
+        path: &Path,
+        format: vst_audio::PluginFormat,
+        class: Option<[u8; 16]>,
+        rate: u32,
+        state: Option<&[u8]>,
+    ) -> Result<Started, StartError> {
+        let options = ProcessingOptions {
+            sample_rate: rate,
+            quantum: rate / 100,
+            buses: Some(BusSelector::main_only()),
+            ..Default::default()
+        };
+        PluginProcess::start_configured(exe, path, format, class, &options, state)
     }
 
     fn failed(error: impl std::fmt::Display) -> PluginHostError {
@@ -367,13 +390,11 @@ mod windows {
             thread::Builder::new()
                 .name("ssr-plughost-start".to_owned())
                 .spawn(move || {
-                    let mut started =
-                        PluginProcess::start(&exe, &path, format, class, rate, state.as_deref());
+                    let mut started = start(&exe, &path, format, class, rate, state.as_deref());
                     if started.is_err()
                         && let Some(previous) = fallback.as_deref()
                     {
-                        started =
-                            PluginProcess::start(&exe, &path, format, class, rate, Some(previous));
+                        started = start(&exe, &path, format, class, rate, Some(previous));
                     }
                     // Nobody waits any more when the instance was let go:
                     // the host then ends with its job.

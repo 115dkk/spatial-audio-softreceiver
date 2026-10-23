@@ -34,10 +34,10 @@ streamring = { path = "crates/streamring" }
 # links vst-audio's application side, the engine only vst-audio-ring, and
 # ssr-plughost is vst-audio's worker. vst-audio pins its own crates exactly,
 # so they all resolve to the one version Cargo.lock records.
-vst-audio = "0.1.1"
-vst-audio-protocol = "0.1.1"
-vst-audio-ring = "0.1.1"
-vst-audio-worker-runtime = "0.1.1"
+vst-audio = "0.2.0"
+vst-audio-protocol = "0.2.0"
+vst-audio-ring = "0.2.0"
+vst-audio-worker-runtime = "0.2.0"
 asio-proto = { path = "crates/asio-proto" }
 asio-sys = { path = "crates/asio-sys" }
 decode = { path = "crates/decode" }

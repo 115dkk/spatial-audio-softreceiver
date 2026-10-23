@@ -993,7 +993,7 @@ tests = [
   "spatial-softreceiver::only_main_buses_are_hosted",
   "vst-audio-worker-runtime::parses_inherited_handles",
 ]
-note = "ssr-plughost.exe is vst-audio's worker (vst_audio_worker_runtime::host::main) at the version Cargo.lock records; only it links the worker runtime and the foreign plugin loader, only apps link vst-audio's application side, and the engine links vst-audio-ring alone. vst-audio 0.1.1 activates every declared bus, so the app refuses a plugin that declares a sidechain or an auxiliary output until vst-audio can leave them inactive (ADR 0039)"
+note = "ssr-plughost.exe is vst-audio's worker (vst_audio_worker_runtime::host::main) at the version Cargo.lock records; only it links the worker runtime and the foreign plugin loader, only apps link vst-audio's application side, and the engine links vst-audio-ring alone. hosts start through PluginProcess::start_configured with BusSelector::main_only() (vst-audio 0.2.0), so a sidechain or an auxiliary output stays inactive, and the app still refuses a host that reports more than one active bus in a direction (ADR 0039)"
 
 [[feature]]
 id = "plughost.isolation"
