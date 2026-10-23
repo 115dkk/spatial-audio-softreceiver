@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use engine::{
     Chain, ChainConfig, ChainEvent, MatrixUpmixer, Prepared, RingFault, RingUpmixer, SpeakerFault,
-    UpmixError, UpmixMode, UpmixStage, UpmixStatus, Upmixer,
+    UPMIX_RING_SLOTS, UpmixError, UpmixMode, UpmixStage, UpmixStatus, Upmixer,
 };
 use speakers::{PreparedSpeaker, PreparedSpeakers, PreparedSubwoofer};
 use ssr_abi::Record;
@@ -105,12 +105,20 @@ fn stereo() -> SourceFormat {
 }
 
 fn eac3() -> SourceFormat {
+    eac3_channels(6)
+}
+
+fn eac3_stereo() -> SourceFormat {
+    eac3_channels(2)
+}
+
+fn eac3_channels(encoded_channels: u32) -> SourceFormat {
     SourceFormat::Bitstream(BitstreamFormat {
         codec: BitstreamCodec::Eac3,
         container_rate: 192_000,
         container_channels: 2,
         encoded_rate: RATE,
-        encoded_channels: 6,
+        encoded_channels,
     })
 }
 
@@ -143,6 +151,7 @@ fn interleave(planes: &[Vec<f32>], start: usize, frames: usize) -> Vec<u8> {
 #[derive(Debug, Default, PartialEq)]
 struct Output {
     channels: Vec<Vec<f32>>,
+    source_qpcs: Vec<u64>,
     errors: usize,
 }
 
@@ -150,6 +159,7 @@ impl Output {
     fn take(&mut self, event: ChainEvent<'_>) {
         match event {
             ChainEvent::Block(block) => {
+                self.source_qpcs.push(block.source_qpc);
                 if self.channels.is_empty() {
                     self.channels = vec![Vec::new(); block.channels];
                 }
@@ -261,22 +271,61 @@ impl Feed {
 
     /// E-AC-3 syncframes `frames` of the 5.1 fixture, one burst each.
     fn eac3(&mut self, chain: &mut Chain, frames: std::ops::Range<usize>, output: &mut Output) {
-        let fixture = std::fs::read(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../decode/tests/fixtures/ddp/tones-5.1.eac3"),
-        )
-        .unwrap();
+        self.eac3_fixture(chain, "tones-5.1.eac3", 2560, frames, output);
+    }
+
+    /// E-AC-3 syncframes `frames` of the stereo fixture, one burst each.
+    fn eac3_stereo(
+        &mut self,
+        chain: &mut Chain,
+        frames: std::ops::Range<usize>,
+        output: &mut Output,
+    ) {
+        self.eac3_fixture(chain, "tones-2.0.eac3", 768, frames, output);
+    }
+
+    fn eac3_fixture(
+        &mut self,
+        chain: &mut Chain,
+        name: &str,
+        syncframe_bytes: usize,
+        frames: std::ops::Range<usize>,
+        output: &mut Output,
+    ) {
+        let fixture = ddp_fixture(name);
         for frame in frames {
-            let mut burst = Vec::new();
-            bitstream::frame_burst(
-                bitstream::DataType::Eac3,
-                &fixture[frame * 2560..(frame + 1) * 2560],
-                24_576,
-                &mut burst,
-            );
+            let burst = eac3_burst(&fixture, syncframe_bytes, frame);
             self.data(chain, &burst, 1_536, RATE, output);
         }
     }
+
+    /// Two stereo syncframes in one driver delivery.
+    fn eac3_stereo_pair(&mut self, chain: &mut Chain, first: usize, output: &mut Output) {
+        let fixture = ddp_fixture("tones-2.0.eac3");
+        let mut delivery = eac3_burst(&fixture, 768, first);
+        delivery.extend_from_slice(&eac3_burst(&fixture, 768, first + 1));
+        self.data(chain, &delivery, 2 * 1_536, RATE, output);
+    }
+}
+
+fn ddp_fixture(name: &str) -> Vec<u8> {
+    std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../decode/tests/fixtures/ddp")
+            .join(name),
+    )
+    .unwrap()
+}
+
+fn eac3_burst(fixture: &[u8], syncframe_bytes: usize, frame: usize) -> Vec<u8> {
+    let mut burst = Vec::new();
+    bitstream::frame_burst(
+        bitstream::DataType::Eac3,
+        &fixture[frame * syncframe_bytes..(frame + 1) * syncframe_bytes],
+        24_576,
+        &mut burst,
+    );
+    burst
 }
 
 fn chain(stage: Option<Box<UpmixStage>>, endpoint: u16) -> Chain {
@@ -352,6 +401,148 @@ fn ten_seconds_of_adversarial_records_keep_the_lane_accounting() {
         // Every 10 ms of input left as 10 ms of output.
         assert!(output.channels[FL].len() >= frames - B);
     }
+}
+
+#[test]
+fn decoded_stereo_reaches_the_ring_host_although_bursts_cross_several_blocks() {
+    let latency = 37;
+    let (storage, publisher, ready) = ring(ring_geometry());
+    // Held still while the chain places a burst, as a host process cannot
+    // finish a block within the microseconds between two boundaries of one
+    // call; it catches up between calls.
+    let run = Arc::new(AtomicBool::new(false));
+    let stop = Arc::new(AtomicBool::new(false));
+    let host = host(
+        Arc::clone(&storage),
+        ready,
+        latency,
+        Arc::clone(&run),
+        Arc::clone(&stop),
+    );
+    wait_until(|| publisher.state(storage.region()) == Some(State::Ready));
+    let ring = ring_upmixer(&storage, publisher, latency);
+    let mut chain = chain(Some(stage(0, ring)), 0);
+    let mut worker = chain.take_decode_worker().unwrap();
+    let mut output = Output::default();
+    let mut feed = Feed::new(0);
+    feed.format(&mut chain, eac3_stereo(), &mut output);
+    for frame in 1..9 {
+        feed.eac3_stereo(&mut chain, frame..frame + 1, &mut output);
+        while worker.run_one() {}
+        chain.idle(feed.qpc(feed.frame, RATE), &mut |event| output.take(event));
+        run.store(true, Ordering::Release);
+        wait_until(|| publisher.completed(storage.region(), 0) == (frame * 1_536 / B) as u32);
+        run.store(false, Ordering::Release);
+    }
+    chain.finish(&mut |event| output.take(event));
+
+    let status = status(&chain, 0);
+    assert_eq!(status.delay_frames as usize, 5 * B + latency + C);
+    assert_eq!(status.delivered_blocks, 21, "{status:?}");
+    assert_eq!(status.missed_blocks, 0, "{status:?}");
+    assert_eq!(status.mode, UpmixMode::Plugin);
+    assert!(output.channels[FC].iter().any(|sample| *sample != 0.0));
+    assert_eq!(output.errors, 0);
+    stop.store(true, Ordering::Release);
+    host.join().unwrap();
+}
+
+#[test]
+fn an_oversized_delivery_misses_only_the_blocks_beyond_the_depth() {
+    let latency = 37;
+    let (storage, publisher, ready) = ring(ring_geometry());
+    let run = Arc::new(AtomicBool::new(false));
+    let stop = Arc::new(AtomicBool::new(false));
+    let host = host(
+        Arc::clone(&storage),
+        ready,
+        latency,
+        Arc::clone(&run),
+        Arc::clone(&stop),
+    );
+    wait_until(|| publisher.state(storage.region()) == Some(State::Ready));
+    let ring = ring_upmixer(&storage, publisher, latency);
+    let mut chain = chain(Some(stage(0, ring)), 0);
+    let mut worker = chain.take_decode_worker().unwrap();
+    let mut output = Output::default();
+    let mut feed = Feed::new(0);
+    feed.format(&mut chain, eac3_stereo(), &mut output);
+
+    // Three normal deliveries leave 288 frames collected. The oversized 3072-
+    // frame delivery therefore closes seven blocks. Depth four protects the
+    // first four; exactly the remaining three miss while the host is gated.
+    for frame in 1..4 {
+        feed.eac3_stereo(&mut chain, frame..frame + 1, &mut output);
+        while worker.run_one() {}
+        chain.idle(feed.qpc(feed.frame, RATE), &mut |event| output.take(event));
+        run.store(true, Ordering::Release);
+        wait_until(|| publisher.completed(storage.region(), 0) == (frame * 1_536 / B) as u32);
+        run.store(false, Ordering::Release);
+    }
+    feed.eac3_stereo_pair(&mut chain, 4, &mut output);
+    while worker.run_one() {}
+    chain.idle(feed.qpc(feed.frame, RATE), &mut |event| output.take(event));
+    let oversized = status(&chain, 0);
+    assert_eq!(
+        (oversized.delivered_blocks, oversized.missed_blocks),
+        (9, 3)
+    );
+    assert_eq!(oversized.mode, UpmixMode::Fallback);
+    assert_eq!(oversized.delay_frames as usize, 5 * B + latency + C);
+
+    run.store(true, Ordering::Release);
+    wait_until(|| publisher.completed(storage.region(), 0) == 16);
+    run.store(false, Ordering::Release);
+    for frame in 6..8 {
+        feed.eac3_stereo(&mut chain, frame..frame + 1, &mut output);
+        while worker.run_one() {}
+        chain.idle(feed.qpc(feed.frame, RATE), &mut |event| output.take(event));
+        run.store(true, Ordering::Release);
+        wait_until(|| publisher.completed(storage.region(), 0) == (frame * 1_536 / B) as u32);
+        run.store(false, Ordering::Release);
+    }
+
+    let resumed = status(&chain, 0);
+    assert_eq!((resumed.delivered_blocks, resumed.missed_blocks), (15, 3));
+    assert_eq!(resumed.mode, UpmixMode::Plugin);
+    assert_eq!(resumed.delay_frames as usize, 5 * B + latency + C);
+    assert_eq!(output.errors, 0);
+    stop.store(true, Ordering::Release);
+    host.join().unwrap();
+}
+
+#[test]
+fn pcm_ring_source_keeps_one_block_of_pipeline_depth() {
+    let latency = 37;
+    let (storage, publisher, ready) = ring(ring_geometry());
+    let run = Arc::new(AtomicBool::new(true));
+    let stop = Arc::new(AtomicBool::new(false));
+    let host = host(
+        Arc::clone(&storage),
+        ready,
+        latency,
+        Arc::clone(&run),
+        Arc::clone(&stop),
+    );
+    wait_until(|| publisher.state(storage.region()) == Some(State::Ready));
+    let ring = ring_upmixer(&storage, publisher, latency);
+    let mut chain = chain(Some(stage(0, ring)), 0);
+    let mut output = Output::default();
+    let mut feed = Feed::new(0);
+    feed.format(&mut chain, stereo(), &mut output);
+    let block = [vec![0.25; B], vec![0.25; B]];
+    for published in 1..=12 {
+        feed.pcm(&mut chain, &block, &[B], RATE, &mut output);
+        wait_until(|| publisher.completed(storage.region(), 0) == published);
+    }
+
+    let status = status(&chain, 0);
+    assert_eq!(status.delay_frames as usize, 2 * B + latency + C);
+    assert_eq!(status.delivered_blocks, 11, "{status:?}");
+    assert_eq!(status.missed_blocks, 0, "{status:?}");
+    assert_eq!(status.mode, UpmixMode::Plugin);
+    stop.store(true, Ordering::Release);
+    host.join().unwrap();
 }
 
 #[test]
@@ -634,6 +825,7 @@ struct Shape {
     inputs: Vec<Speaker>,
     outputs: Vec<Speaker>,
     latency: usize,
+    max_depth: usize,
 }
 
 impl Shape {
@@ -644,6 +836,7 @@ impl Shape {
             inputs: MatrixUpmixer::STEREO.to_vec(),
             outputs: MatrixUpmixer::OUTPUTS_5_1.to_vec(),
             latency: 0,
+            max_depth: UPMIX_RING_SLOTS as usize - 1,
         }
     }
 }
@@ -664,6 +857,10 @@ impl Upmixer for Shape {
     fn latency_frames(&self) -> usize {
         self.latency
     }
+    fn set_depth(&mut self, _: usize) {}
+    fn max_depth(&self) -> usize {
+        self.max_depth
+    }
     fn process(&mut self, _: u64, _: u64, _: &[f32], _: &mut [f32]) -> bool {
         false
     }
@@ -680,7 +877,8 @@ fn every_refusal_reason() {
     assert!(build(0, &|_| {}).is_ok());
     assert_eq!(build(3, &|_| {}).unwrap_err(), UpmixError::Endpoint);
     type Change<'a> = &'a dyn Fn(&mut Shape);
-    let cases: [(Change<'_>, UpmixError); 13] = [
+    let cases: [(Change<'_>, UpmixError); 14] = [
+        (&|s| s.max_depth = 3, UpmixError::Depth),
         (
             &|s| s.inputs.clear(),
             UpmixError::Inputs(SpeakerFault::Count),
@@ -729,6 +927,7 @@ fn ring_geometry() -> Geometry {
     Geometry {
         sample_format: SampleFormat::F32,
         lanes: 1,
+        slots: UPMIX_RING_SLOTS,
         input_channels: 2,
         output_channels: 6,
         max_frames: B as u32,
@@ -760,7 +959,9 @@ fn ring_upmixer(storage: &Arc<RegionBuf>, publisher: Publisher, latency: usize) 
 }
 
 /// A plugin host on its own thread: the stereo to 5.1 matrix, in place.
-/// It processes while `run` is set.
+/// It processes while `run` is set. A block published after `run` was cleared
+/// is never processed before `run` is set again: `run` is read after the
+/// sequence, whose Acquire load sees the clearing that came before it.
 fn host(
     storage: Arc<RegionBuf>,
     ready: Arc<InProcessEvent>,
@@ -775,10 +976,9 @@ fn host(
         let mut slot = vec![0.0; ring_geometry().samples_per_slot()];
         let mut result = vec![0.0; 6 * B];
         while !stop.load(Ordering::Acquire) {
-            let next = run
-                .load(Ordering::Acquire)
-                .then(|| consumer.next_published(0))
-                .flatten();
+            let next = consumer
+                .next_published(0)
+                .filter(|_| run.load(Ordering::Acquire));
             let Some(sequence) = next else {
                 thread::yield_now();
                 continue;
@@ -898,11 +1098,11 @@ fn a_stalled_host_is_concealed_and_never_blocks_the_producer() {
     // The fallback is the stereo, delayed: no centre.
     assert!(output.channels[FL].iter().any(|sample| *sample != 0.0));
     assert!(output.channels[FC].iter().all(|sample| *sample == 0.0));
-    // Two sequences went out before the slots filled; the host catches up
-    // and then keeps up.
+    // All ring slots went out before the producer filled the ring; the host
+    // catches up and then keeps up.
     run.store(true, Ordering::Release);
-    wait_until(|| publisher.completed(storage.region(), 0) == 2);
-    for published in 3..13 {
+    wait_until(|| publisher.completed(storage.region(), 0) == UPMIX_RING_SLOTS);
+    for published in UPMIX_RING_SLOTS + 1..UPMIX_RING_SLOTS + 11 {
         feed.pcm(&mut chain, &block, &[B], RATE, &mut output);
         wait_until(|| publisher.completed(storage.region(), 0) == published);
     }
@@ -940,6 +1140,15 @@ fn the_ring_must_match_the_upmixer() {
             stereo,
             0,
             UpmixError::Ring(RingFault::Lanes),
+        ),
+        (
+            Geometry {
+                slots: UPMIX_RING_SLOTS - 1,
+                ..geometry
+            },
+            stereo,
+            0,
+            UpmixError::Ring(RingFault::Slots),
         ),
         (
             geometry,

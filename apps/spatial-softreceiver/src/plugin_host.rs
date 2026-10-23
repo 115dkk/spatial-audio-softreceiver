@@ -274,6 +274,7 @@ mod windows {
         let options = ProcessingOptions {
             sample_rate: rate,
             quantum: rate / 100,
+            slots: engine::UPMIX_RING_SLOTS,
             buses: Some(BusSelector::main_only()),
             ..Default::default()
         };

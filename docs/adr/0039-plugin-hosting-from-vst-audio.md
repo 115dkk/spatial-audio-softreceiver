@@ -1,6 +1,6 @@
 # 0039. 플러그인 호스팅은 vst-audio 크레이트에 맡긴다
 
-상태: 채택, 2026-10-22(2026-10-23 수정: vst-audio 0.2.0의 버스 선택으로 주 버스만 켭니다). ADR 0021, 0022, 0035의 크레이트 표, 링크 규칙, unsafe 예산을 바꿉니다. 프로세스 구조, 제어 채널, 상태별 시한, 링 규약, 지연, 대체 신호, 상태 저장의 결정은 그대로입니다.
+상태: 채택, 2026-10-22(2026-10-23 수정: vst-audio 0.2.0의 버스 선택으로 주 버스만 켜고, 0.3의 슬롯 수와 파이프라인 깊이로 디코드한 버스트의 블록을 놓치지 않습니다). ADR 0021, 0022, 0035의 크레이트 표, 링크 규칙, unsafe 예산을 바꿉니다. 프로세스 구조, 제어 채널, 상태별 시한, 링 규약, 지연, 대체 신호, 상태 저장의 결정은 그대로입니다.
 
 ## 배경
 
@@ -18,12 +18,13 @@ ADR 0021은 호스팅 크레이트가 `ssr-*`에 의존하지 않게 해서 나�
 | --- | --- | --- |
 | `vst-audio` | 앱(Windows) | `PluginProcess`, `PluginControl`, `watch::ControlWatch`. 호스트를 띄우고 명령하고 감시합니다 |
 | `vst-audio-protocol` | 앱 | 메시지와 `StateHistory` |
-| `vst-audio-ring` | 엔진 | `RingUpmixer`의 공유 메모리 링. `streamring`의 배치 2(f64, 이벤트, 트랜스포트를 더함)입니다 |
+| `vst-audio-ring` | 엔진 | `RingUpmixer`의 공유 메모리 링. `streamring`의 배치 3(f64, 이벤트, 트랜스포트, 레인마다 슬롯 수를 더함)입니다 |
 | `vst-audio-worker-runtime` | `apps/ssr-plughost` | 워커 실행 루프. `ssr-plughost.exe`는 이 크레이트의 `host::main`만 부르는 실행 파일입니다 |
 
-- **저수준 API를 씁니다.** vst-audio의 `Host`, `Instance`, `AudioEndpoint`는 호출자의 블록을 자기 양자로 다시 묶느라 양자 둘만큼 늦고, 대체 신호는 입력 채널 i를 출력 채널 i로 보냅니다. 업믹스 단계는 블록 k를 싣고 k−1을 받는 계약(D = 2B + L + C, ADR 0035)과, 입력 배치를 출력 배치로 패닝하는 대체 신호를 씁니다. 둘이 맞지 않으므로 엔진의 `RingUpmixer`와 앱 어댑터(재시작, 감시 넘기기, 상태 파일 둘)는 소프트리시버에 남습니다.
-- **`streamring`은 남습니다.** ASIO 입구(ADR 0025)가 씁니다. 두 링은 배치 버전(1과 2)이 달라 한 구역에서 섞이지 않습니다.
+- **저수준 API를 씁니다.** vst-audio의 `Host`, `Instance`, `AudioEndpoint`는 호출자의 블록을 자기 양자로 다시 묶느라 양자 둘만큼 늦고, 대체 신호는 입력 채널 i를 출력 채널 i로 보냅니다. 업믹스 단계는 블록 k를 싣고 소스에 따라 정한 깊이 m만큼 앞의 블록 k−m을 받는 계약(`D = (m + 1)·B + L + C`, ADR 0035)과, 입력 배치를 출력 배치로 패닝하는 대체 신호를 씁니다. 둘이 맞지 않으므로 엔진의 `RingUpmixer`와 앱 어댑터(재시작, 감시 넘기기, 상태 파일 둘)는 소프트리시버에 남습니다.
+- **`streamring`은 남습니다.** ASIO 입구(ADR 0025)가 씁니다. 두 링은 배치 버전(1과 3)이 달라 한 구역에서 섞이지 않습니다.
 - **주 버스만 호스팅합니다.** `plughost`는 첫 입력 버스와 첫 출력 버스만 켰습니다. vst-audio 0.1.1의 `PluginProcess::start`는 플러그인이 선언한 버스를 모두 켜서, 사이드체인이 업믹서의 입력 스피커에 섞이고(모노 사이드체인은 C 스피커가 되어 장면이 그리로 접힘) 보조 출력이 출력 스피커에 섞였습니다. 그래서 처음에는 앱 어댑터가 켜진 버스가 한 방향에 둘 이상인 호스트를 거절했고, 사이드체인이나 보조 출력을 가진 업믹서는 쓸 수 없었습니다. 이것이 아래 "호스팅을 고치는 순서"의 첫 사례였습니다. vst-audio 0.2.0이 적재와 준비 사이에 버스를 고르는 `BusSelector`를 더했으므로, 어댑터는 `PluginProcess::start_configured`에 `BusSelector::main_only()`(방향마다 첫 주 버스만 켬)를 넘겨 호스트를 띄웁니다. 사이드체인과 보조 출력은 꺼진 채로 남고 그런 업믹서도 쓸 수 있습니다. 거절(`only_main_buses`)은 꺼진 버스를 세지 않으므로, 플러그인이 받은 것보다 많은 버스를 보고하는 경우를 막는 검사로 남습니다.
+- **링은 슬롯 여덟 개를 씁니다.** 앱 어댑터는 vst-audio 0.3의 `ProcessingOptions::slots`로 `UPMIX_RING_SLOTS`(8)를 넘겨 호스트를 띄우고, `RingUpmixer`는 링의 슬롯이 그보다 적으면 거절합니다. 단계는 차선을 다시 시작할 때 `Pipeline::set_depth(m)`으로 깊이를 정하고, 블록 k를 게시한 뒤 k−m의 결과를 읽습니다. 게시한 뒤 읽으므로 m은 슬롯 수보다 작아야 합니다. m은 소스에 따라 48 kHz에서 PCM 1, DD+·AC-3·JOC 4, TrueHD·MAT 3입니다(ADR 0035의 2026-10-23 고침).
 - **크레이트 넷이 빠집니다.** `plughost`, `plughost-proto`, `plughost-sys`, `plughost-testplugin`(약 7,100줄)입니다. 실행 파일 이름 `ssr-plughost.exe`는 그대로여서 설치본, 앱의 경로, 시험서명 PC 안내는 바뀌지 않습니다.
 
 ### 호스팅을 고치는 순서
@@ -47,7 +48,7 @@ ADR 0021은 호스팅 크레이트가 `ssr-*`에 의존하지 않게 해서 나�
 
 - 호스팅의 시험은 vst-audio에 있고, 옛 `plughost` 시험과 이름이 같습니다. `features.toml`은 `Cargo.lock`이 잠근 vst-audio 크레이트의 시험을 가리킬 수 있고, `ssr-policy`가 `cargo metadata`로 그 판의 소스를 찾아 시험이 있는지 확인합니다.
 - `ci.yml`의 `plughost` 잡은 잠긴 판의 vst-audio 태그를 받아 시험용 플러그인(`vst-audio-testplugin`)을 빌드하고, vst-audio의 `native` 시험을 소프트리시버가 싣는 `ssr-plughost.exe`로 돌립니다. 러너는 전과 같이 Windows Server 2022, 2025, Windows 11 ARM64이고, x64에서는 암호화한 제3자 업믹서도 적재합니다. vst-audio의 CI는 Windows에서 Server 2025 x64만 돌리므로, 나머지 둘과 제3자 업믹서는 이 잡이 맡습니다.
-- 엔진의 업믹스 시험(가짜 호스트 위의 `RingUpmixer`, 무할당)은 `vst-audio-ring`으로 그대로 돕니다.
+- 엔진의 업믹스 시험(가짜 호스트 위의 `RingUpmixer`, 무할당)은 `vst-audio-ring`으로 그대로 돕니다. 시험 호스트를 호출하는 동안 멈춰 두고, 480프레임 PCM(깊이 1)과 1536프레임 2.0 E-AC-3 버스트(깊이 4)가 블록을 놓치지 않는지, 버스트 둘을 한 번에 놓으면 깊이를 넘는 블록만 놓치고 다시 돌아오는지도 확인합니다.
 
 ### 정책 게이트와 unsafe
 

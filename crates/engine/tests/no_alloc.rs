@@ -535,6 +535,7 @@ fn upmix_stages_do_not_allocate() {
     let geometry = Geometry {
         sample_format: SampleFormat::F32,
         lanes: 1,
+        slots: engine::UPMIX_RING_SLOTS,
         input_channels: 2,
         output_channels: 6,
         max_frames: MIX_FRAMES as u32,
@@ -706,4 +707,68 @@ fn upmix_stages_do_not_allocate() {
     let surround = chain.upmix_status(1).unwrap();
     assert_eq!(surround.bypass, Some(UpmixBypass::NativeSurround));
     assert!(chain.upmix_status(0).unwrap().upmixing);
+
+    // A stereo E-AC-3 delivery crosses four blocks in one placement call. The
+    // depth switch, queue rotation and fallback history remain allocation-free.
+    let stereo_fixture = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../decode/tests/fixtures/ddp/tones-2.0.eac3"),
+    )
+    .unwrap();
+    let mut stereo_bursts = Vec::new();
+    for frame in 1..4 {
+        let mut burst = Vec::new();
+        bitstream::frame_burst(
+            bitstream::DataType::Eac3,
+            &stereo_fixture[frame * 768..(frame + 1) * 768],
+            24_576,
+            &mut burst,
+        );
+        stereo_bursts.push(burst);
+    }
+    let stereo_eac3 = SourceFormat::Bitstream(BitstreamFormat {
+        codec: BitstreamCodec::Eac3,
+        container_rate: 192_000,
+        container_channels: 2,
+        encoded_rate: MIX_RATE,
+        encoded_channels: 2,
+    });
+    for (index, burst) in stereo_bursts.iter().enumerate() {
+        assert_no_alloc(|| {
+            if index == 0 {
+                chain.push_record(
+                    Record::FormatChange {
+                        endpoint: 1,
+                        epoch: 3,
+                        repeat: false,
+                        qpc,
+                        format: stereo_eac3,
+                    },
+                    &mut |_| {},
+                );
+            }
+            qpc += burst_ticks;
+            chain.push_record(
+                Record::Data {
+                    endpoint: 1,
+                    epoch: 3,
+                    flags: 0,
+                    pos: 0,
+                    qpc,
+                    qpc_written: 0,
+                    bytes: burst,
+                },
+                &mut |_| {},
+            );
+        });
+        while worker.run_one() {}
+        assert_no_alloc(|| chain.idle(qpc, &mut |_| {}));
+        host(&consumer);
+    }
+    let stereo = chain.upmix_status(1).unwrap();
+    assert!(stereo.upmixing);
+    assert_eq!(
+        stereo.delay_frames as usize,
+        5 * MIX_FRAMES + MIX_RATE as usize / 500
+    );
 }

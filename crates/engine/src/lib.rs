@@ -50,6 +50,6 @@ pub use runtime::{
 };
 pub use upmix::{
     MAX_UPMIX_CHANNELS, MAX_UPMIX_LATENCY_SECONDS, MatrixUpmixer, RingFault, RingUpmixer,
-    SpeakerFault, UPMIX_ENDPOINTS, UpmixError, UpmixMode, UpmixMonitor, UpmixStage, UpmixStatus,
-    Upmixer,
+    SpeakerFault, UPMIX_ENDPOINTS, UPMIX_MAX_DEPTH, UPMIX_RING_SLOTS, UpmixError, UpmixMode,
+    UpmixMonitor, UpmixStage, UpmixStatus, Upmixer,
 };

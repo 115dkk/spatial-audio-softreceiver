@@ -31,9 +31,35 @@ mod timeline;
 pub mod truehd;
 
 use bitstream::Burst;
-use ssr_types::{SceneBlock, SceneLayoutTable, SourceFormat};
+use ssr_types::{BitstreamCodec, SceneBlock, SceneLayoutTable, SourceFormat};
 
 pub use scene::SceneBuffers;
+
+/// Source-rate frames one delivery normally places at once for `format`.
+///
+/// PCM is delivered in one 10 ms chunk. AC-3/E-AC-3/JOC normally carries one
+/// 1536-sample access unit per IEC 61937 burst. TrueHD and MAT normally carry
+/// one 20 ms MAT period plus one 1/1200-second access unit retained from the
+/// previous delivery; `encoded_rate` is the decoded audio sample rate.
+///
+/// A delivery can be larger: a raw TrueHD job can carry several MAT periods,
+/// one capture-thread iteration can collect several deliveries, and a flush can
+/// emit more. Blocks beyond the upmix stage's depth then miss, are counted in
+/// `missed_blocks`, play the same fallback as any late block, and do not change
+/// the stage delay. Unsupported codecs return 0 because they never reach upmix.
+pub fn nominal_frames_per_delivery(format: &SourceFormat) -> usize {
+    match format {
+        SourceFormat::Pcm(pcm) => pcm.sample_rate as usize / 100,
+        SourceFormat::Bitstream(stream) => match stream.codec {
+            BitstreamCodec::Ac3 | BitstreamCodec::Eac3 | BitstreamCodec::Eac3Joc => 1536,
+            BitstreamCodec::TrueHd | BitstreamCodec::Mat20 | BitstreamCodec::Mat21 => {
+                let rate = stream.encoded_rate as usize;
+                rate / 50 + rate / 1200
+            }
+            BitstreamCodec::Dts | BitstreamCodec::DtsHd | BitstreamCodec::Other(_) => 0,
+        },
+    }
+}
 
 /// Largest supported PCM scene block: 192 kHz x 10 ms.
 pub const MAX_SCENE_FRAMES: usize = 1920;

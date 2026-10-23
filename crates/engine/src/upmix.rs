@@ -13,21 +13,28 @@
 //! in, so the mixer lane's transport accounting does not change:
 //!
 //! ```text
-//! D = 2·B + L + C      B = rate/100 (block), L = upmixer latency, C = rate/500 (2 ms)
+//! m = ceil(F / B)
+//! D = (m + 1)·B + L + C
 //! ```
+//!
+//! Here B is the 10 ms block (`rate / 100`), F is the source frames one
+//! delivery normally places at once, L is the upmixer latency, and C is the 2 ms
+//! concealment interval (`rate / 500`). A larger delivery misses only the blocks
+//! beyond m; they use the fallback without changing D.
 //!
 //! 1. **Fold.** The scene's objects are panned onto the upmixer's input
 //!    speakers with the renderer's [`PanGeometry`], interpolating each
 //!    object's gains across the scene. LFE goes to the input LFE, or around
 //!    the upmixer through its own delay line of D frames.
 //! 2. **Blocks.** Every B folded frames are one block for the upmixer, which
-//!    returns the block before (one block of pipeline, ADR 0021).
+//!    returns block `k - m` while block `k` is submitted (ADR 0021).
 //! 3. **Fallback.** A block the upmixer does not return in time is the
 //!    folded input delayed by L, laid onto the outputs: input speakers that are
 //!    outputs go there, others are panned onto the outputs.
 //! 4. **FIFO.** Each restart prefills the output FIFO with B + C frames of
-//!    silence. It never runs dry, and it still holds C frames of the last
-//!    plugin block when a miss is known, so they fade out to the fallback.
+//!    silence, and blocks 0 to m - 1 append silent results. It never runs dry,
+//!    and it still holds C frames of the last plugin block when a miss is
+//!    known, so they fade out to the fallback.
 //! 5. **Emit.** Each scene of n frames leaves as one scene of n frames: an
 //!    object at each non-LFE output speaker, and the LFE.
 //!
@@ -39,7 +46,7 @@
 
 use std::fmt;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
 use render::{PanGeometry, Ramp};
 use ssr_types::app::UpmixBypass;
@@ -58,6 +65,10 @@ pub const UPMIX_ENDPOINTS: usize = 3;
 pub const MAX_UPMIX_CHANNELS: usize = 32;
 /// The longest upmixer latency accepted, in seconds (ADR 0021).
 pub const MAX_UPMIX_LATENCY_SECONDS: usize = 2;
+/// Shared-memory slots provisioned for every plugin upmixer.
+pub const UPMIX_RING_SLOTS: u32 = 8;
+/// Largest depth the fixed eight-slot publish-before-read ring can support.
+pub const UPMIX_MAX_DEPTH: usize = UPMIX_RING_SLOTS as usize - 1;
 /// Objects of a stereo or mono scene: at most two besides LFE.
 const STEREO_OBJECTS: usize = 2;
 /// The longest scene the stage emits at once; a longer incoming scene (only
@@ -65,6 +76,41 @@ const STEREO_OBJECTS: usize = 2;
 const EMIT_FRAMES: usize = decode::MAX_SCENE_FRAMES;
 const _: () = assert!(MAX_UPMIX_CHANNELS < MAX_OBJECTS);
 const _: () = assert!(UPMIX_ENDPOINTS <= ssr_abi::MAX_ENDPOINTS);
+const _: () = assert!(UPMIX_RING_SLOTS <= vst_audio_ring::MAX_SLOTS);
+const _: () = assert!(UPMIX_RING_SLOTS as usize > UPMIX_MAX_DEPTH);
+
+fn pipeline_depth(nominal_frames: usize, rate: u32) -> usize {
+    nominal_frames
+        .div_ceil(rate as usize / 100)
+        .clamp(1, UPMIX_MAX_DEPTH)
+}
+
+/// The deepest pipeline any source at `rate` asks for; the stage allocates
+/// its history and LFE line for it.
+fn largest_pipeline_depth(rate: u32) -> usize {
+    use ssr_types::{BitstreamCodec, BitstreamFormat, SourceFormat};
+
+    [
+        BitstreamCodec::Ac3,
+        BitstreamCodec::Eac3,
+        BitstreamCodec::Eac3Joc,
+        BitstreamCodec::TrueHd,
+        BitstreamCodec::Mat20,
+        BitstreamCodec::Mat21,
+    ]
+    .into_iter()
+    .map(|codec| {
+        let format = SourceFormat::Bitstream(BitstreamFormat {
+            codec,
+            container_rate: rate,
+            container_channels: 2,
+            encoded_rate: rate,
+            encoded_channels: 2,
+        });
+        pipeline_depth(decode::nominal_frames_per_delivery(&format), rate)
+    })
+    .fold(1, usize::max)
+}
 
 /// An upmixer the stage drives one 10 ms block at a time.
 pub trait Upmixer: Send {
@@ -78,11 +124,17 @@ pub trait Upmixer: Send {
     fn outputs(&self) -> &[Speaker];
     /// Plugin latency in frames at `rate()` (≤ 2 s).
     fn latency_frames(&self) -> usize;
+    /// Changes the pipeline depth. From the following block 0, [`Self::process`]
+    /// writes block `block - depth`'s result. Called before each upmixer
+    /// generation; `depth` is at least one. Never allocates.
+    fn set_depth(&mut self, depth: usize);
+    /// Largest depth accepted by [`Self::set_depth`].
+    fn max_depth(&self) -> usize;
     /// Submits app block `block` (`inputs().len()` planes of `block_frames`,
-    /// plane-major) under `generation`. Also writes block `block - 1`'s result
-    /// into `output` (`outputs().len()` planes), but only when that block was
-    /// submitted under the same generation and has completed. Returns whether
-    /// `output` holds it. Never blocks, locks or allocates.
+    /// plane-major) under `generation`. Also writes block `block - depth`'s
+    /// result into `output` (`outputs().len()` planes), but only when that block
+    /// was submitted under the same generation and has completed. Returns
+    /// whether `output` holds it. Never blocks, locks or allocates.
     fn process(&mut self, block: u64, generation: u64, input: &[f32], output: &mut [f32]) -> bool;
 }
 
@@ -102,6 +154,8 @@ pub enum SpeakerFault {
 pub enum RingFault {
     /// The ring has more than one lane.
     Lanes,
+    /// The ring has fewer slots than [`UPMIX_RING_SLOTS`].
+    Slots,
     /// The ring's input channels are not the input speaker count.
     InputChannels,
     /// The ring's output channels are not the output speaker count.
@@ -123,6 +177,8 @@ pub enum UpmixError {
     BlockFrames,
     #[error("the upmixer's latency exceeds two seconds")]
     Latency,
+    #[error("the upmixer's pipeline is not deep enough")]
+    Depth,
     #[error("scenes cannot be panned onto the upmixer's input speakers")]
     InputLayout,
     #[error("the fallback cannot be panned onto the upmixer's output speakers")]
@@ -215,10 +271,11 @@ pub struct MatrixUpmixer {
     /// `OUTPUTS_5_1` rings of `latency_frames`.
     delay: Vec<f32>,
     cursor: usize,
-    /// The last submitted block's result, `OUTPUTS_5_1` planes.
-    result: Vec<f32>,
-    /// That block and its generation.
-    ready: Option<(u64, u64)>,
+    /// Preallocated result slots, `OUTPUTS_5_1` planes per pipeline entry.
+    results: Vec<f32>,
+    /// The block and generation held by each result slot.
+    ready: Vec<Option<(u64, u64)>>,
+    depth: usize,
     misses: Vec<u64>,
     nan: Option<u64>,
 }
@@ -270,8 +327,9 @@ impl MatrixUpmixer {
             low_pass: 0.0,
             delay: vec![0.0; outputs * latency_frames],
             cursor: 0,
-            result: vec![0.0; outputs * block_frames],
-            ready: None,
+            results: vec![0.0; UPMIX_MAX_DEPTH * outputs * block_frames],
+            ready: vec![None; UPMIX_MAX_DEPTH],
+            depth: 1,
             misses: Vec::new(),
             nan: None,
         }
@@ -352,33 +410,45 @@ impl Upmixer for MatrixUpmixer {
         self.latency_frames
     }
 
+    fn set_depth(&mut self, depth: usize) {
+        assert!((1..=self.max_depth()).contains(&depth));
+        self.depth = depth;
+        self.ready.fill(None);
+    }
+
+    fn max_depth(&self) -> usize {
+        UPMIX_MAX_DEPTH
+    }
+
     fn process(&mut self, block: u64, generation: u64, input: &[f32], output: &mut [f32]) -> bool {
-        let delivered = match self.ready {
-            Some((ready, ready_generation)) => {
-                ready.checked_add(1) == Some(block)
-                    && ready_generation == generation
-                    && !self.misses.contains(&ready)
-            }
-            None => false,
-        };
-        if delivered {
-            let samples = self.result.len();
-            if self.nan == self.ready.map(|(ready, _)| ready) {
+        let samples = Self::OUTPUTS_5_1.len() * self.block_frames;
+        let wanted = block.checked_sub(self.depth as u64);
+        let read_slot = wanted.map(|wanted| wanted as usize % self.ready.len());
+        let delivered = read_slot.is_some_and(|slot| {
+            self.ready[slot] == wanted.map(|wanted| (wanted, generation))
+                && !self.misses.contains(&wanted.unwrap())
+        });
+        if let Some(slot) = read_slot.filter(|_| delivered) {
+            let ready = wanted.unwrap();
+            if self.nan == Some(ready) {
                 output[..samples].fill(f32::NAN);
             } else {
-                output[..samples].copy_from_slice(&self.result);
+                let start = slot * samples;
+                output[..samples].copy_from_slice(&self.results[start..start + samples]);
             }
         }
-        let mut result = std::mem::take(&mut self.result);
-        self.matrix_block(input, &mut result);
-        self.result = result;
-        self.ready = Some((block, generation));
+        let slot = block as usize % self.ready.len();
+        let start = slot * samples;
+        let mut results = std::mem::take(&mut self.results);
+        self.matrix_block(input, &mut results[start..start + samples]);
+        self.results = results;
+        self.ready[slot] = Some((block, generation));
         delivered
     }
 }
 
 /// The producer side of a plugin host (ADR 0021): each block is published to
-/// a one-lane `vst-audio-ring` region (ADR 0039), and the block before is read
+/// a one-lane `vst-audio-ring` region (ADR 0039), and block `k - m` is read
 /// back when the host has completed it in time and under the same generation.
 pub struct RingUpmixer {
     memory: Box<dyn RegionMemory>,
@@ -418,6 +488,9 @@ impl RingUpmixer {
         let geometry = publisher.geometry();
         if geometry.lanes != 1 {
             return Err(UpmixError::Ring(RingFault::Lanes));
+        }
+        if geometry.slots < UPMIX_RING_SLOTS {
+            return Err(UpmixError::Ring(RingFault::Slots));
         }
         if geometry.input_channels as usize != inputs.len() {
             return Err(UpmixError::Ring(RingFault::InputChannels));
@@ -464,6 +537,14 @@ impl Upmixer for RingUpmixer {
 
     fn latency_frames(&self) -> usize {
         self.latency_frames
+    }
+
+    fn set_depth(&mut self, depth: usize) {
+        self.pipeline.set_depth(depth as u32);
+    }
+
+    fn max_depth(&self) -> usize {
+        self.publisher.geometry().slots as usize - 1
     }
 
     fn process(&mut self, block: u64, generation: u64, input: &[f32], output: &mut [f32]) -> bool {
@@ -585,6 +666,7 @@ fn bypass_from_wire(value: u8) -> Option<UpmixBypass> {
 /// The stage's live state, written by the capture thread without allocating.
 #[derive(Debug, Default)]
 struct UpmixShared {
+    delay_frames: AtomicU32,
     upmixing: AtomicBool,
     bypass: AtomicU8,
     fallback: AtomicBool,
@@ -600,7 +682,6 @@ pub struct UpmixMonitor {
     shared: Arc<UpmixShared>,
     inputs: Vec<Speaker>,
     outputs: Vec<Speaker>,
-    delay_frames: u32,
     rate: u32,
 }
 
@@ -616,7 +697,7 @@ impl UpmixMonitor {
             } else {
                 UpmixMode::Plugin
             },
-            delay_frames: self.delay_frames,
+            delay_frames: shared.delay_frames.load(Ordering::Acquire),
             rate: self.rate,
             inputs: self.inputs.clone(),
             outputs: self.outputs.clone(),
@@ -640,13 +721,17 @@ struct Content {
     /// At most two objects besides LFE: stereo or mono.
     stereo: bool,
     rate: u32,
+    depth: usize,
 }
 
 impl Content {
-    fn of(scene: &SceneBlock<'_>) -> Self {
+    fn of(scene: &SceneBlock<'_>, nominal_frames: usize) -> Self {
         Self {
             stereo: scene.objects.len() <= STEREO_OBJECTS,
             rate: scene.rate,
+            // The stage only upmixes equal-rate scenes, so source and stage
+            // frames have the same duration and need no rate conversion.
+            depth: pipeline_depth(nominal_frames, scene.rate),
         }
     }
 }
@@ -676,9 +761,11 @@ pub struct UpmixStage {
     latency: usize,
     /// C.
     fade: usize,
-    /// D = 2·B + L + C.
+    /// Current depth m and D = (m + 1)·B + L + C.
+    depth: usize,
     delay: usize,
     delay_ticks: u64,
+    max_depth: usize,
     /// Upmixer input planes.
     inputs: usize,
     input_lfe: Option<usize>,
@@ -704,7 +791,7 @@ pub struct UpmixStage {
     /// The block being collected, `inputs` planes of B.
     input_block: Vec<f32>,
     collected: usize,
-    /// The folded input of the last 2·B + L frames, `inputs` rings.
+    /// The folded input of the last `(max_m + 1)·B + L` frames, `inputs` rings.
     history: Vec<f32>,
     history_frames: usize,
     /// Fallback entries: FIFO plane, input plane, gain.
@@ -784,7 +871,13 @@ impl UpmixStage {
 
         let block = rate as usize / 100;
         let fade = rate as usize / 500;
-        let delay = 2 * block + latency + fade;
+        let max_depth = largest_pipeline_depth(rate);
+        if upmixer.max_depth() < max_depth {
+            return Err(UpmixError::Depth);
+        }
+        let depth = 1;
+        let delay = (depth + 1) * block + latency + fade;
+        let max_delay = (max_depth + 1) * block + latency + fade;
         let inputs = input_speakers.len();
         let outputs = output_speakers.len();
         let input_lfe = input_speakers.iter().position(|speaker| is_lfe(*speaker));
@@ -817,15 +910,18 @@ impl UpmixStage {
             .filter_map(|(plane, speaker)| speaker.position().map(|position| (plane, position)))
             .collect();
 
-        let history_frames = 2 * block + latency;
-        // B + C of prefill and one block: the most ever held (see `process`).
+        let history_frames = (max_depth + 1) * block + latency;
+        // B + C of prefill and one block: the most ever held (see `process`),
+        // whatever the depth: the m silent pipeline blocks enter one at a time.
         let capacity = 2 * block + fade;
-        let shared = Arc::new(UpmixShared::default());
+        let shared = Arc::new(UpmixShared {
+            delay_frames: AtomicU32::new(delay as u32),
+            ..UpmixShared::default()
+        });
         let monitor = UpmixMonitor {
             shared: Arc::clone(&shared),
             inputs: input_speakers,
             outputs: output_speakers,
-            delay_frames: delay as u32,
             rate,
         };
         Ok(Self {
@@ -836,8 +932,10 @@ impl UpmixStage {
             block,
             latency,
             fade,
+            depth,
             delay,
             delay_ticks: (delay as u128 * u128::from(qpc_frequency) / u128::from(rate)) as u64,
+            max_depth,
             inputs,
             input_lfe,
             outputs,
@@ -868,7 +966,7 @@ impl UpmixStage {
             head: 0,
             len: 0,
             lfe_line: if input_lfe.is_none() {
-                vec![0.0; delay + block]
+                vec![0.0; max_delay + block]
             } else {
                 Vec::new()
             },
@@ -899,7 +997,7 @@ impl UpmixStage {
         self.qpc_frequency
     }
 
-    /// D = 2·B + L + C frames at [`UpmixStage::rate`].
+    /// D = (m + 1)·B + L + C frames at [`UpmixStage::rate`].
     pub fn delay_frames(&self) -> usize {
         self.delay
     }
@@ -957,21 +1055,32 @@ impl UpmixStage {
     }
 
     /// Starts a lane generation on `route`. Upmixing starts a new upmixer
-    /// generation from block 0 with the FIFO prefilled with B + C frames of
-    /// silence. Clears only what the new generation reads, so a long latency
-    /// costs nothing here.
-    fn restart(&mut self, route: Route) {
+    /// generation at `depth` from block 0 with the FIFO prefilled with B + C
+    /// frames of silence; blocks before `depth` append silence. Clears only
+    /// what the new generation reads, so a long latency costs nothing here.
+    fn restart(&mut self, route: Route, depth: usize) {
         self.upmixing = route == Route::Upmix;
         self.set_route(Some(route));
         if !self.upmixing {
             return;
         }
+        debug_assert!((1..=self.max_depth).contains(&depth));
+        self.depth = depth;
+        self.delay = (depth + 1) * self.block + self.latency + self.fade;
+        self.delay_ticks =
+            (self.delay as u128 * u128::from(self.qpc_frequency) / u128::from(self.rate)) as u64;
+        self.shared
+            .delay_frames
+            .store(self.delay as u32, Ordering::Release);
+        self.upmixer.set_depth(depth);
         self.generation = self.generation.wrapping_add(1);
         self.next_block = 0;
         self.collected = 0;
         self.frames_in = 0;
         self.frames_out = 0;
         self.head = 0;
+        // The upmixer itself contributes m blocks before returning block 0;
+        // one additional block plus C in the FIFO makes D = (m + 1)·B + L + C.
         self.len = self.block + self.fade;
         for plane in 0..self.planes {
             let start = plane * self.capacity;
@@ -1092,7 +1201,7 @@ impl UpmixStage {
         self.frames_in += take as u64;
     }
 
-    /// Submits the full block k and appends output block k - 1 to the FIFO:
+    /// Submits the full block k and appends output block k - m to the FIFO:
     /// the upmixer's result, or the fallback when it has none.
     fn finish_block(&mut self) {
         let block = self.next_block;
@@ -1107,9 +1216,8 @@ impl UpmixStage {
         {
             self.low_water = Some(self.low_water.map_or(self.len, |low| low.min(self.len)));
         }
-        if block == 0 {
-            // Nothing before the restart to return (ADR 0021): the fallback,
-            // silent here.
+        if block < self.depth as u64 {
+            // Nothing before the restart to return: the fallback is silent.
             self.append_fallback();
         } else if delivered {
             self.shared.delivered.fetch_add(1, Ordering::Relaxed);
@@ -1137,11 +1245,11 @@ impl UpmixStage {
         debug_assert!(self.len <= self.capacity, "upmix FIFO overflowed");
     }
 
-    /// Output block k - 1's fallback: the folded input of that block's time,
+    /// Output block k - m's fallback: the folded input of that block's time,
     /// L earlier, through the fallback matrix. Silence before the restart.
     fn compute_fallback(&mut self, block: u64) {
         self.fallback.fill(0.0);
-        let Some(previous) = block.checked_sub(1) else {
+        let Some(previous) = block.checked_sub(self.depth as u64) else {
             return;
         };
         let start = previous as i128 * self.block as i128 - self.latency as i128;
@@ -1380,10 +1488,11 @@ impl UpmixLanes {
                 stage.set_route(route);
             }
         } else if let Some(stage) = lane.stage.as_deref_mut() {
-            match route {
+            match (route, content) {
                 // Transparent before and after: no restart.
-                Some(route) => stage.restart(route),
-                None => stage.set_route(None),
+                (Some(route), Some(content)) => stage.restart(route, content.depth),
+                (None, _) => stage.set_route(None),
+                (Some(_), None) => unreachable!("a route requires content"),
             }
         }
         old
@@ -1454,6 +1563,8 @@ pub(crate) fn place_scene(
     mixer: &mut SceneMixer,
     endpoint: u16,
     scene: &SceneBlock<'_>,
+    // Source-rate frames one delivery normally places at once.
+    nominal_frames: usize,
     geometry: Option<&PanGeometry>,
     before_restart: &mut dyn FnMut(&mut SceneMixer),
 ) -> Result<(), u32> {
@@ -1466,19 +1577,22 @@ pub(crate) fn place_scene(
         // The scene starts the lane.
         lane.content = None;
     }
-    let content = Content::of(scene);
+    let content = Content::of(scene, nominal_frames);
     let result = match lane.stage.as_deref_mut() {
         None => mixer.push_scene(endpoint, scene, geometry),
         Some(stage) => {
             let route = stage.route_for(apply, content);
-            if lane.content.is_some() && stage.upmixing() != (route == Route::Upmix) {
+            if lane.content.is_some()
+                && (stage.upmixing() != (route == Route::Upmix)
+                    || (stage.upmixing() && stage.depth != content.depth))
+            {
                 before_restart(mixer);
                 mixer.lane_discontinuity(endpoint, 0);
                 lane.restarts = mixer.lane_restarts(endpoint);
                 lane.content = None;
             }
             if lane.content.is_none() {
-                stage.restart(route);
+                stage.restart(route, content.depth);
             } else if stage.route != Some(route) {
                 stage.set_route(Some(route));
             }
@@ -1519,7 +1633,7 @@ mod tests {
 
     fn upmixing(upmixer: impl Upmixer + 'static) -> UpmixStage {
         let mut stage = stage(upmixer);
-        stage.restart(Route::Upmix);
+        stage.restart(Route::Upmix, 1);
         stage
     }
 
@@ -1639,6 +1753,67 @@ mod tests {
     }
 
     #[test]
+    fn every_supported_source_depth_fits_the_ring() {
+        use ssr_types::{BitstreamCodec, BitstreamFormat, PcmFormat, SampleType, SourceFormat};
+
+        const RATES: [u32; 6] = [44_100, 48_000, 88_200, 96_000, 176_400, 192_000];
+        const CODECS: [BitstreamCodec; 9] = [
+            BitstreamCodec::Ac3,
+            BitstreamCodec::Eac3,
+            BitstreamCodec::Eac3Joc,
+            BitstreamCodec::TrueHd,
+            BitstreamCodec::Mat20,
+            BitstreamCodec::Mat21,
+            BitstreamCodec::Dts,
+            BitstreamCodec::DtsHd,
+            BitstreamCodec::Other(0),
+        ];
+        for rate in RATES {
+            assert!(supported_source_rate(rate));
+            let pcm = SourceFormat::Pcm(PcmFormat {
+                channels: 2,
+                sample_rate: rate,
+                bits_per_sample: 32,
+                valid_bits: 32,
+                sample_type: SampleType::Float,
+                channel_mask: 3,
+            });
+            let pcm_depth = pipeline_depth(decode::nominal_frames_per_delivery(&pcm), rate);
+            assert!((1..=UPMIX_MAX_DEPTH).contains(&pcm_depth));
+            for codec in CODECS {
+                let format = SourceFormat::Bitstream(BitstreamFormat {
+                    codec,
+                    container_rate: 192_000,
+                    container_channels: 2,
+                    encoded_rate: rate,
+                    encoded_channels: 2,
+                });
+                let depth = pipeline_depth(decode::nominal_frames_per_delivery(&format), rate);
+                assert!(
+                    (1..=UPMIX_MAX_DEPTH).contains(&depth),
+                    "{codec:?} at {rate}"
+                );
+            }
+        }
+
+        let depth = |codec| {
+            let format = SourceFormat::Bitstream(BitstreamFormat {
+                codec,
+                container_rate: 192_000,
+                container_channels: 2,
+                encoded_rate: RATE,
+                encoded_channels: 2,
+            });
+            pipeline_depth(decode::nominal_frames_per_delivery(&format), RATE)
+        };
+        assert_eq!(pipeline_depth(RATE as usize / 100, RATE), 1);
+        assert_eq!(depth(BitstreamCodec::Eac3), 4);
+        assert_eq!(depth(BitstreamCodec::TrueHd), 3);
+        assert_eq!(depth(BitstreamCodec::Mat20), 3);
+        assert_eq!(depth(BitstreamCodec::Mat21), 3);
+    }
+
+    #[test]
     fn delay_is_two_blocks_plus_latency_plus_two_ms() {
         for latency in [0, 37, 480] {
             let mut stage = upmixing(MatrixUpmixer::stereo_to_5_1(RATE, latency));
@@ -1676,6 +1851,39 @@ mod tests {
                 1_000_000 + B as u64 * QPC / u64::from(RATE) - delay as u64 * QPC / u64::from(RATE)
             );
         }
+    }
+
+    #[test]
+    fn deeper_pipeline_updates_delay_audio_and_source_time() {
+        let latency = 37;
+        let depth = 4;
+        let mut stage = stage(MatrixUpmixer::stereo_to_5_1(RATE, latency));
+        stage.restart(Route::Upmix, depth);
+        let delay = (depth + 1) * B + latency + C;
+        assert_eq!(stage.delay_frames(), delay);
+        assert_eq!(stage.status().delay_frames as usize, delay);
+
+        let impulse_at = 3 * B;
+        let frames = impulse_at + delay + 2 * B;
+        let left = impulse(frames, impulse_at, 1.0);
+        let right = vec![0.0; frames];
+        let emitted = run(
+            &mut stage,
+            &MatrixUpmixer::STEREO,
+            &[left, right],
+            None,
+            &[B],
+        );
+        let audible = emitted
+            .plane(Speaker::L)
+            .iter()
+            .position(|sample| *sample != 0.0);
+        assert_eq!(audible, Some(impulse_at + delay));
+        assert_eq!(stage.status().missed_blocks, 0);
+        assert_eq!(
+            emitted.source_qpcs[1],
+            1_000_000 + B as u64 * QPC / u64::from(RATE) - delay as u64 * QPC / u64::from(RATE)
+        );
     }
 
     #[test]
@@ -1868,6 +2076,10 @@ mod tests {
         }
         fn latency_frames(&self) -> usize {
             0
+        }
+        fn set_depth(&mut self, _: usize) {}
+        fn max_depth(&self) -> usize {
+            UPMIX_MAX_DEPTH
         }
         fn process(&mut self, _: u64, _: u64, _: &[f32], output: &mut [f32]) -> bool {
             output.fill(self.0);
@@ -2066,7 +2278,7 @@ mod tests {
             new_objects: 0,
         };
         match lanes {
-            Some(lanes) => place_scene(lanes, mixer, 0, &scene, Some(geometry), &mut |_| {
+            Some(lanes) => place_scene(lanes, mixer, 0, &scene, B, Some(geometry), &mut |_| {
                 *restarts += 1;
             })
             .unwrap(),

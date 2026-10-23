@@ -27,6 +27,21 @@ Frequencies are integer multiples of 31.25 Hz, the 1536-sample DFT resolution.
 SHA-256:
 `8cb8efb7e99d5dd698a5b7f79a010b0ba5ac43aeca8f49d56f077af7d6ecda54`
 
+## Synthetic DD+ stereo fixture
+
+`tones-2.0.eac3` is likewise synthetic and contains no JOC metadata. It was
+generated on 2026-10-23 with Ubuntu ffmpeg `6.1.1-3ubuntu5`:
+
+```text
+ffmpeg -hide_banner -loglevel error -y -f lavfi -i "aevalsrc=0.1*sin(2*PI*375*t)|0.1*sin(2*PI*562.5*t):s=48000:d=1:c=stereo" -c:a eac3 -b:a 192k -f eac3 tones-2.0.eac3
+```
+
+The file contains 32 independent 768-byte syncframes, each with 1536 samples
+at 48 kHz, and is 24576 bytes in total.
+
+SHA-256:
+`4b08c1e501b36dbeeeb35b8cef4b6d5a2e1dab534e490d88d5152fb45c32697f`
+
 ## JOC coverage
 
 No JOC vector is redistributed here. Upstream harletty-bridge contains

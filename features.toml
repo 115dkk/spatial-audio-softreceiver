@@ -910,6 +910,8 @@ milestone = "M4"
 status = "implemented"
 tests = [
   "engine::delay_is_two_blocks_plus_latency_plus_two_ms",
+  "engine::deeper_pipeline_updates_delay_audio_and_source_time",
+  "engine::every_supported_source_depth_fits_the_ring",
   "engine::adversarial_scene_sizes_never_drain_the_fifo",
   "engine::stereo_folds_bit_exact_and_mono_splits_by_the_panning_law",
   "engine::object_gains_ramp_across_the_scene_unless_new",
@@ -927,6 +929,9 @@ tests = [
   "engine::a_stopped_lane_reports_nothing_playing",
   "engine::upmixed_pcm_leaves_the_chain_exactly_d_later",
   "engine::ten_seconds_of_adversarial_records_keep_the_lane_accounting",
+  "engine::decoded_stereo_reaches_the_ring_host_although_bursts_cross_several_blocks",
+  "engine::an_oversized_delivery_misses_only_the_blocks_beyond_the_depth",
+  "engine::pcm_ring_source_keeps_one_block_of_pipeline_depth",
   "engine::a_5_1_bitstream_is_transparent_and_bit_exact_on_music_and_pass",
   "engine::native_surround_pcm_is_never_upmixed",
   "engine::mono_pcm_is_upmixed_onto_left_and_right",
@@ -943,7 +948,7 @@ tests = [
   "engine::upmix_stages_do_not_allocate",
   "engine::upmixer_changes_are_drained_without_allocating",
 ]
-note = "ADR 0021 and ADR 0035 (2026-10-16 correction): on endpoints 0, 1 and 2 (main, music, PASS), stereo and mono content (at most two objects besides LFE) is upmixed whether it arrives as PCM or as a decoded bitstream, judged from each decoded scene's shape; native surround is always transparent, and a bitstream's stereo/surround flip restarts the lane. Scenes are panned onto the upmixer's input layout with the renderer's PanGeometry (gains interpolated across each scene; LFE to the input LFE, or around the upmixer delayed the same). Constant delay of 2 blocks + plugin latency + 2 ms with as many frames out as in, so lane accounting is unchanged. Fallback (the folded input delayed by the plugin latency, laid onto the outputs) for the first block after a restart and for missed blocks, 2 ms fade-out from a held-back plugin tail and fade-back, fallback mode after three misses, non-finite samples zeroed and counted (ADR 0021). Transparent and undelayed when the output kind does not apply upmixing, the rate differs from the upmixer's, or no upmixer is installed; changes between upmixing and transparent restart the lane. Upmixers: MatrixUpmixer (fake) and RingUpmixer (vst-audio-ring producer of a plugin host)"
+note = "ADR 0021 and ADR 0035 (2026-10-16 and 2026-10-23 corrections): on endpoints 0, 1 and 2 (main, music, PASS), stereo and mono content (at most two objects besides LFE) is upmixed whether it arrives as PCM or as a decoded bitstream, judged from each decoded scene's shape; native surround is always transparent, and a bitstream's stereo/surround flip restarts the lane. Scenes are panned onto the upmixer's input layout with the renderer's PanGeometry (gains interpolated across each scene; LFE to the input LFE, or around the upmixer delayed the same). Source-dependent pipeline depth m = ceil(nominal source frames per delivery / 10 ms block), with constant delay (m + 1) blocks + plugin latency + 2 ms and as many frames out as in, so lane accounting is unchanged; at 48 kHz PCM uses m=1/D=2B+L+C, DD+/AC-3/JOC m=4/D=5B+L+C, and TrueHD/MAT m=3/D=4B+L+C. Eight ring slots keep publish-before-read valid through every supported depth. A delivery larger than nominal misses only blocks beyond m; they are counted, play fallback, and do not change the delay. Fallback (the folded input delayed by the plugin latency, laid onto the outputs) for the first m blocks after a restart and for missed blocks, 2 ms fade-out from a held-back plugin tail and fade-back, fallback mode after three misses, non-finite samples zeroed and counted (ADR 0021). Transparent and undelayed when the output kind does not apply upmixing, the rate differs from the upmixer's, or no upmixer is installed; changes between upmixing and transparent restart the lane. Upmixers: MatrixUpmixer (fake) and RingUpmixer (vst-audio-ring producer of a plugin host)"
 
 [[feature]]
 id = "upmix.first_party"
