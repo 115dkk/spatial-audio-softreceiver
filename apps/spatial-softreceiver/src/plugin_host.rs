@@ -1,24 +1,19 @@
 //! The supervisor's [`PluginHost`] port (ADR 0035): on Windows,
-//! `ssr-plughost.exe` beside the app through `vst_audio::PluginProcess`; on
-//! other systems, a port that hosts nothing.
+//! `ssr-plughost.exe` beside the app through `vst_audio::Host`; on other
+//! systems, a port that hosts nothing.
 //!
-//! The Windows adapter never blocks the control thread for a start: each
-//! start, restart and respawn runs `PluginProcess::start` on a thread of its
-//! own, and the instance reports
-//! [`PluginEvent::Running`](supervisor::upmix::PluginEvent::Running) from the
-//! poll that finds it done. A scan does block, up to the host's own
-//! deadlines, as the port allows.
+//! Starts are `vst_audio::LoadTask`s polled by the control thread. The
+//! high-level instance owns worker supervision, the 0.5/2/8-second watch
+//! policy, state selection and recovery hand-over; the adapter maps its events
+//! to the supervisor port. The port's `NeedsRespawn` variant remains for other
+//! adapters and tests, but the Windows adapter never emits it.
 //!
-//! Plugin states (ADR 0021) are saved as the host returns them: the plugin
-//! host's watch asks for one after loading and restoring, when the editor
-//! closes, two seconds after the last parameter change and before a host
-//! stops (`PluginControl` sends the request, the adapter keeps the reply).
-//! Each endpoint has two files in the state directory,
-//! `upmix-<endpoint>.state` and `upmix-<endpoint>.previous.state`: a new
-//! state is written beside them and renamed over the newest, which becomes
-//! the previous one. A start restores the newest and falls back to the
-//! previous when that fails; a respawn keeps the session's own watch, with
-//! its failure window and its two states, as `vst_audio` documents.
+//! Plugin states (ADR 0021) are saved as the instance returns them. Each
+//! endpoint has two files in the state directory,
+//! `upmix-<endpoint>.state` and `upmix-<endpoint>.previous.state`: a new state
+//! is written beside them and renamed over the newest, which becomes the
+//! previous one. A rate or latency handoff asks the old instance to save and
+//! stop, then restores the newest state in the new instance.
 
 use std::fs;
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
@@ -28,7 +23,7 @@ use std::path::{Path, PathBuf};
 use ssr_types::Speaker;
 use ssr_types::app::PluginFormat;
 use supervisor::upmix::{PluginClass, PluginHost, PluginHostError, PluginInstance, PluginSetting};
-use vst_audio_protocol::{ProcessingSetup, StateHistory};
+use vst_audio_protocol::ProcessingSetup;
 
 use crate::log;
 use crate::paths;
@@ -102,18 +97,6 @@ pub fn only_main_buses(setup: &ProcessingSetup) -> Result<(), String> {
         ));
     }
     Ok(())
-}
-
-/// The state a respawned host restores (ADR 0021): the newest, unless the
-/// host died again right after restoring it, then the one before. The
-/// history remembers which one is being restored.
-pub fn respawn_state(states: &mut StateHistory) -> Option<Vec<u8>> {
-    let after_crash = states.crash_after_restore().map(<[u8]>::to_vec);
-    if after_crash.as_deref() == states.current() {
-        states.begin_restore().map(<[u8]>::to_vec)
-    } else {
-        after_crash
-    }
 }
 
 /// One endpoint's two saved plugin states (ADR 0021).
@@ -217,39 +200,38 @@ fn state_hash(blob: &[u8]) -> u64 {
 #[cfg(windows)]
 mod windows {
     use std::path::{Path, PathBuf};
-    use std::sync::mpsc::{self, Receiver, TryRecvError};
-    use std::thread;
     use std::time::{Duration, Instant};
 
-    use engine::{RingUpmixer, Upmixer};
+    use engine::Upmixer;
     use ssr_types::Speaker;
     use ssr_types::app::PluginFormat;
     use supervisor::upmix::{
         PluginClass, PluginEvent, PluginHost, PluginHostError, PluginInstance, PluginSetting,
     };
-    use vst_audio::watch::ControlWatch;
     use vst_audio::{
-        BusSelector, ControlEvent, PluginControl, PluginProcess, ProcessingOptions, SharedEvent,
-        StartError, Started,
+        BlockEndpoint, BlockStatus, BusSelector, Command, Configuration, Controller, Host,
+        HostEvent, LoadTask, PluginDescriptor, RecoveryPolicy,
     };
-    use vst_audio_protocol::{Action, Frame, Message};
 
-    use super::{StateStore, only_main_buses, respawn_state, speakers_of};
+    use super::{StateStore, only_main_buses, speakers_of};
 
     /// How long a stopping host is polled for its last state before it is
-    /// dropped (which ends its process). Its watch kills it after two seconds.
+    /// dropped (which ends its process).
     const LEAVE_GRACE: Duration = Duration::from_secs(3);
 
     /// `ssr-plughost.exe` as the supervisor's plugin host port.
     #[derive(Clone, Debug)]
     pub struct WindowsPluginHost {
-        exe: PathBuf,
+        host: Host,
         state_dir: PathBuf,
     }
 
     impl WindowsPluginHost {
         pub fn new(exe: PathBuf, state_dir: PathBuf) -> Self {
-            Self { exe, state_dir }
+            Self {
+                host: Host::new(exe),
+                state_dir,
+            }
         }
     }
 
@@ -260,25 +242,21 @@ mod windows {
         }
     }
 
-    /// Starts a host on the main buses alone (ADR 0039): a sidechain or an
-    /// auxiliary output stays inactive, so it never joins the speakers. The
-    /// quantum is 10 ms, as `PluginProcess::start` chooses.
-    fn start(
-        exe: &Path,
-        path: &Path,
-        format: vst_audio::PluginFormat,
-        class: Option<[u8; 16]>,
-        rate: u32,
-        state: Option<&[u8]>,
-    ) -> Result<Started, StartError> {
-        let options = ProcessingOptions {
+    fn descriptor(plugin: &PluginSetting) -> PluginDescriptor {
+        let mut descriptor = PluginDescriptor::new(&plugin.path, proto_format(plugin.format));
+        descriptor.class_id = plugin.class;
+        descriptor
+    }
+
+    fn configuration(rate: u32) -> Configuration {
+        Configuration {
             sample_rate: rate,
             quantum: rate / 100,
-            slots: engine::UPMIX_RING_SLOTS,
+            slots: Some(engine::UPMIX_RING_SLOTS),
             buses: Some(BusSelector::main_only()),
+            recovery: RecoveryPolicy::Watch,
             ..Default::default()
-        };
-        PluginProcess::start_configured(exe, path, format, class, &options, state)
+        }
     }
 
     fn failed(error: impl std::fmt::Display) -> PluginHostError {
@@ -291,8 +269,10 @@ mod windows {
             path: &Path,
             format: PluginFormat,
         ) -> Result<Vec<PluginClass>, PluginHostError> {
-            let classes =
-                PluginProcess::scan(&self.exe, path, proto_format(format)).map_err(failed)?;
+            let classes = self
+                .host
+                .scan(&PluginDescriptor::new(path, proto_format(format)))
+                .map_err(failed)?;
             Ok(classes
                 .into_iter()
                 .map(|class| PluginClass {
@@ -310,8 +290,8 @@ mod windows {
             rate: u32,
         ) -> Result<Box<dyn PluginInstance>, PluginHostError> {
             let mut instance = Instance {
-                exe: self.exe.clone(),
-                plugin: plugin.clone(),
+                host: self.host.clone(),
+                descriptor: descriptor(plugin),
                 store: StateStore::new(&self.state_dir, endpoint),
                 phase: Phase::Stopped,
                 leaving: Vec::new(),
@@ -319,7 +299,7 @@ mod windows {
                 exited: false,
             };
             let (current, previous) = instance.store.load();
-            instance.begin_start(rate, current, previous, None)?;
+            instance.begin_start(rate, current, previous);
             Ok(Box::new(instance))
         }
 
@@ -328,20 +308,11 @@ mod windows {
         }
     }
 
-    /// The failure window and the session's states, carried from a dead
-    /// host's control to its successor's.
-    struct CarriedWatch {
-        watch: ControlWatch,
-        /// The old control's clock when it was taken.
-        at_ms: u64,
-        taken: Instant,
-    }
-
     enum Phase {
-        /// A thread is starting the host.
         Starting {
-            result: Receiver<Result<Started, StartError>>,
-            watch: Option<Box<CarriedWatch>>,
+            task: LoadTask,
+            rate: u32,
+            previous: Option<Vec<u8>>,
         },
         /// The old host was asked for its state and to stop; the new one
         /// starts at `rate` once it is gone.
@@ -353,120 +324,164 @@ mod windows {
         Stopped,
     }
 
-    /// A host that is up, and its engine side until the supervisor takes it.
     struct Up {
-        control: PluginControl,
+        instance: vst_audio::Instance,
+        controller: Controller,
         inputs: Vec<Speaker>,
         outputs: Vec<Speaker>,
         latency: usize,
         upmixer: Option<Box<dyn Upmixer>>,
+        fallback: bool,
+    }
+
+    /// The engine-facing realtime half of a high-level vst-audio instance.
+    struct BlockUpmixer {
+        endpoint: BlockEndpoint,
+        inputs: Vec<Speaker>,
+        outputs: Vec<Speaker>,
+        latency: usize,
+    }
+
+    impl BlockUpmixer {
+        fn new(endpoint: BlockEndpoint) -> Result<Self, String> {
+            only_main_buses(endpoint.layout())?;
+            let input = endpoint
+                .layout()
+                .inputs
+                .iter()
+                .find(|bus| bus.active)
+                .ok_or_else(|| "the plugin has no active main input bus".to_owned())?;
+            let output = endpoint
+                .layout()
+                .outputs
+                .iter()
+                .find(|bus| bus.active)
+                .ok_or_else(|| "the plugin has no active main output bus".to_owned())?;
+            let inputs = speakers_of(
+                &vst_audio::wave_bits(input.layout.arrangement).map_err(|e| e.to_string())?,
+            )?;
+            let outputs = speakers_of(
+                &vst_audio::wave_bits(output.layout.arrangement).map_err(|e| e.to_string())?,
+            )?;
+            let latency = endpoint.plugin_latency_frames() as usize;
+            Ok(Self {
+                endpoint,
+                inputs,
+                outputs,
+                latency,
+            })
+        }
+    }
+
+    impl Upmixer for BlockUpmixer {
+        fn rate(&self) -> u32 {
+            self.endpoint.geometry().sample_rate
+        }
+
+        fn block_frames(&self) -> usize {
+            self.endpoint.geometry().max_frames as usize
+        }
+
+        fn inputs(&self) -> &[Speaker] {
+            &self.inputs
+        }
+
+        fn outputs(&self) -> &[Speaker] {
+            &self.outputs
+        }
+
+        fn latency_frames(&self) -> usize {
+            self.latency
+        }
+
+        fn set_depth(&mut self, depth: usize) {
+            self.endpoint
+                .restart(depth as u32)
+                .expect("the stage checked the endpoint's maximum depth");
+        }
+
+        fn max_depth(&self) -> usize {
+            self.endpoint.max_depth() as usize
+        }
+
+        fn process(
+            &mut self,
+            _block: u64,
+            _generation: u64,
+            input: &[f32],
+            output: &mut [f32],
+        ) -> bool {
+            self.endpoint.process(input, output) == BlockStatus::Delivered
+        }
     }
 
     struct Instance {
-        exe: PathBuf,
-        plugin: PluginSetting,
+        host: Host,
+        descriptor: PluginDescriptor,
         store: StateStore,
         phase: Phase,
-        /// Hosts asked to stop, polled for their last state until they exit.
-        leaving: Vec<(PluginControl, Instant)>,
+        /// Instances asked to stop, polled for their last state until they exit.
+        leaving: Vec<(vst_audio::Instance, Instant)>,
         stopping: bool,
         exited: bool,
     }
 
     impl Instance {
-        /// Starts a host on a thread of its own, restoring `state` (and
-        /// `fallback` when that start fails).
-        fn begin_start(
-            &mut self,
-            rate: u32,
-            state: Option<Vec<u8>>,
-            fallback: Option<Vec<u8>>,
-            watch: Option<Box<CarriedWatch>>,
-        ) -> Result<(), PluginHostError> {
-            let (sender, result) = mpsc::channel();
-            let exe = self.exe.clone();
-            let path = self.plugin.path.clone();
-            let format = proto_format(self.plugin.format);
-            let class = self.plugin.class;
-            thread::Builder::new()
-                .name("ssr-plughost-start".to_owned())
-                .spawn(move || {
-                    let mut started = start(&exe, &path, format, class, rate, state.as_deref());
-                    if started.is_err()
-                        && let Some(previous) = fallback.as_deref()
-                    {
-                        started = start(&exe, &path, format, class, rate, Some(previous));
-                    }
-                    // Nobody waits any more when the instance was let go:
-                    // the host then ends with its job.
-                    let _ = sender.send(started);
-                })
-                .map_err(failed)?;
-            self.phase = Phase::Starting { result, watch };
-            Ok(())
+        fn begin_start(&mut self, rate: u32, state: Option<Vec<u8>>, previous: Option<Vec<u8>>) {
+            let task = self
+                .host
+                .spawn_async(self.descriptor.clone(), configuration(rate), state);
+            self.phase = Phase::Starting {
+                task,
+                rate,
+                previous,
+            };
         }
 
-        /// A started host becomes the one up, with its upmixer for the engine.
-        fn up(&mut self, started: Started, watch: Option<Box<CarriedWatch>>) -> Result<(), String> {
-            let Started {
-                setup,
-                region,
-                work,
-                publisher,
-                input_wave_bits,
-                output_wave_bits,
-                latency_frames,
-                mut control,
-                ..
-            } = started;
-            if let Some(carried) = watch {
-                let CarriedWatch {
-                    watch,
-                    at_ms,
-                    taken,
-                } = *carried;
-                let elapsed = u64::try_from(taken.elapsed().as_millis()).unwrap_or(0);
-                control.restore_watch(watch, at_ms.saturating_add(elapsed));
-            }
-            only_main_buses(&setup)?;
-            let inputs = speakers_of(&input_wave_bits)?;
-            let outputs = speakers_of(&output_wave_bits)?;
-            let latency = latency_frames as usize;
-            let upmixer = RingUpmixer::new(
-                Box::new(region),
-                Box::new(SharedEvent(work)),
-                publisher,
-                inputs.clone(),
-                outputs.clone(),
-                latency,
-            )
-            .map_err(|error| error.to_string())?;
+        fn up(&mut self, mut instance: vst_audio::Instance) -> Result<(), String> {
+            let controller = instance.controller();
+            let endpoint = instance
+                .take_blocks()
+                .ok_or_else(|| "the plugin instance has no block endpoint".to_owned())?;
+            let upmixer = BlockUpmixer::new(endpoint)?;
+            let inputs = upmixer.inputs.clone();
+            let outputs = upmixer.outputs.clone();
+            let latency = upmixer.latency;
             self.phase = Phase::Up(Box::new(Up {
-                control,
+                instance,
+                controller,
                 inputs,
                 outputs,
                 latency,
                 upmixer: Some(Box::new(upmixer)),
+                fallback: false,
             }));
             Ok(())
         }
 
-        /// Saves what the stopping hosts return and lets go of those that
-        /// exited or outstayed [`LEAVE_GRACE`].
+        fn stop_instance(instance: &mut vst_audio::Instance) {
+            let controller = instance.controller();
+            let _ = controller.request(Command::SaveState);
+            let _ = controller.request(Command::Shutdown);
+        }
+
+        /// Saves what stopping instances return and lets go of those that
+        /// stopped or outstayed [`LEAVE_GRACE`].
         fn poll_leaving(&mut self) {
             let store = &mut self.store;
-            self.leaving.retain_mut(|(control, since)| {
-                let gone = !matches!(control.exit_code(), Ok(None));
-                for event in control.poll(control.elapsed_ms()) {
-                    if let ControlEvent::Message(Frame {
-                        message: Message::State { blob },
-                        ..
-                    }) = event
-                    {
-                        store.save(&blob);
+            self.leaving.retain_mut(|(instance, since)| {
+                let mut stopped = false;
+                while let Some(event) = instance.try_next_event() {
+                    match event {
+                        HostEvent::State { bytes, .. } => store.save(&bytes),
+                        HostEvent::Stopped => stopped = true,
+                        HostEvent::NotificationsLost => {
+                            let _ = instance.controller().request(Command::SaveState);
+                        }
+                        _ => {}
                     }
                 }
-                !gone && since.elapsed() < LEAVE_GRACE
+                !stopped && since.elapsed() < LEAVE_GRACE
             });
         }
     }
@@ -500,32 +515,38 @@ mod windows {
             }
         }
 
-        /// The host's watch keeps its own clock (`PluginControl::elapsed_ms`,
-        /// carried across respawns), so the supervisor's is not used.
+        /// `RecoveryPolicy::Watch` owns the restart clock and state choice.
+        /// The port's `NeedsRespawn` variant remains for other adapters and tests,
+        /// but this adapter never emits it.
         fn poll(&mut self, _now_ms: u64) -> Vec<PluginEvent> {
             let mut events = Vec::new();
             self.poll_leaving();
 
-            let finished = match &mut self.phase {
-                Phase::Starting { result, watch } => match result.try_recv() {
-                    Ok(started) => Some((started, watch.take())),
-                    Err(TryRecvError::Empty) => None,
-                    Err(TryRecvError::Disconnected) => Some((
-                        Err(StartError("the thread starting the host ended".to_owned())),
-                        None,
-                    )),
-                },
+            let finished = match &self.phase {
+                Phase::Starting { task, .. } => Some(task.try_complete()),
                 _ => None,
             };
-            if let Some((started, watch)) = finished {
-                match started
-                    .map_err(|error| error.to_string())
-                    .and_then(|started| self.up(started, watch))
-                {
-                    Ok(()) => events.push(PluginEvent::Running),
-                    Err(detail) => {
-                        self.phase = Phase::Stopped;
-                        events.push(PluginEvent::StartFailed(detail));
+            if let Some(finished) = finished {
+                match finished {
+                    Ok(None) => {}
+                    Ok(Some(instance)) => match self.up(instance) {
+                        Ok(()) => events.push(PluginEvent::Running),
+                        Err(detail) => {
+                            self.phase = Phase::Stopped;
+                            events.push(PluginEvent::StartFailed(detail));
+                        }
+                    },
+                    Err(error) => {
+                        let (rate, previous) =
+                            match std::mem::replace(&mut self.phase, Phase::Stopped) {
+                                Phase::Starting { rate, previous, .. } => (rate, previous),
+                                _ => unreachable!("only a starting task can finish"),
+                            };
+                        if let Some(previous) = previous {
+                            self.begin_start(rate, Some(previous), None);
+                        } else {
+                            events.push(PluginEvent::StartFailed(error.to_string()));
+                        }
                     }
                 }
             }
@@ -534,38 +555,36 @@ mod windows {
                 && self.leaving.is_empty()
             {
                 let (current, previous) = self.store.load();
-                if let Err(error) = self.begin_start(rate, current, previous, None) {
-                    self.phase = Phase::Stopped;
-                    events.push(PluginEvent::StartFailed(error.to_string()));
-                }
+                self.begin_start(rate, current, previous);
             }
 
             if let Phase::Up(up) = &mut self.phase {
-                for event in up.control.poll(up.control.elapsed_ms()) {
+                while let Some(event) = up.instance.try_next_event() {
                     match event {
-                        ControlEvent::Message(Frame {
-                            message: Message::State { blob },
-                            ..
-                        }) => self.store.save(&blob),
-                        ControlEvent::Message(Frame {
-                            message: Message::LatencyChanged { frames },
-                            ..
-                        }) => {
-                            let frames = frames as usize;
-                            if frames != up.latency {
-                                events.push(PluginEvent::LatencyChanged(frames));
+                        HostEvent::State { bytes, .. } => self.store.save(&bytes),
+                        HostEvent::Failed { .. } => {
+                            if !up.fallback {
+                                up.fallback = true;
+                                events.push(PluginEvent::Fallback(true));
                             }
                         }
-                        ControlEvent::Action(Action::EnterFallback | Action::Kill { .. }) => {
-                            events.push(PluginEvent::Fallback(true));
+                        HostEvent::Recovered { .. } => {
+                            if up.fallback {
+                                up.fallback = false;
+                                events.push(PluginEvent::Fallback(false));
+                            }
                         }
-                        ControlEvent::Action(Action::LeaveFallback) => {
-                            events.push(PluginEvent::Fallback(false));
+                        HostEvent::LatencyChanged(frames) if frames as usize != up.latency => {
+                            events.push(PluginEvent::LatencyChanged(frames as usize));
                         }
-                        ControlEvent::Action(Action::Disable { .. }) => {
-                            events.push(PluginEvent::Disabled);
+                        HostEvent::RecoveryRequired => events.push(PluginEvent::Disabled),
+                        HostEvent::NotificationsLost => {
+                            let _ = up.controller.request(Command::SaveState);
                         }
-                        ControlEvent::NeedsRespawn => events.push(PluginEvent::NeedsRespawn),
+                        HostEvent::Stopped if self.stopping => {
+                            self.phase = Phase::Stopped;
+                            break;
+                        }
                         _ => {}
                     }
                 }
@@ -584,47 +603,27 @@ mod windows {
 
         fn restart(&mut self, rate: u32) -> Result<(), PluginHostError> {
             match std::mem::replace(&mut self.phase, Phase::Stopped) {
-                // The host died and the watch waited out the backoff: a new
-                // process that carries the watch on.
-                Phase::Up(up) if up.control.needs_respawn => {
-                    let mut control = up.control;
-                    let at_ms = control.elapsed_ms();
-                    let mut watch = control.take_watch();
-                    let state = respawn_state(&mut watch.states);
-                    drop(control);
-                    let carried = Box::new(CarriedWatch {
-                        watch,
-                        at_ms,
-                        taken: Instant::now(),
-                    });
-                    self.begin_start(rate, state, None, Some(carried))
-                }
-                // A new rate or latency: the running host saves its state
-                // and stops, and the next one restores that.
-                Phase::Up(up) => {
-                    let mut control = up.control;
-                    // A broken pipe leaves nothing to wait for but the exit.
-                    let _ = control.shutdown();
-                    self.leaving.push((control, Instant::now()));
+                Phase::Up(mut up) => {
+                    Self::stop_instance(&mut up.instance);
+                    self.leaving.push((up.instance, Instant::now()));
                     self.phase = Phase::Handoff { rate };
-                    Ok(())
                 }
-                Phase::Handoff { .. } => {
-                    self.phase = Phase::Handoff { rate };
-                    Ok(())
-                }
-                // A start under way is dropped with its result; its host
-                // ends with its job.
+                Phase::Handoff { .. } => self.phase = Phase::Handoff { rate },
                 Phase::Starting { .. } | Phase::Stopped => {
                     let (current, previous) = self.store.load();
-                    self.begin_start(rate, current, previous, None)
+                    self.begin_start(rate, current, previous);
                 }
             }
+            Ok(())
         }
 
         fn open_editor(&mut self) -> Result<(), PluginHostError> {
-            match &mut self.phase {
-                Phase::Up(up) => up.control.open_editor().map(drop).map_err(failed),
+            match &self.phase {
+                Phase::Up(up) => up
+                    .controller
+                    .request(Command::OpenEditor)
+                    .map(drop)
+                    .map_err(failed),
                 _ => Err(PluginHostError::Failed(
                     "the plugin host is not up".to_owned(),
                 )),
@@ -633,15 +632,91 @@ mod windows {
 
         fn shutdown(&mut self) {
             self.stopping = true;
-            if let Phase::Up(up) = std::mem::replace(&mut self.phase, Phase::Stopped) {
-                let mut control = up.control;
-                let _ = control.shutdown();
-                self.leaving.push((control, Instant::now()));
+            match std::mem::replace(&mut self.phase, Phase::Stopped) {
+                Phase::Up(mut up) => {
+                    Self::stop_instance(&mut up.instance);
+                    self.leaving.push((up.instance, Instant::now()));
+                }
+                Phase::Starting { task, .. } => task.cancel(),
+                Phase::Handoff { .. } | Phase::Stopped => {}
             }
         }
     }
-}
 
+    #[test]
+    #[ignore = "needs ssr-plughost and vst-audio's test plugin"]
+    fn windows_adapter_hosts_the_test_plugin_end_to_end() {
+        let worker = PathBuf::from(std::env::var_os("VST_AUDIO_WORKER").expect("worker required"));
+        let plugin_path =
+            PathBuf::from(std::env::var_os("VST_AUDIO_TEST_VST3").expect("VST 3 fixture required"));
+        let state_dir = std::env::temp_dir().join(format!(
+            "ssr-windows-adapter-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut host = WindowsPluginHost::new(worker, state_dir.clone());
+        let plugin = PluginSetting {
+            path: plugin_path,
+            format: PluginFormat::Vst3,
+            class: None,
+            name: "vst-audio test plugin".into(),
+            vendor: "test fixture".into(),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+        };
+        let mut instance = host.start(0, &plugin, 48_000).unwrap();
+        let mut deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            if instance.poll(0).contains(&PluginEvent::Running) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "initial start timed out");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let mut upmixer = instance.take_upmixer().expect("running upmixer");
+        upmixer.set_depth(1);
+        let input = vec![0.25; upmixer.inputs().len() * upmixer.block_frames()];
+        let mut output = vec![0.0; upmixer.outputs().len() * upmixer.block_frames()];
+        deadline = Instant::now() + Duration::from_secs(15);
+        for block in 0.. {
+            if upmixer.process(block, 0, &input, &mut output) {
+                // vst-audio's fixture delays every channel by 64 frames and
+                // sends 0.5 · L · width to the rear pair; frame 100 is past
+                // the delay in the first block as in any later one.
+                assert!((output[100] - 0.25).abs() < 1e-6);
+                assert!((output[5 * upmixer.block_frames() + 100] - 0.125).abs() < 1e-6);
+                break;
+            }
+            assert!(Instant::now() < deadline, "audio delivery timed out");
+            std::thread::sleep(Duration::from_millis(3));
+        }
+
+        instance.restart(44_100).unwrap();
+        deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            if instance.poll(0).contains(&PluginEvent::Running) {
+                assert_eq!(instance.take_upmixer().unwrap().rate(), 44_100);
+                break;
+            }
+            assert!(Instant::now() < deadline, "restart timed out");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        instance.shutdown();
+        deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            if instance.poll(0).contains(&PluginEvent::Exited) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "shutdown timed out");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(super::paths::upmix_state(&state_dir, 0).exists());
+        let _ = std::fs::remove_dir_all(state_dir);
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -698,21 +773,6 @@ mod tests {
         assert_eq!(only_main_buses(&setup), Ok(()));
         setup.outputs[1].active = true;
         assert!(only_main_buses(&setup).is_err());
-    }
-
-    #[test]
-    fn a_respawn_restores_the_newest_state_then_the_one_before() {
-        let mut states = StateHistory::new();
-        assert_eq!(respawn_state(&mut states), None);
-        states.save(vec![1]);
-        states.save(vec![2]);
-        // The first crash restores the newest...
-        assert_eq!(respawn_state(&mut states), Some(vec![2]));
-        // ...and a crash right after that restore, the one before.
-        assert_eq!(respawn_state(&mut states), Some(vec![1]));
-        // A state saved since starts over from the newest.
-        states.save(vec![3]);
-        assert_eq!(respawn_state(&mut states), Some(vec![3]));
     }
 
     #[test]

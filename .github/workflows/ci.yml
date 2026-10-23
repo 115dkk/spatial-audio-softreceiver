@@ -33,7 +33,9 @@ name: CI
 #             vst-audio release Cargo.lock locks: vst-audio's test plugin
 #             (never shipped) as VST 2 and as VST 3, processing through the
 #             shared-memory ring, state, editor, crash, hang and NaN (ADR
-#             0021, 0035, 0039). On x64 it also loads a third-party VST 3
+#             0021, 0035, 0039), then its application tests (BlockEndpoint,
+#             the watch restart policy and its state hand-over) and the app
+#             adapter's own end-to-end test. On x64 it also loads a third-party VST 3
 #             upmixer kept encrypted in tools/ci/private/, decrypted into the
 #             runner's temp folder only when the secret is there; it is never
 #             uploaded, cached or logged.
@@ -670,7 +672,7 @@ jobs:
       matrix:
         os: [windows-2022, windows-2025, windows-11-arm]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
 
@@ -725,10 +727,24 @@ jobs:
           UPMIX_PLUGIN_KEY: ${{ secrets.UPMIX_PLUGIN_KEY }}
         run: ./tools/ci/private/decrypt-upmix-plugin.sh
 
-      # One test at a time: each one starts, kills and restarts host
-      # processes, and the crash test counts failures over wall-clock time.
       # The same test DLL carries both entry points; the VST 3 copy only
-      # needs the bundle-less .vst3 name.
+      # needs the bundle-less .vst3 name. The variables reach every later
+      # step of this job.
+      - name: Point vst-audio's tests at the worker we ship and the test plugin
+        shell: bash
+        run: |
+          set -euo pipefail
+          debug="$(cygpath -u "$GITHUB_WORKSPACE/target/debug")"
+          test -f "$debug/ssr-plughost.exe"
+          cp "$debug/vst_audio_testplugin.dll" "$debug/vst_audio_testplugin.vst3"
+          {
+            echo "VST_AUDIO_WORKER=$debug/ssr-plughost.exe"
+            echo "VST_AUDIO_TEST_VST2=$debug/vst_audio_testplugin.dll"
+            echo "VST_AUDIO_TEST_VST3=$debug/vst_audio_testplugin.vst3"
+          } >> "$GITHUB_ENV"
+
+      # One test at a time: each one starts, kills and restarts host
+      # processes, and the crash tests count failures over wall-clock time.
       - name: Plugin host end to end (vst-audio's ignored native tests)
         shell: bash
         working-directory: ${{ steps.vst_audio.outputs.dir }}
@@ -737,14 +753,36 @@ jobs:
           VST_AUDIO_THIRD_PARTY_VST3: ${{ steps.third_party.outputs.path }}
         run: |
           set -euo pipefail
-          debug="$(cygpath -u "$CARGO_TARGET_DIR")/debug"
-          export VST_AUDIO_WORKER="$debug/ssr-plughost.exe"
-          export VST_AUDIO_TEST_VST2="$debug/vst_audio_testplugin.dll"
-          export VST_AUDIO_TEST_VST3="$debug/vst_audio_testplugin.vst3"
-          cp "$VST_AUDIO_TEST_VST2" "$VST_AUDIO_TEST_VST3"
-          test -f "$VST_AUDIO_WORKER"
           if [ -z "$VST_AUDIO_THIRD_PARTY_VST3" ]; then unset VST_AUDIO_THIRD_PARTY_VST3; fi
           cargo test --locked -p vst-audio --test native -- --ignored --test-threads=1
+
+      # The high-level API the app adapter uses (ADR 0039): BlockEndpoint,
+      # RecoveryPolicy::Watch and its state hand-over, through the worker we
+      # ship. The two skipped tests need a test-plugin mode of their own and
+      # cover parameter-edit reporting, which the app does not use; vst-audio's
+      # CI runs them.
+      - name: Plugin host end to end (vst-audio's ignored application tests)
+        shell: bash
+        working-directory: ${{ steps.vst_audio.outputs.dir }}
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: >-
+          cargo test --locked -p vst-audio --test application -- --ignored --test-threads=1
+          --skip audio_thread_automate_is_reported_without_allocating
+          --skip parameter_edit_overflow_keeps_latest_value_and_reports_refresh
+
+      - uses: ./.github/actions/ui-dist
+
+      # The Windows adapter in the app (plugin_host.rs): load, audio through
+      # the BlockEndpoint, a rate hand-over, shutdown and the state files. A
+      # renamed test would otherwise pass as zero tests run.
+      - name: The app's plugin host adapter end to end (ignored test)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p spatial-softreceiver --lib -- --ignored --exact \
+            plugin_host::windows::windows_adapter_hosts_the_test_plugin_end_to_end 2>&1 | tee adapter-e2e.log
+          grep -q "test result: ok. 1 passed" adapter-e2e.log
 
       - name: Remove the decrypted third-party upmixer
         if: always() && runner.arch == 'X64'
