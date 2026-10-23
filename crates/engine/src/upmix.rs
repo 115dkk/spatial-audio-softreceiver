@@ -136,7 +136,7 @@ pub trait Upmixer: Send {
     /// was submitted under the same generation and has completed. Returns
     /// whether `output` holds it. Never blocks, locks or allocates.
     ///
-    /// [`RingUpmixer`] does not use `generation`: [`UpmixStage::restart`] calls
+    /// [`RingUpmixer`] does not use `generation`: `UpmixStage::restart` calls
     /// [`Self::set_depth`] at every generation start, which restarts its
     /// [`BlockLane`] and discards results from the preceding generation.
     fn process(&mut self, block: u64, generation: u64, input: &[f32], output: &mut [f32]) -> bool;

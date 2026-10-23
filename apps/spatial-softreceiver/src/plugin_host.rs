@@ -2,7 +2,7 @@
 //! `ssr-plughost.exe` beside the app through `vst_audio::Host`; on other
 //! systems, a port that hosts nothing.
 //!
-//! Starts are [`vst_audio::LoadTask`]s polled by the control thread. The
+//! Starts are `vst_audio::LoadTask`s polled by the control thread. The
 //! high-level instance owns worker supervision, the 0.5/2/8-second watch
 //! policy, state selection and recovery hand-over; the adapter maps its events
 //! to the supervisor port. The port's `NeedsRespawn` variant remains for other
