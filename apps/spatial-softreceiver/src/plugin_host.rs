@@ -1,5 +1,5 @@
 //! The supervisor's [`PluginHost`] port (ADR 0035): on Windows,
-//! `ssr-plughost.exe` beside the app through `plughost::PluginProcess`; on
+//! `ssr-plughost.exe` beside the app through `vst_audio::PluginProcess`; on
 //! other systems, a port that hosts nothing.
 //!
 //! The Windows adapter never blocks the control thread for a start: each
@@ -18,17 +18,17 @@
 //! state is written beside them and renamed over the newest, which becomes
 //! the previous one. A start restores the newest and falls back to the
 //! previous when that fails; a respawn keeps the session's own watch, with
-//! its failure window and its two states, as `plughost` documents.
+//! its failure window and its two states, as `vst_audio` documents.
 
 use std::fs;
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
-use plughost_proto::StateHistory;
 use ssr_types::Speaker;
 use ssr_types::app::PluginFormat;
 use supervisor::upmix::{PluginClass, PluginHost, PluginHostError, PluginInstance, PluginSetting};
+use vst_audio_protocol::{ProcessingSetup, StateHistory};
 
 use crate::log;
 use crate::paths;
@@ -83,6 +83,25 @@ pub fn speakers_of(bits: &[u32]) -> Result<Vec<Speaker>, String> {
     bits.iter()
         .map(|&bit| Speaker::from_wave_bit(bit).ok_or_else(|| format!("speaker bit {bit:#x}")))
         .collect()
+}
+
+/// Refuses a host whose plugin has more than one active bus in a direction
+/// (ADR 0039). vst-audio 0.1.1 activates every bus a plugin declares, so a
+/// sidechain would join the upmixer's input speakers (a mono one as a centre)
+/// and an auxiliary output its output speakers. The engine folds scenes onto
+/// the main buses alone, as `plughost` did.
+pub fn only_main_buses(setup: &ProcessingSetup) -> Result<(), String> {
+    let active = |buses: &[vst_audio_protocol::BusConfiguration]| {
+        buses.iter().filter(|bus| bus.active).count()
+    };
+    let (inputs, outputs) = (active(&setup.inputs), active(&setup.outputs));
+    if inputs > 1 || outputs > 1 {
+        return Err(format!(
+            "the plugin has {inputs} active input and {outputs} active output buses; \
+             only one main bus each is hosted"
+        ));
+    }
+    Ok(())
 }
 
 /// The state a respawned host restores (ADR 0021): the newest, unless the
@@ -203,16 +222,16 @@ mod windows {
     use std::time::{Duration, Instant};
 
     use engine::{RingUpmixer, Upmixer};
-    use plughost::watch::ControlWatch;
-    use plughost::{ControlEvent, PluginControl, PluginProcess, SharedEvent, StartError, Started};
-    use plughost_proto::{Action, Frame, Message};
     use ssr_types::Speaker;
     use ssr_types::app::PluginFormat;
     use supervisor::upmix::{
         PluginClass, PluginEvent, PluginHost, PluginHostError, PluginInstance, PluginSetting,
     };
+    use vst_audio::watch::ControlWatch;
+    use vst_audio::{ControlEvent, PluginControl, PluginProcess, SharedEvent, StartError, Started};
+    use vst_audio_protocol::{Action, Frame, Message};
 
-    use super::{StateStore, respawn_state, speakers_of};
+    use super::{StateStore, only_main_buses, respawn_state, speakers_of};
 
     /// How long a stopping host is polled for its last state before it is
     /// dropped (which ends its process). Its watch kills it after two seconds.
@@ -231,10 +250,10 @@ mod windows {
         }
     }
 
-    fn proto_format(format: PluginFormat) -> plughost::PluginFormat {
+    fn proto_format(format: PluginFormat) -> vst_audio::PluginFormat {
         match format {
-            PluginFormat::Vst2 => plughost::PluginFormat::Vst2,
-            PluginFormat::Vst3 => plughost::PluginFormat::Vst3,
+            PluginFormat::Vst2 => vst_audio::PluginFormat::Vst2,
+            PluginFormat::Vst3 => vst_audio::PluginFormat::Vst3,
         }
     }
 
@@ -368,6 +387,7 @@ mod windows {
         /// A started host becomes the one up, with its upmixer for the engine.
         fn up(&mut self, started: Started, watch: Option<Box<CarriedWatch>>) -> Result<(), String> {
             let Started {
+                setup,
                 region,
                 work,
                 publisher,
@@ -386,6 +406,7 @@ mod windows {
                 let elapsed = u64::try_from(taken.elapsed().as_millis()).unwrap_or(0);
                 control.restore_watch(watch, at_ms.saturating_add(elapsed));
             }
+            only_main_buses(&setup)?;
             let inputs = speakers_of(&input_wave_bits)?;
             let outputs = speakers_of(&output_wave_bits)?;
             let latency = latency_frames as usize;
@@ -620,6 +641,41 @@ mod tests {
             speakers_of(&[0x1, 0x40000]),
             Err("speaker bit 0x40000".into())
         );
+    }
+
+    #[test]
+    fn only_main_buses_are_hosted() {
+        use vst_audio_protocol::{Bus, BusConfiguration, SampleFormat};
+        let bus = |channels: u16, arrangement: u64, active: bool| BusConfiguration {
+            layout: Bus {
+                channels,
+                arrangement,
+            },
+            active,
+        };
+        let mut setup = ProcessingSetup {
+            sample_rate: 48_000,
+            quantum: 480,
+            sample_format: SampleFormat::F32,
+            offline: false,
+            inputs: vec![bus(2, 0x3, true)],
+            outputs: vec![bus(6, 0x3f, true)],
+        };
+        assert_eq!(only_main_buses(&setup), Ok(()));
+        // A mono sidechain would otherwise become a centre input.
+        setup.inputs.push(bus(1, 0x4, true));
+        assert_eq!(
+            only_main_buses(&setup),
+            Err("the plugin has 2 active input and 1 active output buses; \
+                 only one main bus each is hosted"
+                .into())
+        );
+        // Declared but inactive buses carry no channels.
+        setup.inputs[1].active = false;
+        setup.outputs.push(bus(2, 0x3, false));
+        assert_eq!(only_main_buses(&setup), Ok(()));
+        setup.outputs[1].active = true;
+        assert!(only_main_buses(&setup).is_err());
     }
 
     #[test]

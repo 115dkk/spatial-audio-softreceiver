@@ -190,7 +190,7 @@ pub enum PluginEvent {
 }
 
 /// The plugin host port (ADR 0035): the Windows adapter runs
-/// `plughost::PluginProcess`, the tests a fake. Calls happen on the control
+/// `vst_audio::PluginProcess`, the tests a fake. Calls happen on the control
 /// thread.
 pub trait PluginHost {
     /// One-shot scan of a chosen file or bundle. May block the control thread

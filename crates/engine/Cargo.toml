@@ -26,6 +26,7 @@ bitstream.workspace = true
 rtrb.workspace = true
 rubato.workspace = true
 streamring.workspace = true
+vst-audio-ring.workspace = true
 asio-proto.workspace = true
 
 [dev-dependencies]

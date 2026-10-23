@@ -5,10 +5,20 @@
 //! build flags and conditional compilation cannot hide policy violations.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use serde::Deserialize;
+
+const EXTERNAL_TEST_CRATES: [&str; 5] = [
+    "vst-audio",
+    "vst-audio-protocol",
+    "vst-audio-ring",
+    "vst-audio-worker-runtime",
+    "vst-audio-worker-sys",
+];
 
 #[derive(Clone)]
 struct FirstPartyCrate {
@@ -37,6 +47,18 @@ struct Registry {
     feature: Vec<Feature>,
 }
 
+#[derive(Deserialize)]
+struct Metadata {
+    packages: Vec<MetadataPackage>,
+}
+
+#[derive(Deserialize)]
+struct MetadataPackage {
+    name: String,
+    source: Option<String>,
+    manifest_path: PathBuf,
+}
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -56,6 +78,63 @@ fn relative_path(path: &Path) -> String {
         .unwrap_or(path)
         .to_string_lossy()
         .replace('\\', "/")
+}
+
+fn external_test_crates() -> BTreeMap<String, PathBuf> {
+    let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+    let output = Command::new(cargo)
+        .args(["metadata", "--format-version", "1", "--locked"])
+        .current_dir(repo_root())
+        .output()
+        .expect("cargo metadata must run for external test crates");
+    assert!(
+        output.status.success(),
+        "cargo metadata failed for external test crates:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let metadata: Metadata = serde_json::from_slice(&output.stdout)
+        .expect("cargo metadata must return valid JSON for external test crates");
+    let required: BTreeSet<&str> = EXTERNAL_TEST_CRATES.into_iter().collect();
+    let mut crates = BTreeMap::new();
+
+    for package in metadata
+        .packages
+        .into_iter()
+        .filter(|package| required.contains(package.name.as_str()))
+    {
+        let source = package.source.as_deref().unwrap_or_else(|| {
+            panic!(
+                "cargo metadata returned non-registry package '{}' without a source",
+                package.name
+            )
+        });
+        assert!(
+            source.starts_with("registry+"),
+            "cargo metadata returned non-registry package '{}' from {source}",
+            package.name
+        );
+        let dir = package
+            .manifest_path
+            .parent()
+            .unwrap_or_else(|| panic!("{} has no parent", package.manifest_path.display()))
+            .to_path_buf();
+        assert!(
+            crates.insert(package.name.clone(), dir).is_none(),
+            "cargo metadata returned duplicate registry package '{}'",
+            package.name
+        );
+    }
+
+    let missing: Vec<_> = EXTERNAL_TEST_CRATES
+        .into_iter()
+        .filter(|name| !crates.contains_key(*name))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "cargo metadata omitted required registry packages: {}",
+        missing.join(", ")
+    );
+    crates
 }
 
 fn first_party_crates() -> Vec<FirstPartyCrate> {
@@ -656,10 +735,11 @@ fn is_rust_identifier(name: &str) -> bool {
 #[test]
 fn features_registry_is_well_formed() {
     let registry = load_registry();
-    let crate_names: BTreeSet<String> = first_party_crates()
+    let mut crate_names: BTreeSet<String> = first_party_crates()
         .into_iter()
         .map(|krate| krate.name)
         .collect();
+    crate_names.extend(external_test_crates().into_keys());
     let mut seen_ids = BTreeSet::new();
     let mut violations = Vec::new();
 
@@ -884,10 +964,11 @@ fn test_fn_exists(crate_dir: &Path, test_name: &str) -> bool {
 #[test]
 fn implemented_features_have_existing_tests() {
     let registry = load_registry();
-    let crates: BTreeMap<String, PathBuf> = first_party_crates()
+    let mut crates: BTreeMap<String, PathBuf> = first_party_crates()
         .into_iter()
         .map(|krate| (krate.name, krate.dir))
         .collect();
+    crates.extend(external_test_crates());
     let mut violations = Vec::new();
 
     for feature in &registry.feature {
@@ -977,7 +1058,7 @@ fn check_dependency_table(
     violations: &mut Vec<String>,
 ) {
     const WINDOWS_PACKAGES: [&str; 4] = ["windows", "windows-sys", "windows-core", "wasapi"];
-    const WINDOWS_CRATES: [&str; 4] = ["ssr-sys", "ssr-setup-sys", "plughost-sys", "asio-sys"];
+    const WINDOWS_CRATES: [&str; 3] = ["ssr-sys", "ssr-setup-sys", "asio-sys"];
 
     for (alias, specification) in dependencies {
         let package = dependency_package(alias, specification, workspace_packages);
@@ -985,7 +1066,7 @@ fn check_dependency_table(
             && !WINDOWS_CRATES.contains(&krate.name.as_str())
         {
             violations.push(format!(
-                "{} (crate {}, [{section}] dependency '{}'): package '{}' may only be used by an isolation crate (ssr-sys, ssr-setup-sys, plughost-sys, asio-sys)",
+                "{} (crate {}, [{section}] dependency '{}'): package '{}' may only be used by an isolation crate (ssr-sys, ssr-setup-sys, asio-sys)",
                 relative_path(&krate.manifest),
                 krate.name,
                 alias,
@@ -1004,16 +1085,26 @@ fn check_dependency_table(
                 relative_path(&krate.manifest)
             ));
         }
-        if package == "plughost-sys"
-            && !(krate.name == "plughost-testplugin"
-                || krate.name == "plughost" && section == "target.'cfg(windows)'.dependencies")
+        if matches!(
+            package.as_str(),
+            "vst-audio-worker-runtime" | "vst-audio-worker-sys"
+        ) && !(krate.is_app && krate.name == "ssr-plughost")
         {
-            violations.push(format!("{}: plughost-sys may only be linked by plughost under cfg(windows), or the test plugin", relative_path(&krate.manifest)));
-        }
-        if package == "plughost" && !krate.is_app {
             violations.push(format!(
-                "{}: only apps may link plughost",
-                relative_path(&krate.manifest)
+                "{} (crate {}, [{section}] dependency '{}'): package '{}' may only be used by apps/ssr-plughost (ADR 0039)",
+                relative_path(&krate.manifest),
+                krate.name,
+                alias,
+                package
+            ));
+        }
+        if matches!(package.as_str(), "vst-audio" | "vst-audio-transport-sys") && !krate.is_app {
+            violations.push(format!(
+                "{} (crate {}, [{section}] dependency '{}'): package '{}' may only be used by an app crate (ADR 0039)",
+                relative_path(&krate.manifest),
+                krate.name,
+                alias,
+                package
             ));
         }
         if package == "ssr-setup-sys" && krate.name != "ssr-setup" {
@@ -1045,47 +1136,52 @@ fn check_dependency_table(
 }
 
 #[test]
-fn plughost_link_rules_reject_wrong_owners_and_unconditional_links() {
-    let krate = FirstPartyCrate {
-        name: "plughost".into(),
-        dir: repo_root().join("crates/plughost"),
-        manifest: repo_root().join("crates/plughost/Cargo.toml"),
-        is_app: false,
-    };
-    let manifest: toml::Value =
-        toml::from_str("[dependencies]\nplughost-sys = { workspace = true }\n").unwrap();
-    let dependencies = manifest["dependencies"].as_table().unwrap();
+fn vst_audio_link_rules_keep_plugin_code_in_ssr_plughost() {
     let packages = workspace_dependency_packages();
-    let mut violations = Vec::new();
-    check_dependency_table(
-        &krate,
-        "dependencies",
-        dependencies,
-        &packages,
-        &mut violations,
-    );
-    assert_eq!(violations.len(), 1);
-    violations.clear();
-    check_dependency_table(
-        &krate,
-        "target.'cfg(windows)'.dependencies",
-        dependencies,
-        &packages,
-        &mut violations,
-    );
-    assert!(violations.is_empty());
-    let wrong = FirstPartyCrate {
-        name: "engine".into(),
-        ..krate
-    };
-    check_dependency_table(
-        &wrong,
-        "target.'cfg(windows)'.dependencies",
-        dependencies,
-        &packages,
-        &mut violations,
-    );
-    assert_eq!(violations.len(), 1);
+    let cases = [
+        ("ssr-plughost", true, "vst-audio-worker-runtime", true),
+        ("ssr-plughost", true, "vst-audio-worker-sys", true),
+        ("spatial-softreceiver", true, "vst-audio", true),
+        ("engine", false, "vst-audio-ring", true),
+        ("engine", false, "vst-audio-worker-runtime", false),
+        (
+            "spatial-softreceiver",
+            true,
+            "vst-audio-worker-runtime",
+            false,
+        ),
+        ("spatial-softreceiver", true, "vst-audio-worker-sys", false),
+        ("engine", false, "vst-audio", false),
+        ("supervisor", false, "vst-audio", false),
+        ("engine", false, "vst-audio-transport-sys", false),
+    ];
+
+    for (name, is_app, package, allowed) in cases {
+        let krate = FirstPartyCrate {
+            name: name.into(),
+            dir: repo_root()
+                .join(if is_app { "apps" } else { "crates" })
+                .join(name),
+            manifest: repo_root()
+                .join(if is_app { "apps" } else { "crates" })
+                .join(name)
+                .join("Cargo.toml"),
+            is_app,
+        };
+        let manifest: toml::Value = toml::from_str(&format!(
+            "[dependencies]\nrenamed = {{ package = '{package}', version = '0.1.1' }}\n"
+        ))
+        .unwrap();
+        let mut violations = Vec::new();
+        check_dependency_table(
+            &krate,
+            "dependencies",
+            manifest["dependencies"].as_table().unwrap(),
+            &packages,
+            &mut violations,
+        );
+        assert_eq!(violations.is_empty(), allowed, "{name} -> {package}");
+    }
 }
 
 #[test]
@@ -1207,26 +1303,24 @@ fn windows_code_stays_in_ssr_sys() {
 }
 
 #[test]
-fn streamring_and_plughost_crates_stay_independent_of_ssr_crates() {
+fn streamring_and_the_plugin_worker_stay_independent_of_ssr_crates() {
     const DEPENDENCY_SECTIONS: [&str; 3] =
         ["dependencies", "dev-dependencies", "build-dependencies"];
 
     let workspace_packages = workspace_dependency_packages();
     let mut violations = Vec::new();
 
-    for krate in first_party_crates().into_iter().filter(|krate| {
-        krate.name == "streamring"
-            || krate.name == "plughost"
-            || krate.name == "ssr-plughost"
-            || krate.name.starts_with("plughost-")
-    }) {
+    for krate in first_party_crates()
+        .into_iter()
+        .filter(|krate| matches!(krate.name.as_str(), "streamring" | "ssr-plughost"))
+    {
         let manifest = read_toml(&krate.manifest);
         let mut check = |section: &str, dependencies: &toml::Table| {
             for (alias, specification) in dependencies {
                 let package = dependency_package(alias, specification, &workspace_packages);
                 if package.starts_with("ssr-") {
                     violations.push(format!(
-                        "{} (crate {}, [{section}] dependency '{}'): independent protocol crates may not depend on '{}' (ADR 0021)",
+                        "{} (crate {}, [{section}] dependency '{}'): streamring and the plugin worker may not depend on '{}' (ADR 0021, 0039)",
                         relative_path(&krate.manifest),
                         krate.name,
                         alias,
@@ -1256,7 +1350,7 @@ fn streamring_and_plughost_crates_stay_independent_of_ssr_crates() {
 
     assert!(
         violations.is_empty(),
-        "independent protocol crate dependency violations:\n{}",
+        "streamring/plugin-worker dependency violations:\n{}",
         violations.join("\n")
     );
 }

@@ -19,7 +19,9 @@ use ssr_types::{
     BitstreamCodec, BitstreamFormat, Direction, Layout, PcmFormat, SampleType, SourceFormat,
     Speaker,
 };
-use streamring::{Consumer, Geometry, InProcessEvent, Producer, Publisher, RegionBuf, State};
+use vst_audio_ring::{
+    Consumer, Geometry, InProcessEvent, Producer, Publisher, RegionBuf, SampleFormat, State,
+};
 
 const QPC: u64 = 10_000_000;
 const RATE: u32 = 48_000;
@@ -725,6 +727,7 @@ fn every_refusal_reason() {
 
 fn ring_geometry() -> Geometry {
     Geometry {
+        sample_format: SampleFormat::F32,
         lanes: 1,
         input_channels: 2,
         output_channels: 6,

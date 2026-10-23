@@ -47,7 +47,7 @@ use ssr_types::{
     Direction, Layout, MAX_OBJECTS, Object, ObjectRole, Position, SceneBlock, SceneLayoutTable,
     SceneSource, Speaker,
 };
-use streamring::{Pipeline, Publish, Publisher, RegionMemory, Signal};
+use vst_audio_ring::{Pipeline, Publish, Publisher, RegionMemory, Signal};
 
 use crate::chain::supported_source_rate;
 use crate::mixer::SceneMixer;
@@ -378,8 +378,8 @@ impl Upmixer for MatrixUpmixer {
 }
 
 /// The producer side of a plugin host (ADR 0021): each block is published to
-/// a one-lane `streamring` region, and the block before is read back when the
-/// host has completed it in time and under the same generation.
+/// a one-lane `vst-audio-ring` region (ADR 0039), and the block before is read
+/// back when the host has completed it in time and under the same generation.
 pub struct RingUpmixer {
     memory: Box<dyn RegionMemory>,
     work: Box<dyn Signal>,
