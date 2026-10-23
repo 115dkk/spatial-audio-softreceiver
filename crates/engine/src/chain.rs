@@ -1098,6 +1098,7 @@ enum Placement {
 /// allocate: the job's frames are only borrowed.
 fn place_decoded(
     decoders: &mut Decoders,
+    nominal_frames: usize,
     mixer: &mut SceneMixer,
     upmix: &mut UpmixLanes,
     geometry: Option<&PanGeometry>,
@@ -1119,7 +1120,15 @@ fn place_decoded(
     let endpoint = job.endpoint();
     let mut scene_rate_error = None;
     let result = decoders.place_deferred(job.decoded(), job.qpc(), job.epoch(), &mut |scene| {
-        if let Err(rate) = place_scene(upmix, mixer, endpoint, scene, geometry, before_restart) {
+        if let Err(rate) = place_scene(
+            upmix,
+            mixer,
+            endpoint,
+            scene,
+            nominal_frames,
+            geometry,
+            before_restart,
+        ) {
             scene_rate_error = Some(rate);
         }
     });
@@ -1154,6 +1163,7 @@ fn submit_deferred_burst(
     geometry: Option<&PanGeometry>,
     endpoint: u16,
     epoch: u32,
+    nominal_frames: usize,
     input: DeferredInput,
     burst: &bitstream::Burst<'_>,
     qpc: u64,
@@ -1215,9 +1225,15 @@ fn submit_deferred_burst(
             !lane.discards(job),
             "an inline delivery is placed where its burst is queued"
         );
-        if let Placement::Failed { error, reset_front } =
-            place_decoded(decoders, mixer, upmix, geometry, job, before_restart)
-        {
+        if let Placement::Failed { error, reset_front } = place_decoded(
+            decoders,
+            nominal_frames,
+            mixer,
+            upmix,
+            geometry,
+            job,
+            before_restart,
+        ) {
             failure = Some((error, reset_front));
         }
     });
@@ -1386,6 +1402,14 @@ impl Front {
             }
         }
         self.transport_remainder = 0;
+    }
+
+    /// Frames one delivery of the current format normally places at once
+    /// (sizes the upmix pipeline, see `decode::nominal_frames_per_delivery`).
+    fn nominal_frames(&self) -> usize {
+        self.format
+            .as_ref()
+            .map_or(0, |(_, format)| decode::nominal_frames_per_delivery(format))
     }
 
     fn chunk_bytes(&self) -> usize {
@@ -1866,8 +1890,10 @@ impl Chain {
                 return;
             }
             // The lane's transport moved when the burst's bytes arrived.
+            let nominal_frames = front.nominal_frames();
             match place_decoded(
                 &mut front.decoders,
+                nominal_frames,
                 mixer,
                 upmix,
                 geometry,
@@ -2724,10 +2750,19 @@ impl Chain {
     fn flush_front(&mut self, index: usize, endpoint: u16, out: &mut dyn FnMut(ChainEvent<'_>)) {
         let (fronts, upmix, mixer) = (&mut self.fronts, &mut self.upmix, &mut self.mixer);
         let geometry = self.geometry.as_deref();
+        let nominal_frames = fronts[index].nominal_frames();
         let mut scene_rate_error = None;
         let result = fronts[index].decoders.flush(&mut |scene| {
             // The stream ends here: no transport is pending.
-            if let Err(rate) = place_scene(upmix, mixer, endpoint, scene, geometry, &mut |_| {}) {
+            if let Err(rate) = place_scene(
+                upmix,
+                mixer,
+                endpoint,
+                scene,
+                nominal_frames,
+                geometry,
+                &mut |_| {},
+            ) {
                 scene_rate_error = Some(rate);
             }
         });
@@ -2774,6 +2809,7 @@ impl Chain {
         } = self;
         let geometry = geometry.as_deref();
         let byte_rate = fronts[index].byte_rate;
+        let nominal_frames = fronts[index].nominal_frames();
         let chunk_bytes = fronts[index].chunk_bytes();
         for (chunk_index, chunk) in bytes.chunks(chunk_bytes).enumerate() {
             let start = chunk_index.saturating_mul(chunk_bytes);
@@ -2784,8 +2820,15 @@ impl Chain {
             let mut place = |scene: &SceneBlock<'_>| {
                 // A PCM epoch's shape is fixed, so its stage never restarts
                 // the lane mid-chunk; the transport moves after placement.
-                if let Err(rate) = place_scene(upmix, mixer, endpoint, scene, geometry, &mut |_| {})
-                {
+                if let Err(rate) = place_scene(
+                    upmix,
+                    mixer,
+                    endpoint,
+                    scene,
+                    nominal_frames,
+                    geometry,
+                    &mut |_| {},
+                ) {
                     scene_rate_error = Some(rate);
                 }
             };
@@ -2850,6 +2893,7 @@ impl Chain {
             );
             let front = &mut fronts[index];
             let epoch = front.format.map_or(0, |format| format.0);
+            let nominal_frames = front.nominal_frames();
             let chunk_end = front.deframer_bytes.saturating_add(chunk.len() as u64);
             let transport_frames = front.advance_bytes(chunk.len());
             let mut transport_advanced = false;
@@ -2895,6 +2939,7 @@ impl Chain {
                         geometry,
                         endpoint,
                         epoch,
+                        nominal_frames,
                         input,
                         &burst,
                         burst_qpc,
@@ -2903,9 +2948,15 @@ impl Chain {
                 } else {
                     let mut scene_rate_error = None;
                     let result = decoders.push_burst(&burst, burst_qpc, &mut |scene| {
-                        if let Err(rate) =
-                            place_scene(upmix, mixer, endpoint, scene, geometry, &mut advance_first)
-                        {
+                        if let Err(rate) = place_scene(
+                            upmix,
+                            mixer,
+                            endpoint,
+                            scene,
+                            nominal_frames,
+                            geometry,
+                            &mut advance_first,
+                        ) {
                             scene_rate_error = Some(rate);
                         }
                     });
