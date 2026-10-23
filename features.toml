@@ -982,11 +982,11 @@ tests = [
   "supervisor::every_fixture_sentence_is_the_supervisors",
   "supervisor::every_message_renders_nonempty_and_distinct_in_both_languages",
   "spatial-softreceiver::wave_bits_map_to_speakers_and_unknown_bits_are_refused",
-  "spatial-softreceiver::a_respawn_restores_the_newest_state_then_the_one_before",
   "spatial-softreceiver::states_rotate_through_two_files_and_clear",
   "spatial-softreceiver::hosting_is_unavailable_off_windows",
+  "spatial-softreceiver::windows_adapter_hosts_the_test_plugin_end_to_end",
 ]
-note = "ADR 0035 (2026-10-16 correction) and ADR 0021: supervisor::upmix keeps each endpoint's choice (main, music, PASS; None follows DEFAULT_UPMIXER, Off until the first-party upmixer exists), its scanned plugin and each output kind's apply switch in Settings.upmix (older settings load the defaults), and runs the VST upmixers through the PluginHost port. SetUpmixer refuses endpoint 3 and FirstParty; ChoosePlugin takes a .vst3 file or bundle or a VST 2 .dll, scans it and keeps the first class (a different plugin forgets the old saved state); OpenPluginEditor needs a host that is up; a profile.toml locks none of them. While the engine runs, every endpoint whose effective choice is a plugin has a host started at its source rate (48 kHz before any FormatChanged of mono or stereo PCM or a bitstream) and an UpmixStage built on the control thread; a rate change, a new plugin latency and the watch's respawn restart the host and reinstall the stage, a host with no more outputs than inputs or a failed start is Failed(plugin_not_upmixer / plugin_scan_failed), and the watch's three-failure disable is Failed(plugin_disabled) until the user chooses again or the app restarts. The kind in use's switch reaches the engine as LiveChange::UpmixApply at start and on kind changes while the hosts stay up; a change the full queue refuses is handed over on the next tick; engine stop shuts every host down and polls it until it exits (Quit waits up to 2.5 s). Snapshot.upmix shows the fixtures' shapes (state, bypass and latency from Engine::upmix_status, inputs and outputs as the host last reported them). Tested on Linux with a fake host over MatrixUpmixer. The Windows adapter (apps/spatial-softreceiver plugin_host) starts each host on a thread of its own around vst_audio::PluginProcess, builds the RingUpmixer from the Started ring, maps wave bits to speakers, carries the ControlWatch across respawns and keeps two state files per endpoint; its file rotation, respawn state choice and speaker mapping are tested on Linux, the process paths are type-checked by the Windows-target clippy"
+note = "ADR 0035 (2026-10-16 correction), ADR 0021 and ADR 0039 (2026-10-23 decision): supervisor::upmix keeps each endpoint's choice (main, music, PASS; None follows DEFAULT_UPMIXER, Off until the first-party upmixer exists), its scanned plugin and each output kind's apply switch in Settings.upmix (older settings load the defaults), and runs the VST upmixers through the PluginHost port. SetUpmixer refuses endpoint 3 and FirstParty; ChoosePlugin takes a .vst3 file or bundle or a VST 2 .dll, scans it and keeps the first class (a different plugin forgets the old saved state); OpenPluginEditor needs a host that is up; a profile.toml locks none of them. While the engine runs, every endpoint whose effective choice is a plugin has a host started at its source rate (48 kHz before any FormatChanged of mono or stereo PCM or a bitstream) and an UpmixStage built on the control thread; a rate change or a new plugin latency saves and stops the old instance before starting the new one, while vst-audio's watch recovers a failed worker inside the instance and disables it after three failures. A host with no more outputs than inputs or a failed start is Failed(plugin_not_upmixer / plugin_scan_failed), and recovery exhaustion is Failed(plugin_disabled) until the user chooses again or the app restarts. The kind in use's switch reaches the engine as LiveChange::UpmixApply at start and on kind changes while the hosts stay up; a change the full queue refuses is handed over on the next tick; engine stop shuts every host down and polls it until it exits (Quit waits up to 2.5 s). Snapshot.upmix shows the fixtures' shapes (state, bypass and latency from Engine::upmix_status, inputs and outputs as the host last reported them). Tested on Linux with a fake host over MatrixUpmixer. The Windows adapter polls vst_audio::LoadTask, takes a BlockEndpoint from the Instance, maps wave bits to speakers and keeps two state files per endpoint; file rotation and speaker mapping are tested on Linux, the ignored Windows end-to-end test covers load, audio, a rate handoff, shutdown and state persistence, and Windows-target clippy type-checks it"
 
 [[feature]]
 id = "plughost.worker"
@@ -998,15 +998,25 @@ tests = [
   "spatial-softreceiver::only_main_buses_are_hosted",
   "vst-audio-worker-runtime::parses_inherited_handles",
 ]
-note = "ssr-plughost.exe is vst-audio's worker (vst_audio_worker_runtime::host::main) at the version Cargo.lock records; only it links the worker runtime and the foreign plugin loader, only apps link vst-audio's application side, and the engine links vst-audio-ring alone. hosts start through PluginProcess::start_configured with BusSelector::main_only() (vst-audio 0.2.0), so a sidechain or an auxiliary output stays inactive, and the app still refuses a host that reports more than one active bus in a direction (ADR 0039)"
+note = "ssr-plughost.exe is vst-audio's worker (vst_audio_worker_runtime::host::main) at the version Cargo.lock records; only it links the worker runtime and the foreign plugin loader, only apps link vst-audio's application side, and the engine links vst-audio-ring alone. Hosts start through Host::spawn_async with Configuration::buses = BusSelector::main_only(), so a sidechain or an auxiliary output stays inactive, and the app still refuses a host that reports more than one active bus in a direction (ADR 0039)"
 
 [[feature]]
 id = "plughost.isolation"
 kind = "platform"
 milestone = "M4"
 status = "implemented"
-tests = ["vst-audio-worker-runtime::frame_session_and_ring_round_trip", "vst-audio::watch_detects_hang_and_three_crashes", "vst-audio::crash_respawn_and_disable", "vst-audio::hung_process_is_killed", "vst-audio::shutdown_exits_zero_without_respawn"]
-note = "one ssr-plughost process per plugin under a job object; shared-memory ring one block behind, the engine never waits; crash and hang restart with state restore (ADR 0021). Hosted by vst-audio; the plughost CI job runs these tests against ssr-plughost.exe (ADR 0039)"
+tests = [
+  "vst-audio-worker-runtime::frame_session_and_ring_round_trip",
+  "vst-audio::watch_detects_hang_and_three_crashes",
+  "vst-audio::crash_respawn_and_disable",
+  "vst-audio::hung_process_is_killed",
+  "vst-audio::shutdown_exits_zero_without_respawn",
+  "vst-audio::watch_policy_respawns_a_crashed_worker_with_its_state",
+  "vst-audio::watch_policy_disables_after_three_failures",
+  "vst-audio::watch_policy_shutdown_during_backoff_does_not_respawn",
+  "vst-audio::block_endpoint_delivers_and_adopts_recovery",
+]
+note = "one ssr-plughost process per plugin under a job object; shared-memory ring at a caller-selected depth, the engine never waits; RecoveryPolicy::Watch restarts crashes and hangs with newest/previous state selection and hands the recovered worker to BlockEndpoint at a block boundary (ADR 0021, ADR 0039). Hosted by vst-audio; the plughost CI job runs these tests against ssr-plughost.exe"
 
 [[feature]]
 id = "plughost.vst3"

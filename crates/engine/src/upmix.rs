@@ -54,7 +54,7 @@ use ssr_types::{
     Direction, Layout, MAX_OBJECTS, Object, ObjectRole, Position, SceneBlock, SceneLayoutTable,
     SceneSource, Speaker,
 };
-use vst_audio_ring::{Pipeline, Publish, Publisher, RegionMemory, Signal};
+use vst_audio_ring::{BlockLane, Publisher, RegionMemory, Signal};
 
 use crate::chain::supported_source_rate;
 use crate::mixer::SceneMixer;
@@ -67,7 +67,7 @@ pub const MAX_UPMIX_CHANNELS: usize = 32;
 pub const MAX_UPMIX_LATENCY_SECONDS: usize = 2;
 /// Shared-memory slots provisioned for every plugin upmixer.
 pub const UPMIX_RING_SLOTS: u32 = 8;
-/// Largest depth the fixed eight-slot publish-before-read ring can support.
+/// Largest depth [`BlockLane`] supports with the fixed eight slots (`slots - 1`).
 pub const UPMIX_MAX_DEPTH: usize = UPMIX_RING_SLOTS as usize - 1;
 /// Objects of a stereo or mono scene: at most two besides LFE.
 const STEREO_OBJECTS: usize = 2;
@@ -135,6 +135,10 @@ pub trait Upmixer: Send {
     /// result into `output` (`outputs().len()` planes), but only when that block
     /// was submitted under the same generation and has completed. Returns
     /// whether `output` holds it. Never blocks, locks or allocates.
+    ///
+    /// [`RingUpmixer`] does not use `generation`: [`UpmixStage::restart`] calls
+    /// [`Self::set_depth`] at every generation start, which restarts its
+    /// [`BlockLane`] and discards results from the preceding generation.
     fn process(&mut self, block: u64, generation: u64, input: &[f32], output: &mut [f32]) -> bool;
 }
 
@@ -447,16 +451,10 @@ impl Upmixer for MatrixUpmixer {
     }
 }
 
-/// The producer side of a plugin host (ADR 0021): each block is published to
-/// a one-lane `vst-audio-ring` region (ADR 0039), and block `k - m` is read
-/// back when the host has completed it in time and under the same generation.
+/// The producer side of a plugin host (ADR 0021): [`BlockLane`] publishes each
+/// block to lane 0 and returns block `k - m` when the host completed it in time.
 pub struct RingUpmixer {
-    memory: Box<dyn RegionMemory>,
-    work: Box<dyn Signal>,
-    publisher: Publisher,
-    pipeline: Pipeline,
-    /// The last published sequence (0 before the first).
-    sequence: u32,
+    lane: BlockLane<Box<dyn RegionMemory>, Box<dyn Signal>>,
     inputs: Vec<Speaker>,
     outputs: Vec<Speaker>,
     latency_frames: usize,
@@ -465,11 +463,10 @@ pub struct RingUpmixer {
 impl fmt::Debug for RingUpmixer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RingUpmixer")
-            .field("geometry", &self.publisher.geometry())
+            .field("lane", &self.lane)
             .field("inputs", &self.inputs)
             .field("outputs", &self.outputs)
             .field("latency_frames", &self.latency_frames)
-            .field("sequence", &self.sequence)
             .finish_non_exhaustive()
     }
 }
@@ -505,12 +502,10 @@ impl RingUpmixer {
             geometry.max_frames as usize,
             latency_frames,
         )?;
+        let lane = BlockLane::new(memory, work, publisher, 0, 1)
+            .expect("the ring shape and initial depth were validated");
         Ok(Self {
-            memory,
-            work,
-            publisher,
-            pipeline: Pipeline::new(),
-            sequence: 0,
+            lane,
             inputs,
             outputs,
             latency_frames,
@@ -520,11 +515,11 @@ impl RingUpmixer {
 
 impl Upmixer for RingUpmixer {
     fn rate(&self) -> u32 {
-        self.publisher.geometry().sample_rate
+        self.lane.geometry().sample_rate
     }
 
     fn block_frames(&self) -> usize {
-        self.publisher.geometry().max_frames as usize
+        self.lane.geometry().max_frames as usize
     }
 
     fn inputs(&self) -> &[Speaker] {
@@ -540,48 +535,27 @@ impl Upmixer for RingUpmixer {
     }
 
     fn set_depth(&mut self, depth: usize) {
-        self.pipeline.set_depth(depth as u32);
+        self.lane
+            .restart(depth as u32)
+            .expect("the stage checked the upmixer's maximum depth");
     }
 
     fn max_depth(&self) -> usize {
-        self.publisher.geometry().slots as usize - 1
+        self.lane.max_depth() as usize
     }
 
-    fn process(&mut self, block: u64, generation: u64, input: &[f32], output: &mut [f32]) -> bool {
-        let region = self.memory.region();
-        let frames = self.publisher.geometry().max_frames as usize;
-        let inputs = self.inputs.len();
-        // The next sequence: 1-based, wrapping, never 0. It advances only
-        // when published, so the host never meets a gap.
-        let sequence = match self.sequence.wrapping_add(1) {
-            0 => 1,
-            next => next,
-        };
-        let published =
-            self.publisher
-                .try_publish(region, 0, sequence, Some(self.work.as_ref()), |slot| {
-                    for plane in 0..inputs {
-                        for frame in 0..frames {
-                            slot.write(plane, frame, input[plane * frames + frame]);
-                        }
-                    }
-                });
-        if published == Publish::Published {
-            self.sequence = sequence;
-            self.pipeline.published(sequence, block, generation);
+    fn process(&mut self, block: u64, _generation: u64, input: &[f32], output: &mut [f32]) -> bool {
+        // `UpmixStage` has already restarted the lane through `set_depth`; keep
+        // direct callers safe when they begin another generation at block 0.
+        if block == 0 && self.lane.next_block() != 0 {
+            self.lane
+                .restart(self.lane.depth())
+                .expect("the active depth remains valid");
         }
-        let completed = self.publisher.completed(region, 0);
-        let Some(result) = self.pipeline.output_sequence(block, generation, completed) else {
-            return false;
-        };
-        let outputs = self.outputs.len();
-        self.publisher.try_read(region, 0, result, |slot| {
-            for plane in 0..outputs {
-                for frame in 0..frames {
-                    output[plane * frames + frame] = slot.read(plane, frame);
-                }
-            }
-        })
+        self.lane
+            .process_planes(input, output)
+            .expect("the stage owns buffers matching the ring geometry")
+            .delivered
     }
 }
 
