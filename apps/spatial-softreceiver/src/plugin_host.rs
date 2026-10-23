@@ -683,8 +683,11 @@ mod windows {
         deadline = Instant::now() + Duration::from_secs(15);
         for block in 0.. {
             if upmixer.process(block, 0, &input, &mut output) {
-                assert!((output[0] - 0.25).abs() < 1e-6);
-                assert!((output[5 * upmixer.block_frames()] - 0.0625).abs() < 1e-6);
+                // vst-audio's fixture delays every channel by 64 frames and
+                // sends 0.5 · L · width to the rear pair; frame 100 is past
+                // the delay in the first block as in any later one.
+                assert!((output[100] - 0.25).abs() < 1e-6);
+                assert!((output[5 * upmixer.block_frames() + 100] - 0.125).abs() < 1e-6);
                 break;
             }
             assert!(Instant::now() < deadline, "audio delivery timed out");
