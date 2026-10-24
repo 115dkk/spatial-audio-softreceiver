@@ -111,14 +111,14 @@ checksum = "7d902e3d592a523def97af8f317b08ce16b7ab854c1985a0c671e6f15cebc236"
 
 [[package]]
 name = "asio-proto"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "streamring",
 ]
 
 [[package]]
 name = "asio-sys"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "asio-proto",
  "inventory",
@@ -414,7 +414,7 @@ dependencies = [
 
 [[package]]
 name = "bitstream"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "assert_no_alloc",
  "proptest",
@@ -495,7 +495,7 @@ dependencies = [
 
 [[package]]
 name = "brir"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "convolver",
  "hound",
@@ -801,7 +801,7 @@ checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
 name = "convolver"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "assert_no_alloc",
  "proptest",
@@ -868,7 +868,7 @@ checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
 
 [[package]]
 name = "correction"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "assert_no_alloc",
  "brir",
@@ -1025,7 +1025,7 @@ dependencies = [
 
 [[package]]
 name = "decode"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "assert_no_alloc",
  "bitstream",
@@ -1320,7 +1320,7 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 
 [[package]]
 name = "engine"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "asio-proto",
  "assert_no_alloc",
@@ -3452,7 +3452,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "render"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "assert_no_alloc",
  "proptest",
@@ -4054,7 +4054,7 @@ dependencies = [
 
 [[package]]
 name = "spatial-softreceiver"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "engine",
  "serde",
@@ -4077,7 +4077,7 @@ dependencies = [
 
 [[package]]
 name = "speakers"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "brir",
  "convolver",
@@ -4134,7 +4134,7 @@ dependencies = [
 
 [[package]]
 name = "ssr-abi"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "cbindgen",
  "proptest",
@@ -4145,7 +4145,7 @@ dependencies = [
 
 [[package]]
 name = "ssr-asio"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "asio-proto",
  "asio-sys",
@@ -4156,7 +4156,7 @@ dependencies = [
 
 [[package]]
 name = "ssr-guard"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -4168,7 +4168,7 @@ dependencies = [
 
 [[package]]
 name = "ssr-i18n"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "clap",
  "ssr-types",
@@ -4178,7 +4178,7 @@ dependencies = [
 
 [[package]]
 name = "ssr-live"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "assert_no_alloc",
  "bitstream",
@@ -4197,14 +4197,14 @@ dependencies = [
 
 [[package]]
 name = "ssr-plughost"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "vst-audio-worker-runtime",
 ]
 
 [[package]]
 name = "ssr-policy"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -4213,7 +4213,7 @@ dependencies = [
 
 [[package]]
 name = "ssr-replay"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "bitstream",
  "brir",
@@ -4232,7 +4232,7 @@ dependencies = [
 
 [[package]]
 name = "ssr-setup"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "clap",
  "ssr-abi",
@@ -4243,7 +4243,7 @@ dependencies = [
 
 [[package]]
 name = "ssr-setup-sys"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "asio-proto",
  "ssr-abi",
@@ -4255,7 +4255,7 @@ dependencies = [
 
 [[package]]
 name = "ssr-sys"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "asio-proto",
  "assert_no_alloc",
@@ -4271,7 +4271,7 @@ dependencies = [
 
 [[package]]
 name = "ssr-types"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -4294,7 +4294,7 @@ checksum = "ff7589a1859b09232522bb9edf076ca7fcf14ded96685d3fa629db73023ffbb7"
 
 [[package]]
 name = "streamring"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "assert_no_alloc",
 ]
@@ -4343,7 +4343,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "supervisor"
-version = "0.24.8"
+version = "0.24.9"
 dependencies = [
  "assert_no_alloc",
  "brir",
