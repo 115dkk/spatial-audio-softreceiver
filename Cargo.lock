@@ -5382,9 +5382,9 @@ dependencies = [
 
 [[package]]
 name = "vst-audio"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c69ba0a7b56edaa389ca05fc0fb5d8605dccadf6c926a4f2457d2b9e35c4790"
+checksum = "89932550f2cee961069768c39d99c3cd9948182e13cef13ed7d702f019a190de"
 dependencies = [
  "rtrb",
  "thiserror 2.0.21",
@@ -5395,9 +5395,9 @@ dependencies = [
 
 [[package]]
 name = "vst-audio-protocol"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbf67e7c9524911f9d7bf46cafc87e7bdb988ea34decead4f7515e0f538f55ea"
+checksum = "ef40f73227baab28f1f1ffedeb442b534946dbfcce94dda406d4f72b1d697cfa"
 dependencies = [
  "thiserror 2.0.21",
  "vst-audio-ring",
@@ -5406,15 +5406,15 @@ dependencies = [
 
 [[package]]
 name = "vst-audio-ring"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b214bc080f372324f5dbc0c05a353c185862dcb85821d29a4006381ce79ba694"
+checksum = "f3a72c5de177458c1db930998ae087b0423146bfcf9b1f98c4a57d537661571b"
 
 [[package]]
 name = "vst-audio-transport-sys"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b32d8af7f49eee19851620d5a4079981d117312cade2c720a2a34f4134c853e1"
+checksum = "4bfc1861301185bd33c94626061f5b93be8d00d10c04f11262a2ce1107648c2f"
 dependencies = [
  "libc",
  "tempfile",
@@ -5425,9 +5425,9 @@ dependencies = [
 
 [[package]]
 name = "vst-audio-worker-runtime"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "330923099be61272b2a176c30c7825f8b2201b0fd613a7519b82734691550749"
+checksum = "ae58fa0816a13fb9fbea2e9e166e2a9cc0ade61faae625786ec645ea14103422"
 dependencies = [
  "clap",
  "thiserror 2.0.21",
@@ -5439,9 +5439,9 @@ dependencies = [
 
 [[package]]
 name = "vst-audio-worker-sys"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9edc13e2f4a0b155fa95b3803f57dba15815153d56f60b291b7a8cfd17fc3315"
+checksum = "8546668515061e84b7a53090417619d8534a392e308c30c799f831bb458daadc"
 dependencies = [
  "crossbeam-queue",
  "libc",
