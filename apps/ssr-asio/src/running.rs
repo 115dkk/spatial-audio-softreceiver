@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use streamring::{Geometry, Producer, Publish, Publisher, RegionMemory, Signal, Wait, Waited};
 
 static SERIAL: AtomicU32 = AtomicU32::new(1);
+const RING_SEQUENCE_ORIGIN: u32 = 0;
 #[derive(Debug)]
 enum SessionControl {
     Shared(ControlMapping),
@@ -170,11 +171,12 @@ impl Prepared {
             .map_err(|_| Error::Hardware)?;
         let mut producer = Producer::new(ring.region(), [Some(&work), None], &done);
         producer
-            .announce(geometry, lease.pid)
+            .announce_at(geometry, lease.pid, RING_SEQUENCE_ORIGIN)
             .map_err(|_| Error::Hardware)?;
         let publisher = producer.publisher().ok_or(Error::Hardware)?;
         c.set_loaded_frames(0);
-        c.set_generation_barrier_sequence(0);
+        // The freshly announced origin is also the last published sequence.
+        c.set_generation_barrier_sequence(RING_SEQUENCE_ORIGIN);
         c.set_client_generation_ack(c.dac_generation());
         c.set_clock_fault(false);
         c.set_client_running(false);
@@ -185,7 +187,7 @@ impl Prepared {
             loop {
                 // No callback exists before start: preparation itself is quiescent.
                 // Also acknowledge an epoch announced while createBuffers is waiting.
-                c.set_generation_barrier_sequence(0);
+                c.set_generation_barrier_sequence(RING_SEQUENCE_ORIGIN);
                 c.set_client_generation_ack(c.dac_generation());
                 if producer.wait_ready(Duration::from_millis(10)) == Waited::Signalled {
                     break;
@@ -221,7 +223,7 @@ impl Prepared {
                 layout,
                 rate,
                 frames,
-                last_published: AtomicU32::new(0),
+                last_published: AtomicU32::new(RING_SEQUENCE_ORIGIN),
                 position,
                 nanos,
             }),
@@ -314,7 +316,6 @@ fn run(session: &Session, stop: &StopState, mut scratch: Vec<f32>) {
     let mut latency_seen = control.latency_frames();
     let mut fault_notified = false;
     let mut layout_notified = false;
-    let mut sequence_notified = false;
     loop {
         if stop.stop.load(Ordering::Acquire) || control.lease() != session.lease {
             break;
@@ -409,20 +410,11 @@ fn run(session: &Session, stop: &StopState, mut scratch: Vec<f32>) {
             latency_seen = latency;
             session.host.latencies_changed();
         }
-        // The ring cannot wrap MAX -> 1: that would reuse the same odd slot.
-        // Require a fresh session instead of publishing a wrapped sequence.
-        let sequence_exhausted = sequence.is_none();
-        if sequence_exhausted && !sequence_notified {
-            sequence_notified = true;
-            fallback_due = now;
-            control.set_clock_fault(true);
-            session.host.reset_request();
-        }
         // reset_request may synchronously reenter stop/dispose on this worker.
         if stop.stop.load(Ordering::Acquire) {
             break;
         }
-        let discard = tracker.fault().is_some() || changed || sequence_exhausted || !epoch_ready;
+        let discard = tracker.fault().is_some() || changed || !epoch_ready;
         let due = if discard {
             now >= fallback_due
         } else {
@@ -434,9 +426,10 @@ fn run(session: &Session, stop: &StopState, mut scratch: Vec<f32>) {
             ) > 0
         };
         let available = discard
-            || sequence.is_some_and(|next| {
-                asio_proto::can_publish(session.publisher.completed(session.ring.region(), 0), next)
-            });
+            || asio_proto::can_publish(
+                session.publisher.completed(session.ring.region(), 0),
+                sequence,
+            );
         if due && available {
             let position = Position { frames, nanos: now };
             session.position.store(frames, Ordering::Release);
@@ -454,20 +447,19 @@ fn run(session: &Session, stop: &StopState, mut scratch: Vec<f32>) {
                         && !stop.stop.load(Ordering::Acquire)
                         && control.dac_generation() == generation
                         && control.ready_generation() == generation
-                        && let Some(next) = sequence
                     {
                         let published = session.publisher.try_publish(
                             session.ring.region(),
                             0,
-                            next,
+                            sequence,
                             Some(&session.work),
                             |slot| {
                                 slot.copy_from(samples);
                             },
                         );
                         if published == Publish::Published {
-                            session.last_published.store(next, Ordering::Release);
-                            sequence = asio_proto::next_sequence(next);
+                            session.last_published.store(sequence, Ordering::Release);
+                            sequence = asio_proto::next_sequence(sequence);
                             supplied = supplied.saturating_add(u64::from(session.frames));
                             control.set_loaded_frames(supplied);
                         }

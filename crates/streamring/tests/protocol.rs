@@ -161,6 +161,56 @@ fn publisher_and_owned_region_cross_threads_after_announcement() {
 }
 
 #[test]
+fn modular_sequences_cross_zero_without_skipping_or_aliasing() {
+    for origin in [u32::MAX - 5, u32::MAX - 1, u32::MAX] {
+        let storage = RegionBuf::new(geometry(1)).unwrap();
+        let event = InProcessEvent::new();
+        let mut producer = Producer::new(storage.region(), [Some(&event), None], &event);
+        producer.announce_at(geometry(1), 1, origin).unwrap();
+        let mut consumer = Consumer::new(storage.region(), &event, [Some(&event), None]);
+        consumer.validate_and_ready(2).unwrap();
+        let mut buffer = vec![0.0; geometry(1).samples_per_slot()];
+        let mut sequence = origin;
+        for marker in 1..=40_u32 {
+            sequence = sequence.wrapping_add(1);
+            assert_eq!(
+                producer.try_publish(0, sequence, |slot| slot.write(0, 0, marker as f32)),
+                Publish::Published
+            );
+            assert_eq!(consumer.next_published(0), Some(sequence));
+            assert!(consumer.slot_mut(0, sequence, &mut buffer, |samples| {
+                samples[0] += 0.5;
+            }));
+            consumer.complete(0, sequence);
+            let mut observed = 0.0;
+            assert!(producer.try_read(0, sequence, |slot| observed = slot.read(0, 0)));
+            assert_eq!(observed, marker as f32 + 0.5);
+        }
+    }
+}
+
+#[test]
+fn full_ring_rejects_wrapped_reuse_until_matching_slot_completes() {
+    let origin = u32::MAX - 1;
+    let storage = RegionBuf::new(geometry(1)).unwrap();
+    let event = InProcessEvent::new();
+    let mut producer = Producer::new(storage.region(), [Some(&event), None], &event);
+    producer.announce_at(geometry(1), 1, origin).unwrap();
+    let mut consumer = Consumer::new(storage.region(), &event, [Some(&event), None]);
+    consumer.validate_and_ready(2).unwrap();
+
+    assert_eq!(
+        producer.try_publish(0, u32::MAX, |_| {}),
+        Publish::Published
+    );
+    assert_eq!(producer.try_publish(0, 0, |_| {}), Publish::Published);
+    assert_eq!(producer.try_publish(0, 1, |_| {}), Publish::Dropped);
+    assert_eq!(consumer.next_published(0), Some(u32::MAX));
+    consumer.complete(0, u32::MAX);
+    assert_eq!(producer.try_publish(0, 1, |_| {}), Publish::Published);
+}
+
+#[test]
 fn late_blocks_are_processed_without_skipping() {
     let storage = RegionBuf::new(geometry(1)).unwrap();
     let event = InProcessEvent::new();

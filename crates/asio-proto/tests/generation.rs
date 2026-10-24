@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use streamring::{
     Consumer, Geometry, InProcessEvent, Producer, Publish, Region, RegionBuf, Waited,
+    sequence_at_least,
 };
 
 fn geometry() -> Geometry {
@@ -79,7 +80,7 @@ fn late_old_callback_publish_is_covered_by_quiescent_ack() {
     let mut discarded = 0;
     for _ in 0..2 {
         if let Some(sequence) = consumer.next_published(0) {
-            assert!(sequence <= barrier);
+            assert!(sequence_at_least(barrier, sequence));
             consumer.complete(0, sequence);
             discarded += 1;
         }
@@ -89,7 +90,7 @@ fn late_old_callback_publish_is_covered_by_quiescent_ack() {
     // DSP/queue reset is now safe; counters are not compared during transition.
     c.set_completed_frames(0);
     c.set_ready_for_generation(11);
-    let next = next_sequence(barrier).unwrap();
+    let next = next_sequence(barrier);
     assert_eq!(next, 3);
     assert_eq!(producer.try_publish(0, next, |_| {}), Publish::Published);
     assert_eq!(consumer.next_published(0), Some(3));

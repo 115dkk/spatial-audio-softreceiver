@@ -162,7 +162,7 @@ pub struct ControlSnapshot {
 ///
 /// Counters and flags use release stores and acquire loads. The lease is the
 /// sole multi-writer CAS field. Generation/frame counters saturate or require a
-/// fresh session at exhaustion; ring sequences never wrap within a lease.
+/// fresh session at exhaustion; ring sequences wrap modulo 2^32 within a lease.
 #[derive(Clone, Copy, Debug)]
 pub struct Control<'a> {
     words: &'a [AtomicU64],
@@ -462,7 +462,7 @@ impl<'a> Control<'a> {
         self.get_u32(GENERATION_BARRIER_SEQUENCE_I)
     }
 
-    /// Last actually published ring sequence, not the next requested sequence.
+    /// Last actually published modular ring sequence, not the next requested sequence.
     pub fn set_generation_barrier_sequence(self, value: u32) {
         self.set_u32(GENERATION_BARRIER_SEQUENCE_I, value);
     }

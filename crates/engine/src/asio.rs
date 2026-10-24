@@ -1306,14 +1306,14 @@ fn run_client(
                 let Some(sequence) = consumer.next_published(0) else {
                     break;
                 };
-                if sequence > barrier {
+                if !streamring::sequence_at_least(barrier, sequence) {
                     break;
                 }
                 consumer.complete(0, sequence);
             }
             if consumer
                 .next_published(0)
-                .is_some_and(|sequence| sequence <= barrier)
+                .is_some_and(|sequence| streamring::sequence_at_least(barrier, sequence))
             {
                 return Err(AsioTransportError::Transport(
                     "ASIO generation barrier exceeds ring capacity".into(),

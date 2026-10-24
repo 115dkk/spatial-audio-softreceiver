@@ -1362,12 +1362,14 @@ milestone = "M4"
 status = "implemented"
 tests = [
   "streamring::readiness_in_order_late_drop_fault_and_close",
+  "streamring::modular_sequences_cross_zero_without_skipping_or_aliasing",
+  "streamring::full_ring_rejects_wrapped_reuse_until_matching_slot_completes",
   "streamring::hostile_headers_are_rejected",
   "streamring::pipeline_rule_covers_first_misses_generation_and_late_results",
   "streamring::producer_per_block_path_does_not_allocate",
   "streamring::publisher_and_owned_region_cross_threads_after_announcement",
 ]
-note = "cross-process block ring ported with the author's permission from EqualizerAPO-XT StreamRing commit 1432f61cc437c99fde8e8e84e10e648fe516d4ce; retained only for the ASIO entrance, while plugin hosting uses vst-audio-ring (ADR 0039)"
+note = "cross-process block ring ported with the author's permission from EqualizerAPO-XT StreamRing commit 1432f61cc437c99fde8e8e84e10e648fe516d4ce; its u32 sequences wrap modulo 2^32 without recreating the ring (ADR 0040); retained only for the ASIO entrance, while plugin hosting uses vst-audio-ring (ADR 0039)"
 
 [[feature]]
 id = "plughost.proto"
@@ -1396,12 +1398,16 @@ tests = [
   "asio-proto::only_one_lease_racer_wins",
   "asio-proto::tracker_detects_stall_peer_loss_and_generation_change",
   "asio-proto::all_layout_orders_and_names_are_fixed",
+  "asio-proto::publish_gate_uses_modular_two_slot_sequences",
+  "asio-proto::publish_gate_matches_streamring",
   "asio-proto::late_old_callback_publish_is_covered_by_quiescent_ack",
   "asio-sys::windows_sdk_struct_layouts",
   "asio-sys::actual_com_entries_contain_panics_and_preserve_error_messages",
   "asio-sys::actual_com_disposes_running_and_commits_each_half_once",
   "ssr-asio::channel_validation_requires_power_of_two_and_rejects_duplicates",
   "engine::fake_daw_64_128_512_follow_dac_demand_and_process_without_allocations",
+  "engine::modular_ring_sequences_cross_zero_without_interrupting_output",
+  "engine::generation_barrier_discards_old_blocks_across_zero",
   "engine::underrun_keeps_generation_and_dead_lease_removes_only_its_audio",
   "engine::real_engine_survives_system_eof_profiles_mute_and_prefill_restart_without_allocating",
   "ssr-setup-sys::partial_install_rolls_back_every_written_value",
@@ -1412,7 +1418,7 @@ tests = [
   "ssr-policy::asio_link_rules_reject_non_dll_owners_and_aliases",
   "asio-sys::probe_rejects_missing_callbacks_bad_order_and_counter_mismatch",
 ]
-note = "DAC-paced JACK Router-style entrance (ADR 0025, x64); partial until real DAW validation. The pinned SDK definitions and COM boundary stay in asio-sys; the driver policy and shared protocol are MIT. Releases shipping ssrasio.dll are GPLv3 as a whole (ADR 0003, 0025). ssr-setup copies the DLL to %ProgramFiles%\\Spatial SoftReceiver\\ASIO and registers it there; the DLL never launches the app and runs a silent stand-in clock without it. On the Windows runners ci.yml's audio job loads the shipped DLL with asio_probe three ways (alone, ssr-live play --asio first, the DAW first with ssr-live joining and then killed) and tools/ci/test_asio_probe_check.py covers the judgement; the asio-sdk job compares asio-sys with the pinned SDK (tools/ci/test_check_asio_sdk.py). Real DAWs (Reaper, Cubase), latency figures and second-DAW refusal remain for the test-signed PC (docs/testing/test-signed-pc.md 10-2-4)."
+note = "DAC-paced JACK Router-style entrance (ADR 0025, 0040, x64); partial until real DAW validation. Ring sequences are modulo-2^32 serial numbers, including zero, so long-running sessions do not request a reset when the u32 sequence wraps. The pinned SDK definitions and COM boundary stay in asio-sys; the driver policy and shared protocol are MIT. Releases shipping ssrasio.dll are GPLv3 as a whole (ADR 0003, 0025). ssr-setup copies the DLL to %ProgramFiles%\\Spatial SoftReceiver\\ASIO and registers it there; the DLL never launches the app and runs a silent stand-in clock without it. On the Windows runners ci.yml's audio job loads the shipped DLL with asio_probe three ways (alone, ssr-live play --asio first, the DAW first with ssr-live joining and then killed) and tools/ci/test_asio_probe_check.py covers the judgement; the asio-sdk job compares asio-sys with the pinned SDK (tools/ci/test_check_asio_sdk.py). Real DAWs (Reaper, Cubase), latency figures and second-DAW refusal remain for the test-signed PC (docs/testing/test-signed-pc.md 10-2-4)."
 
 [[feature]]
 id = "driver.endpoint_identity"

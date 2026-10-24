@@ -10,21 +10,15 @@ pub const fn deficit(demand: u64, requested: u64, loaded: u64, processing: u64) 
     demand.saturating_sub(supplied)
 }
 
-/// Next sequence for a single immutable ring lifetime. Stop before MAX and
-/// request a new lease/ring; streamring cannot skip zero or reuse odd MAX as 1.
-/// Keep the last *published* sequence across stop/start and generation changes.
-pub const fn next_sequence(last_published: u32) -> Option<u32> {
-    if last_published >= u32::MAX - 1 {
-        None
-    } else {
-        Some(last_published + 1)
-    }
+/// Next modular sequence. Keep the last published sequence across stop/start
+/// and generation changes.
+pub const fn next_sequence(last_published: u32) -> u32 {
+    last_published.wrapping_add(1)
 }
 
-/// Mirrors streamring's two-slot reuse rule, with NO wrap within a lease.
-/// Callers must obtain `next` from `next_sequence`, never rewind it on restart.
+/// Mirrors streamring's two-slot modular reuse rule.
 pub const fn can_publish(completed: u32, next: u32) -> bool {
-    next != 0 && next != u32::MAX && (next <= 2 || completed >= next - 2)
+    streamring::sequence_at_least(completed, next.wrapping_sub(2))
 }
 
 pub const fn accepts_buffer(frames: u32) -> bool {
@@ -221,20 +215,28 @@ mod tests {
     }
 
     #[test]
-    fn publish_gate_never_wraps_within_a_ring_lifetime() {
-        assert_eq!(next_sequence(0), Some(1));
-        assert!(!can_publish(0, 0));
+    fn publish_gate_uses_modular_two_slot_sequences() {
+        assert_eq!(next_sequence(0), 1);
+        assert_eq!(next_sequence(u32::MAX), 0);
+        assert!(can_publish(u32::MAX - 1, u32::MAX));
+        assert!(can_publish(u32::MAX, 0));
+        assert!(can_publish(u32::MAX - 1, 0));
+        assert!(!can_publish(u32::MAX - 1, 1));
         assert!(can_publish(0, 1));
         assert!(can_publish(0, 2));
         assert!(!can_publish(0, 3));
-        assert!(can_publish(1, 3));
-        assert_eq!(next_sequence(u32::MAX - 2), Some(u32::MAX - 1));
-        assert!(!can_publish(0, u32::MAX - 1));
-        assert!(can_publish(u32::MAX - 3, u32::MAX - 1));
-        assert_eq!(next_sequence(u32::MAX - 1), None);
-        assert_eq!(next_sequence(u32::MAX), None);
-        assert!(!can_publish(u32::MAX, u32::MAX));
-        assert!(!can_publish(u32::MAX, 0));
+    }
+
+    #[test]
+    fn publish_gate_matches_streamring() {
+        for completed in [0, 1, u32::MAX - 1, u32::MAX] {
+            for next in [0, 1, 2, 3, u32::MAX - 1, u32::MAX] {
+                assert_eq!(
+                    can_publish(completed, next),
+                    streamring::sequence_at_least(completed, next.wrapping_sub(2))
+                );
+            }
+        }
     }
 
     #[test]
