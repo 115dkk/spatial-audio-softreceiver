@@ -1143,7 +1143,7 @@ fn the_ring_must_match_the_upmixer() {
         ),
         (
             Geometry {
-                slots: UPMIX_RING_SLOTS - 1,
+                slots: UPMIX_RING_SLOTS / 2,
                 ..geometry
             },
             stereo,
