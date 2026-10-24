@@ -122,6 +122,10 @@ struct Harness {
 }
 impl Harness {
     fn new(frames: u32) -> Self {
+        Self::new_at(frames, 0)
+    }
+
+    fn new_at(frames: u32, origin: u32) -> Self {
         let geometry = Geometry {
             lanes: 1,
             input_channels: 2,
@@ -186,7 +190,7 @@ impl Harness {
         let queue = runtime.queue.clone();
         wait(|| control.control().ready());
         let mut producer = Producer::new(ring.region(), [Some(done.as_ref()), None], done.as_ref());
-        producer.announce(geometry, 77).unwrap();
+        producer.announce_at(geometry, 77, origin).unwrap();
         let publisher = producer.publisher().unwrap();
         let lease = asio_proto::Lease::new(77, 1).unwrap();
         control.control().acquire_lease(lease).unwrap();
@@ -205,7 +209,7 @@ impl Harness {
             runtime: Some(runtime),
             geometry,
             asio_steps,
-            sequence: 0,
+            sequence: origin,
             supplied: 0,
             callbacks: 0,
             publisher,
@@ -237,13 +241,8 @@ impl Harness {
             c.completed_frames(),
         ) != 0
         {
-            let next = self.sequence + 1;
-            wait(|| {
-                self.publisher
-                    .completed(self.ring.region(), 0)
-                    .wrapping_add(2)
-                    >= next
-            });
+            let next = self.sequence.wrapping_add(1);
+            wait(|| asio_proto::can_publish(self.publisher.completed(self.ring.region(), 0), next));
             let published = self.publisher.try_publish(
                 self.ring.region(),
                 0,
@@ -647,6 +646,68 @@ fn fake_daw_64_128_512_follow_dac_demand_and_process_without_allocations() {
         assert!(h.signal.0.load(Ordering::Acquire) >= 21);
         h.runtime.take().unwrap().stop();
     }
+}
+
+#[test]
+fn modular_ring_sequences_cross_zero_without_interrupting_output() {
+    let mut h = Harness::new_at(64, u32::MAX - 2);
+    h.supply();
+    assert!(h.sequence < 32, "the initial prefill must cross zero");
+    for _ in 0..20 {
+        let samples = h.period(0.25);
+        assert!(
+            samples.as_chunks::<2>().0.iter().all(|frame| {
+                (frame[0] - 0.375).abs() < 1e-5 && (frame[1] - 0.125).abs() < 1e-5
+            })
+        );
+        h.supply();
+    }
+    assert!(h.sequence < 256);
+    h.runtime.take().unwrap().stop();
+}
+
+#[test]
+fn generation_barrier_discards_old_blocks_across_zero() {
+    let mut h = Harness::new_at(64, u32::MAX - 1);
+    let old_generation = h.control.control().dac_generation();
+    h.control.control().set_client_run_serial(2);
+    h.period(0.25);
+    assert!(h.control.control().dac_generation() > old_generation);
+
+    for sequence in [u32::MAX, 0] {
+        assert_eq!(
+            h.publisher.try_publish(
+                h.ring.region(),
+                0,
+                sequence,
+                Some(h.done.as_ref()),
+                |slot| {
+                    for frame in 0..h.geometry.max_frames as usize {
+                        slot.write(0, frame, 0.75);
+                        slot.write(1, frame, -0.75);
+                    }
+                },
+            ),
+            Publish::Published
+        );
+    }
+    h.sequence = 0;
+    h.supplied = 128;
+    h.control.control().set_loaded_frames(h.supplied);
+    h.ack();
+    wait(|| h.control.control().ready());
+    assert_eq!(h.publisher.completed(h.ring.region(), 0), 0);
+
+    h.supply();
+    let resumed = h.period(0.25);
+    assert!(
+        resumed
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .all(|frame| { (frame[0] - 0.375).abs() < 1e-5 && (frame[1] - 0.125).abs() < 1e-5 })
+    );
+    h.runtime.take().unwrap().stop();
 }
 
 #[test]

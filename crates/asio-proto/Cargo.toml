@@ -10,5 +10,5 @@ publish.workspace = true
 [lints]
 workspace = true
 
-[dev-dependencies]
+[dependencies]
 streamring = { path = "../streamring" }
