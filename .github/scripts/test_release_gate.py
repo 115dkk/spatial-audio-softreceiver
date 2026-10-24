@@ -148,6 +148,12 @@ class DecideTest(unittest.TestCase):
                                   ["fix: a"], False),
                          ("bump", "0.1.2"))
 
+    def test_bump_commit_skips_ci_and_keeps_its_subject(self):
+        subject, _, body = g.bump_commit_message("0.2.0").partition("\n\n")
+        self.assertEqual(subject, "chore(release): v0.2.0")
+        # The deploy-key push starts push workflows; this keeps them off.
+        self.assertIn("[skip ci]", body)
+
 
 if __name__ == "__main__":
     unittest.main()

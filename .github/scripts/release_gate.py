@@ -235,6 +235,14 @@ def _write(path: Path, text: str) -> None:
         fh.write(text)
 
 
+def bump_commit_message(new: str) -> str:
+    """Message of the bump commit. The bump is pushed with the release deploy
+    key, which starts push workflows (the workflow token did not), so the body
+    carries ``[skip ci]``: the bump commit starts neither release.yml nor CI,
+    and the release it belongs to is built by the run that made it."""
+    return f"chore(release): v{new}\n\n[skip ci]"
+
+
 def _commit_bump(old: str, new: str) -> str:
     _write(CARGO_TOML, set_workspace_version(_read(CARGO_TOML), new))
     _write(CARGO_LOCK, set_lock_versions(_read(CARGO_LOCK), old, new))
@@ -242,10 +250,11 @@ def _commit_bump(old: str, new: str) -> str:
     _run("git", "config", "user.email",
          "41898282+github-actions[bot]@users.noreply.github.com")
     _run("git", "add", str(CARGO_TOML), str(CARGO_LOCK))
-    _run("git", "commit", "-m", f"chore(release): v{new}")
+    _run("git", "commit", "-m", bump_commit_message(new))
     for attempt in range(1, 4):
-        # A push made with the workflow token starts no workflow, so the bump
-        # commit does not release itself.
+        # The push goes over SSH with the release deploy key (the gate's
+        # checkout), which master's "Required checks" ruleset lets through;
+        # the bump commit has no checks of its own.
         push = _run("git", "push", "origin", "HEAD:master", check=False)
         if push.returncode == 0:
             return _git("rev-parse", "HEAD")
