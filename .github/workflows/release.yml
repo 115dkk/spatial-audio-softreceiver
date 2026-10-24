@@ -23,10 +23,14 @@ name: Release
 #
 # Every job checks out release_sha, the commit the gate decided on (the bump
 # commit when it bumped), so a push that lands meanwhile cannot slip in. The
-# bump is pushed with the workflow token, which starts no workflow, so it does
-# not release itself. The build jobs restore and save no cache: whatever they
-# compile cannot reach a cache another workflow on master would trust
-# (CodeQL actions/cache-poisoning), and a release is rare enough to build cold.
+# bump is pushed over SSH with the RELEASE_DEPLOY_KEY deploy key, which
+# master's "Required checks" ruleset lets through (the bump commit has no
+# checks of its own, and GitHub does not accept GitHub Actions as a bypass
+# actor on a personal repository); its message carries [skip ci], so it does
+# not start this workflow or CI again. The build jobs restore and save no
+# cache: whatever they compile cannot reach a cache another workflow on master
+# would trust (CodeQL actions/cache-poisoning), and a release is rare enough
+# to build cold.
 
 # Push only. A manual dispatch would let any ref's code run in this workflow
 # (CodeQL actions/cache-poisoning); a failed release is retried by re-running
@@ -51,8 +55,9 @@ jobs:
     name: Release gate
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    # The bump push authenticates with the deploy key, not the workflow token.
     permissions:
-      contents: write
+      contents: read
     outputs:
       should_release: ${{ steps.gate.outputs.should_release }}
       version: ${{ steps.gate.outputs.version }}
@@ -64,6 +69,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       - name: Decide (and bump on master)
         id: gate
