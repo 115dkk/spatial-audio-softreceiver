@@ -48,6 +48,7 @@ struct FakeTransport {
     done: Arc<InProcessEvent>,
     geometry: Geometry,
     alive: Arc<AtomicBool>,
+    waits: Arc<AtomicU64>,
 }
 impl AsioTransport for FakeTransport {
     fn control_memory(&self) -> Arc<dyn ControlMemory> {
@@ -73,6 +74,7 @@ impl AsioTransport for FakeTransport {
         &mut self,
         _timeout: Duration,
     ) -> Result<asio_proto::ClientState, AsioTransportError> {
+        self.waits.fetch_add(1, Ordering::AcqRel);
         let c = self.control.control();
         let alive = self.alive.load(Ordering::Acquire);
         if !alive {
@@ -109,6 +111,7 @@ struct Harness {
     done: Arc<InProcessEvent>,
     signal: Arc<CountSignal>,
     alive: Arc<AtomicBool>,
+    waits: Arc<AtomicU64>,
     shared: Arc<AsioShared>,
     queue: Arc<AsioQueue>,
     output: AsioOutput,
@@ -140,6 +143,7 @@ impl Harness {
         let done = Arc::new(InProcessEvent::new());
         let signal = Arc::new(CountSignal::default());
         let alive = Arc::new(AtomicBool::new(true));
+        let waits = Arc::new(AtomicU64::new(0));
         let settings = AsioSettings {
             layout: ssr_types::AsioLayout::Stereo,
             ..AsioSettings::default()
@@ -147,12 +151,13 @@ impl Harness {
         let shared = Arc::new(AsioShared::new(settings));
         let asio_steps = Arc::new(AtomicU64::new(0));
         let provider = {
-            let (control, ring, done, signal, alive) = (
+            let (control, ring, done, signal, alive, waits) = (
                 control.clone(),
                 ring.clone(),
                 done.clone(),
                 signal.clone(),
                 alive.clone(),
+                waits.clone(),
             );
             Arc::new(move || {
                 Ok(Box::new(FakeTransport {
@@ -161,6 +166,7 @@ impl Harness {
                     done: done.clone(),
                     signal: signal.clone(),
                     alive: alive.clone(),
+                    waits: waits.clone(),
                     geometry,
                 }) as Box<dyn AsioTransport>)
             })
@@ -203,6 +209,7 @@ impl Harness {
             done,
             signal,
             alive,
+            waits,
             shared,
             queue,
             output,
@@ -472,12 +479,13 @@ fn real_engine_survives_system_eof_profiles_mute_and_prefill_restart_without_all
         opened: AtomicU64::new(0),
     });
     let provider = {
-        let (control, ring, done, signal, alive, geometry) = (
+        let (control, ring, done, signal, alive, waits, geometry) = (
             h.control.clone(),
             h.ring.clone(),
             h.done.clone(),
             h.signal.clone(),
             h.alive.clone(),
+            h.waits.clone(),
             h.geometry,
         );
         Arc::new(move || {
@@ -487,6 +495,7 @@ fn real_engine_survives_system_eof_profiles_mute_and_prefill_restart_without_all
                 done: done.clone(),
                 signal: signal.clone(),
                 alive: alive.clone(),
+                waits: waits.clone(),
                 geometry,
             }) as Box<dyn AsioTransport>)
         })
@@ -555,8 +564,10 @@ fn real_engine_survives_system_eof_profiles_mute_and_prefill_restart_without_all
     h.supply();
     assert!((tick() - 0.125).abs() < 1e-5);
     h.supply();
-    let capture_before = counts[0].load(Ordering::Acquire);
     engine.apply(engine::LiveChange::Mute(true)).unwrap();
+    // Count from after the push: the capture period running now may have
+    // drained before it, so only the next one is sure to install the change.
+    let capture_before = counts[0].load(Ordering::Acquire);
     wait(|| counts[0].load(Ordering::Acquire) >= capture_before + 2);
     tick();
     h.supply();
@@ -584,12 +595,13 @@ fn real_engine_survives_system_eof_profiles_mute_and_prefill_restart_without_all
         p.gain_db = -6.0;
         p.speakers[0].fir = Some(fir.clone());
     }
-    let capture_before = counts[0].load(Ordering::Acquire);
     engine
         .apply(engine::LiveChange::Prepared(Box::new(
             quiet_profile.prepare().unwrap(),
         )))
         .unwrap();
+    // Both prepares read the filter, which can outlast several capture periods.
+    let capture_before = counts[0].load(Ordering::Acquire);
     std::fs::remove_file(&fir).unwrap();
     wait(|| counts[0].load(Ordering::Acquire) >= capture_before + 2);
     tick();
@@ -706,6 +718,36 @@ fn generation_barrier_discards_old_blocks_across_zero() {
             .0
             .iter()
             .all(|frame| { (frame[0] - 0.375).abs() < 1e-5 && (frame[1] - 0.125).abs() < 1e-5 })
+    );
+    h.runtime.take().unwrap().stop();
+}
+
+#[test]
+fn a_reset_requested_before_the_ack_does_not_spend_a_prepare_retry() {
+    let mut h = Harness::new(64);
+    let settings = |enabled| AsioSettings {
+        enabled,
+        layout: ssr_types::AsioLayout::Stereo,
+        ..Default::default()
+    };
+    // A queued profile works the same way: the output applies the first reset,
+    // the capture thread's install requests a second before the DAW acks.
+    h.control.control().set_client_run_serial(2);
+    h.period(0.0);
+    h.shared.set_settings(settings(false));
+    h.ack();
+    // Two more client waits: a whole worker pass saw the ack with the reset
+    // still pending.
+    let waits = h.waits.load(Ordering::Acquire);
+    wait(|| h.waits.load(Ordering::Acquire) >= waits + 2);
+    h.shared.set_settings(settings(true));
+    h.period(0.0);
+    h.ack();
+    let acked = Instant::now();
+    wait(|| h.control.control().ready());
+    assert!(
+        acked.elapsed() < Duration::from_millis(750),
+        "a pending reset must not back the worker off for a second"
     );
     h.runtime.take().unwrap().stop();
 }

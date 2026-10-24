@@ -598,6 +598,14 @@ impl AsioShared {
         self.reset_request.fetch_add(1, Ordering::AcqRel);
     }
 
+    /// A queued profile is not installed yet or the output has not applied a
+    /// requested reset. Either moves the DAC generation again.
+    fn generation_pending(&self) -> bool {
+        self.profile_pending.load(Ordering::Acquire) != 0
+            || self.reset_applied.load(Ordering::Acquire)
+                != self.reset_request.load(Ordering::Acquire)
+    }
+
     pub(crate) fn current_profile(&self) -> Option<OutputProfile> {
         self.profile
             .lock()
@@ -1103,13 +1111,9 @@ impl Drop for AsioRuntime {
 fn configured_renderer(
     transport: &mut dyn AsioTransport,
     shared: &AsioShared,
-    reuse: Option<AsioRenderer>,
+    reuse: &mut Option<AsioRenderer>,
 ) -> Result<Option<AsioRenderer>, AsioTransportError> {
-    if !shared.output_online.load(Ordering::Acquire)
-        || shared.profile_pending.load(Ordering::Acquire) != 0
-        || shared.reset_applied.load(Ordering::Acquire)
-            != shared.reset_request.load(Ordering::Acquire)
-    {
+    if !shared.output_online.load(Ordering::Acquire) || shared.generation_pending() {
         return Ok(None);
     }
     let settings = shared.settings();
@@ -1130,7 +1134,10 @@ fn configured_renderer(
         .lock()
         .expect("ASIO prepared mutex poisoned")
         .take();
-    let mut renderer = match cached.or(reuse) {
+    // Only the returns above keep the caller's renderer. From here it is
+    // spent, and a queued profile's renderer replaces it.
+    let reused = reuse.take();
+    let mut renderer = match cached.or(reused) {
         Some(renderer)
             if renderer.sample_rate() == rate
                 && renderer.input_channels()
@@ -1201,7 +1208,7 @@ fn run_worker(
     while !stop.load(Ordering::Acquire) {
         let epoch = control.dac_generation();
         if epoch != prepared_epoch && retry.ready() {
-            match configured_renderer(transport, shared, None) {
+            match configured_renderer(transport, shared, &mut None) {
                 Ok(Some(renderer)) if epoch == control.dac_generation() => {
                     *shared
                         .prepared
@@ -1319,11 +1326,22 @@ fn run_client(
                     "ASIO generation barrier exceeds ring capacity".into(),
                 ));
             }
+            // The generation will move again: waiting for it is no prepare
+            // failure, so it spends no retry and keeps the renderer.
+            if shared.generation_pending() {
+                std::thread::park_timeout(Duration::from_millis(1));
+                continue;
+            }
             if !retry.ready() {
                 continue;
             }
-            let next = match configured_renderer(transport, shared, renderer.take()) {
+            let next = match configured_renderer(transport, shared, &mut renderer) {
                 Ok(Some(next)) => next,
+                // A request that landed after the check above.
+                Ok(None) if shared.generation_pending() => {
+                    std::thread::park_timeout(Duration::from_millis(1));
+                    continue;
+                }
                 Ok(None) | Err(_) => {
                     retry.failed();
                     std::thread::park_timeout(Duration::from_millis(1));
@@ -1338,10 +1356,7 @@ fn run_client(
                 std::thread::park_timeout(Duration::from_millis(1));
                 continue;
             }
-            if current != control.dac_generation()
-                || shared.reset_applied.load(Ordering::Acquire)
-                    != shared.reset_request.load(Ordering::Acquire)
-            {
+            if current != control.dac_generation() || shared.generation_pending() {
                 continue;
             }
             queue.configure(
