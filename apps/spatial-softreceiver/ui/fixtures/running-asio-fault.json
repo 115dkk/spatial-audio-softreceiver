@@ -1,6 +1,7 @@
 {
   "language": "ko",
   "language_choice": null,
+  "skin": "standard",
   "output_path": "wasapi",
   "phase": {
     "kind": "running"
@@ -537,6 +538,750 @@
     "clock_ppm": -37.5,
     "fault": null
   },
+  "health": {
+    "minutes": [
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "no_record",
+        "engine": "no_record",
+        "output": "no_record",
+        "plugins": "no_record",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "idle",
+        "output": "idle",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "idle",
+        "output": "idle",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "idle",
+        "output": "idle",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "idle",
+        "output": "idle",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "idle",
+        "output": "idle",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "degraded",
+        "output": "degraded",
+        "plugins": "idle",
+        "underruns": 1,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      },
+      {
+        "driver": "good",
+        "engine": "good",
+        "output": "good",
+        "plugins": "idle",
+        "underruns": 0,
+        "output_recoveries": 0
+      }
+    ],
+    "incidents": [
+      {
+        "part": "engine",
+        "worst": "degraded",
+        "first": 49,
+        "last": 49,
+        "open": false,
+        "underruns": 1,
+        "output_recoveries": 0
+      },
+      {
+        "part": "output",
+        "worst": "degraded",
+        "first": 49,
+        "last": 49,
+        "open": false,
+        "underruns": 0,
+        "output_recoveries": 0
+      }
+    ]
+  },
   "outputs": [
     {
       "id": "{0.0.0.00000000}.{3f2504e0-4f89-11d3-9a0c-0305e82c3301}",
@@ -564,6 +1309,7 @@
     }
   },
   "platform": {
+    "computer_name": "STUDIO-PC",
     "os_build": 26100,
     "arch": "x64",
     "test_signing": true,

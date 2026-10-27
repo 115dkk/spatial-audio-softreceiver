@@ -17,9 +17,10 @@ use specta::TypeCollection;
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use ssr_types::app::{
     AppRule, AsioLayout, AsioSettings, CorrectionView, EndpointUpmixView, Entrance, HeadphonesView,
-    Intent, Language, NextAction, OutputChoice, Phase, PluginChoice, PluginFormat, PluginView,
-    ProfileKind, ProfileView, RoutedApp, RoutingSettings, RoutingView, RuleView, SetupStep,
-    Snapshot, SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply, UpmixBypass, UpmixState,
+    HealthHistory, HealthIncident, HealthMinute, HealthPart, Intent, Language, MinuteState,
+    NextAction, OutputChoice, Phase, PluginChoice, PluginFormat, PluginView, ProfileKind,
+    ProfileView, RoutedApp, RoutingSettings, RoutingView, RuleView, SetupStep, Skin, Snapshot,
+    SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply, UpmixBypass, UpmixState,
     UpmixView, UpmixerChoice, UpmixerSetting, UserError,
 };
 use ssr_types::ports::PolicyState;
@@ -89,6 +90,7 @@ fn asio_snapshot_contract_keeps_settings_separate_from_client_status() {
         assert_eq!(snapshot.asio, AsioSettings::default());
         let mut old = serde_json::to_value(&snapshot).unwrap();
         old.as_object_mut().unwrap().remove("asio");
+        old.as_object_mut().unwrap().remove("health");
         assert_eq!(serde_json::from_value::<Snapshot>(old).unwrap(), snapshot);
         for layout in AsioLayout::ALL {
             snapshot.asio.layout = layout;
@@ -147,11 +149,21 @@ fn outputs(language: Language) -> Vec<OutputChoice> {
 
 fn platform(test_signing: bool, secure_boot: SecureBoot) -> Platform {
     Platform {
+        computer_name: "STUDIO-PC".to_owned(),
         os_build: 26_100,
         arch: Arch::X64,
         test_signing,
         secure_boot,
     }
+}
+
+#[test]
+fn old_platform_json_defaults_the_computer_name() {
+    let mut old = serde_json::to_value(platform(true, SecureBoot::Disabled)).unwrap();
+    old.as_object_mut().unwrap().remove("computer_name");
+    let mut expected = platform(true, SecureBoot::Disabled);
+    expected.computer_name.clear();
+    assert_eq!(serde_json::from_value::<Platform>(old).unwrap(), expected);
 }
 
 fn installed(policy: PolicyState) -> DriverState {
@@ -410,6 +422,7 @@ fn blank(language: Language, phase: Phase) -> Snapshot {
     Snapshot {
         language,
         language_choice: None,
+        skin: Skin::Standard,
         output_path: ssr_types::app::OutputPath::Wasapi,
         phase,
         profile: stereo_profile(language),
@@ -417,6 +430,7 @@ fn blank(language: Language, phase: Phase) -> Snapshot {
         routing: RoutingView::default(),
         asio: AsioSettings::default(),
         engine: None,
+        health: Default::default(),
         outputs: Vec::new(),
         chosen_output: None,
         driver: None,
@@ -430,6 +444,141 @@ fn blank(language: Language, phase: Phase) -> Snapshot {
 fn with_phase(mut snapshot: Snapshot, phase: Phase) -> Snapshot {
     snapshot.phase = phase;
     snapshot
+}
+
+fn minute(state: MinuteState, plugins: MinuteState) -> HealthMinute {
+    HealthMinute {
+        driver: state,
+        engine: state,
+        output: state,
+        plugins,
+        underruns: 0,
+        output_recoveries: 0,
+    }
+}
+
+fn fixture_health(name: &str, phase: &Phase) -> HealthHistory {
+    if name.starts_with("setup-") {
+        return HealthHistory::default();
+    }
+    if *phase != Phase::Running && *phase != Phase::Faulted {
+        let mut minutes = vec![minute(MinuteState::NoRecord, MinuteState::NoRecord); 30];
+        minutes.extend((0..60).map(|_| HealthMinute {
+            driver: MinuteState::Good,
+            engine: MinuteState::Idle,
+            output: MinuteState::Idle,
+            plugins: MinuteState::Idle,
+            underruns: 0,
+            output_recoveries: 0,
+        }));
+        return HealthHistory {
+            minutes,
+            incidents: Vec::new(),
+        };
+    }
+
+    let plugin_running = name.contains("upmix");
+    let mut minutes = vec![minute(MinuteState::NoRecord, MinuteState::NoRecord); 25];
+    minutes.extend((0..5).map(|_| HealthMinute {
+        driver: MinuteState::Good,
+        engine: MinuteState::Idle,
+        output: MinuteState::Idle,
+        plugins: MinuteState::Idle,
+        underruns: 0,
+        output_recoveries: 0,
+    }));
+    minutes.extend((0..60).map(|_| HealthMinute {
+        driver: MinuteState::Good,
+        engine: MinuteState::Good,
+        output: MinuteState::Good,
+        plugins: if plugin_running {
+            MinuteState::Good
+        } else {
+            MinuteState::Idle
+        },
+        underruns: 0,
+        output_recoveries: 0,
+    }));
+    minutes[49].engine = MinuteState::Degraded;
+    minutes[49].output = MinuteState::Degraded;
+    minutes[49].underruns = 1;
+    let mut incidents = vec![
+        HealthIncident {
+            part: HealthPart::Engine,
+            worst: MinuteState::Degraded,
+            first: 49,
+            last: 49,
+            open: false,
+            underruns: 1,
+            output_recoveries: 0,
+        },
+        HealthIncident {
+            part: HealthPart::Output,
+            worst: MinuteState::Degraded,
+            first: 49,
+            last: 49,
+            open: false,
+            underruns: 0,
+            output_recoveries: 0,
+        },
+    ];
+
+    if name == "running-upmix-fallback" {
+        for entry in &mut minutes[87..] {
+            entry.plugins = MinuteState::Degraded;
+        }
+        incidents.push(HealthIncident {
+            part: HealthPart::Plugins,
+            worst: MinuteState::Degraded,
+            first: 87,
+            last: 89,
+            open: true,
+            underruns: 0,
+            output_recoveries: 0,
+        });
+    }
+    if name == "running-reconnecting" {
+        for entry in &mut minutes[88..] {
+            entry.output = MinuteState::Down;
+        }
+        incidents.push(HealthIncident {
+            part: HealthPart::Output,
+            worst: MinuteState::Down,
+            first: 88,
+            last: 89,
+            open: true,
+            underruns: 0,
+            output_recoveries: 0,
+        });
+    }
+    if *phase == Phase::Faulted {
+        for entry in &mut minutes[87..] {
+            entry.engine = MinuteState::Down;
+            entry.output = MinuteState::Down;
+        }
+        incidents.extend([
+            HealthIncident {
+                part: HealthPart::Engine,
+                worst: MinuteState::Down,
+                first: 87,
+                last: 89,
+                open: true,
+                underruns: 0,
+                output_recoveries: 0,
+            },
+            HealthIncident {
+                part: HealthPart::Output,
+                worst: MinuteState::Down,
+                first: 87,
+                last: 89,
+                open: true,
+                underruns: 0,
+                output_recoveries: 0,
+            },
+        ]);
+    }
+
+    HealthHistory { minutes, incidents }
 }
 
 /// The running engine with the music endpoint playing `format`.
@@ -749,7 +898,7 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
             format!("The ASIO input could not start. System audio continues: {asio_reason}")
         }
     };
-    vec![
+    let mut fixtures = vec![
         (
             "setup-welcome",
             blank(language, Phase::Setup(SetupStep::Welcome)),
@@ -1163,7 +1312,11 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
             },
         ),
         ("quit", with_phase(ready, Phase::Quit)),
-    ]
+    ];
+    for (name, snapshot) in &mut fixtures {
+        snapshot.health = fixture_health(name, &snapshot.phase);
+    }
+    fixtures
 }
 
 /// Every intent, as the screen must send it.
@@ -1172,6 +1325,9 @@ fn intents() -> Vec<Intent> {
         Intent::SetLanguage(None),
         Intent::SetLanguage(Some(Language::Ko)),
         Intent::SetLanguage(Some(Language::En)),
+        Intent::SetSkin(Skin::Standard),
+        Intent::SetSkin(Skin::Panel),
+        Intent::SetSkin(Skin::Console),
         Intent::SetOutputPath(ssr_types::app::OutputPath::KernelStreaming),
         Intent::SetOutputPath(ssr_types::app::OutputPath::Wasapi),
         Intent::SetRoutingEnabled(false),
@@ -1276,6 +1432,7 @@ fn snapshot_fixtures_match_the_types() {
             assert_eq!(back, snapshot, "{name} does not round-trip in {language:?}");
             assert_eq!(snapshot.language, language);
             assert_eq!(snapshot.language_choice, None);
+            assert_eq!(snapshot.skin, Skin::Standard);
             if language == Language::En {
                 assert!(
                     !content.chars().any(|character| matches!(

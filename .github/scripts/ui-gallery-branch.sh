@@ -27,7 +27,7 @@ branch="${GALLERY_BRANCH:-ui-gallery}"
 
 case "$mode" in put | drop) ;; *) echo "mode must be put or drop, not '$mode'" >&2; exit 2 ;; esac
 case "$folder" in '' | *[!A-Za-z0-9._-]* | .*) echo "bad context folder '$folder'" >&2; exit 2 ;; esac
-if [ "$mode" = put ] && ! compgen -G "$pictures/*.png" >/dev/null; then
+if [ "$mode" = put ] && [ -z "$(find "$pictures" -name '*.png' -print -quit)" ]; then
   echo "no pictures in '$pictures'" >&2
   exit 1
 fi
@@ -48,8 +48,8 @@ readme() {
 
 이 브랜치는 `.github/workflows/ui-gallery.yml`이 씁니다. 손으로 고치지 마십시오.
 
-폴더 하나가 화면 갤러리 하나입니다(`pr-<번호>`, `master`, `ref-<이름>`). 그림은
-`<장면>.<언어>.<팔레트>.png`이고 장면 표는 master의
+폴더 하나가 화면 갤러리 하나입니다(`pr-<번호>`, `master`, `ref-<이름>`). 사진은
+`<스킨>/<장면>.<언어>.<팔레트>.png`이고 장면 표는 master의
 `apps/spatial-softreceiver/ui/e2e/gallery.json`입니다. 게시할 때마다 커밋 하나로
 바꿔 쓰므로 이 브랜치에는 내력이 없습니다. 갤러리는 `ui-gallery` 라벨이 붙은
 이슈에서 봅니다.
@@ -87,7 +87,7 @@ for attempt in 1 2 3 4 5; do
   rm -rf "${tree:?}/$folder"
   if [ "$mode" = put ]; then
     mkdir -p "$tree/$folder"
-    cp "$pictures"/*.png "$tree/$folder/"
+    cp -R "$pictures"/. "$tree/$folder/"
   fi
   readme > "$tree/README.md"
   git -C "$tree" add -A

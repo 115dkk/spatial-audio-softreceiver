@@ -1,0 +1,2609 @@
+/*
+ * The front panel skin (ADR 0041, 전면 패널의 법칙). One machined chassis
+ * fills the window; colour comes only from light (the lamps and the display's
+ * pixels). The light palette is bead-blasted aluminium in neutral greys, the
+ * dark one black anodising; the display is black and self-lit in both, behind
+ * a matte cover glass that scatters the room's light.
+ *
+ * Every selector is under the skin's own prefix (`pn-`); only this skin's
+ * stylesheet is on the page (src/skins/index.ts).
+ *
+ * Entrance colours (lamps, map, input ticks), chosen so that every pair stays
+ * apart under protanopia and deuteranopia (OKLab distance at least 16 after
+ * the Machado 2009 simulation) and away from the three lamp states:
+ * game #677afb, music #fa97d1, PASS #defc3a, ASIO #b35598. Each also carries
+ * its printed name, so colour is never the only cue.
+ */
+
+/*
+ * The display's type is Galmuri (OFL-1.1), a Korean pixel face, so the
+ * display reads as a receiver's dot-matrix panel; the chassis keeps IBM Plex
+ * Sans KR for its printed names. The files are pinned by tools/ui-fonts.mjs.
+ * Galmuri14's pixel is 1/15 em and Galmuri11's 1/12 em, so they are set only
+ * at those multiples (15 px; 12, 24, 36, 48 px) on whole-pixel lines.
+ */
+@font-face {
+  font-family: "Galmuri14";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/galmuri/Galmuri14.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Galmuri11";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/galmuri/Galmuri11.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Galmuri11";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/galmuri/Galmuri11-Bold.woff2") format("woff2");
+}
+
+:root {
+  --pn-font: "IBM Plex Sans KR", "Malgun Gothic", system-ui, sans-serif;
+  --pn-px14: "Galmuri14", "IBM Plex Sans KR", "Malgun Gothic", sans-serif;
+  --pn-px11: "Galmuri11", "IBM Plex Sans KR", "Malgun Gothic", sans-serif;
+
+  /* The room and the chassis: bead-blasted aluminium, neutral greys. */
+  --pn-room: #e4e4e4;
+  --pn-body-hi: #dadada;
+  --pn-body-lo: #c4c4c4;
+  --pn-body-edge: #a3a3a3;
+  --pn-chamfer: rgba(255, 255, 255, 0.92);
+  --pn-chamfer-low: rgba(0, 0, 0, 0.16);
+  --pn-grain: 0.07;
+  --pn-shadow: 8px 20px 44px rgba(0, 0, 0, 0.18), 2px 4px 12px rgba(0, 0, 0, 0.12);
+  /* Printed names: 7.2:1 and 4.7:1 on the darkest of the chassis. */
+  --pn-print: #333333;
+  --pn-print-2: #4f4f4f;
+  --pn-key-hi: #efefef;
+  --pn-key-lo: #d5d5d5;
+  --pn-key-edge: rgba(0, 0, 0, 0.2);
+  --pn-key-press: #c9c9c9;
+  --pn-key-print: #2e2e2e;
+  --pn-well: #a8a8a8;
+  /*
+   * LEDs on silver: an unlit lens is pale, flat and a little recessed, close
+   * to the chassis, so it recedes; a lit one has a bright core, a thin darker
+   * rim that parts it from the metal, and a halo. The encoder's LEDs sit in a
+   * dark groove in both finishes.
+   */
+  --pn-socket: #bcbcbc;
+  --pn-lens: #d4d4d4;
+  --pn-lens-edge: inset 0 1px 1.5px rgba(0, 0, 0, 0.24), 0 1px 0 rgba(255, 255, 255, 0.7);
+  --pn-rim: 1px;
+  --pn-led-rim: rgba(0, 0, 0, 0.3);
+  --pn-white-glow: 0 0 3px 1px rgba(255, 255, 255, 1), 0 0 10px 3px rgba(255, 255, 255, 0.85);
+  --pn-white-core: #ffffff;
+  /* A latched key sits lower and in its own shade, so its white LED's halo shows. */
+  --pn-latch-hi: #bababa;
+  --pn-latch-lo: #c7c7c7;
+  --pn-groove: #1c1c1c;
+  --pn-ring-off: #3d3d3d;
+  --pn-knob-hi: #f5f5f5;
+  --pn-knob-mid: #d0d0d0;
+  --pn-knob-lo: #9c9c9c;
+  --pn-knurl: rgba(0, 0, 0, 0.16);
+  --pn-focus: #000000;
+
+  /*
+   * The display in a lit room: a positive-mode reflective dot-matrix LCD, as
+   * on a Revox B215. Its polarisers absorb more than half the light, so its
+   * "white" is a cool mid grey well below the silver beside it (relative
+   * luminance 0.41 against the chassis' 0.55 to 0.70). Pixels are near-black
+   * and emit nothing: no glow, no ghost on the glyphs. Every line a person
+   * reads is at least 7:1 at the glass sheen's brightest point (ink 8.0:1,
+   * the quieter ink 7.3:1); lines rank by size, place and weight, not by
+   * fading.
+   */
+  --pn-d-bg: #a4ada8;
+  --pn-d-hi: #0b0e10;
+  --pn-d-text: #0b0e10;
+  --pn-d-text-2: #14181b;
+  --pn-d-text-3: #14181b;
+  --pn-d-line: #8a938e;
+  --pn-d-line-2: #7b847f;
+  --pn-d-hover: #9aa39e;
+  --pn-d-off: #8c958f;
+  --pn-d-axis: #949d98;
+  --pn-d-scroll: #7b847f;
+  --pn-d-strip: #9aa39e;
+  /* The LCD highlights by inversion: dark pixels with the reflector showing through. */
+  --pn-d-ink: #0b0e10;
+  --pn-d-ink-text: #b9c1bc;
+  --pn-d-ink-text-2: #b9c1bc;
+  --pn-d-osd: #0b0e10;
+  --pn-d-osd-text: #c9d0cc;
+  /* Light leaves nothing to glow: 0 turns every halo off. */
+  --pn-glow: 0;
+  --pn-d-shadow: none;
+  --pn-d-num-shadow: none;
+  /* States on the LCD: "on" is a dark segment; a dark orange and a dark red. */
+  --pn-d-on: #0b0e10;
+  --pn-d-wait: #6e3a00;
+  --pn-d-fault: #8a1810;
+  /* Entrances on the LCD: dark and muted, each at least 3:1 on the reflector. */
+  --pn-d-lane-0: #2a4aa0;
+  --pn-d-lane-1: #7a2257;
+  --pn-d-lane-2: #4d520a;
+  --pn-d-lane-3: #1f1d33;
+  /*
+   * The window: a cover glass whose back is printed with a graphite mask,
+   * over the LCD set a little behind it. The mask casts a soft shadow onto
+   * the LCD along its top and left edges. The glass carries one soft sheen
+   * across mask and LCD alike, and no grain (grain is the chassis' metal).
+   */
+  --pn-mask: #1e2123;
+  --pn-mask-width: 16px;
+  --pn-lcd-gap: inset 4px 5px 7px -3px rgba(0, 0, 0, 0.55);
+  --pn-glass-veil: 0;
+  --pn-glass-glow: 0.04;
+  --pn-glass-glow-2: 0.012;
+  --pn-glass-edge: transparent;
+
+  /* Lamp states. */
+  --pn-on: #3ddc6a;
+  --pn-wait: #ffb02e;
+  --pn-fault: #ff4b3e;
+  --pn-key-led: #f4f6f8;
+
+  /* Entrances: game, music, PASS, ASIO. */
+  --pn-lane-0: #677afb;
+  --pn-lane-1: #fa97d1;
+  --pn-lane-2: #defc3a;
+  --pn-lane-3: #b35598;
+
+  --pn-enc: 168px;
+  --pn-power-size: 52px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Black anodised aluminium. */
+    --pn-room: #0a0a0a;
+    --pn-body-hi: #262626;
+    --pn-body-lo: #181818;
+    --pn-body-edge: #050505;
+    --pn-chamfer: rgba(255, 255, 255, 0.14);
+    --pn-chamfer-low: rgba(0, 0, 0, 0.6);
+    --pn-grain: 0.09;
+    --pn-shadow: 8px 24px 56px rgba(0, 0, 0, 0.7), 2px 6px 16px rgba(0, 0, 0, 0.5);
+    /* 7.8:1 and 4.7:1 on the lightest of the chassis. */
+    --pn-print: #b9b9b9;
+    --pn-print-2: #8e8e8e;
+    --pn-key-hi: #2e2e2e;
+    --pn-key-lo: #222222;
+    --pn-key-edge: rgba(0, 0, 0, 0.6);
+    --pn-key-press: #1b1b1b;
+    --pn-key-print: #c8c8c8;
+    --pn-well: #0d0d0d;
+    --pn-socket: #060606;
+    --pn-lens: #2a2a2a;
+    --pn-lens-edge: 0 0 0 1.5px #060606;
+    --pn-rim: 1.5px;
+    --pn-led-rim: #060606;
+    --pn-white-glow: 0 0 7px 1px rgba(244, 246, 248, 0.85);
+    --pn-white-core: #f4f6f8;
+    --pn-latch-hi: #161616;
+    --pn-latch-lo: #1d1d1d;
+    --pn-groove: #060606;
+    --pn-ring-off: #2a2a2a;
+    --pn-knob-hi: #5c5c5c;
+    --pn-knob-mid: #303030;
+    --pn-knob-lo: #1a1a1a;
+    --pn-knurl: rgba(0, 0, 0, 0.45);
+    --pn-focus: #ffffff;
+
+    /*
+     * The display in the dark: black and self-lit, one white light for text.
+     * Every line read is at least 7:1 at the sheen's peak (16.0 and 8.4).
+     */
+    --pn-d-bg: #09090a;
+    --pn-d-hi: #fbfaf6;
+    --pn-d-text: #f1efe9;
+    --pn-d-text-2: #aeaca6;
+    --pn-d-text-3: #aeaca6;
+    --pn-d-line: #1d1d1f;
+    --pn-d-line-2: #2c2c2f;
+    --pn-d-hover: #131315;
+    --pn-d-off: #3a3a3d;
+    --pn-d-axis: #161618;
+    --pn-d-scroll: #3a3a3d;
+    --pn-d-strip: #0c0c0d;
+    --pn-d-ink: #f1efe9;
+    --pn-d-ink-text: #09090a;
+    --pn-d-ink-text-2: #2c2c2f;
+    --pn-d-osd: #09090a;
+    --pn-d-osd-text: #fbfaf6;
+    --pn-glow: 1;
+    /* No glow on any text: a halo on a one-pixel stroke is blur; the bright pixels are the VFD. */
+    --pn-d-shadow: none;
+    --pn-d-num-shadow: none;
+    --pn-d-on: var(--pn-on);
+    --pn-d-wait: var(--pn-wait);
+    --pn-d-fault: var(--pn-fault);
+    --pn-d-lane-0: var(--pn-lane-0);
+    --pn-d-lane-1: var(--pn-lane-1);
+    --pn-d-lane-2: var(--pn-lane-2);
+    --pn-d-lane-3: var(--pn-lane-3);
+    --pn-mask: #000000;
+    --pn-mask-width: 12px;
+    --pn-lcd-gap: none;
+    --pn-glass-veil: 0;
+    --pn-glass-glow: 0.05;
+    --pn-glass-glow-2: 0.016;
+    --pn-glass-edge: rgba(0, 0, 0, 0.9);
+  }
+}
+
+html[data-skin="panel"],
+html[data-skin="panel"] body {
+  height: 100%;
+  margin: 0;
+  background: var(--pn-room);
+}
+
+html[data-skin="panel"] #app {
+  height: 100%;
+}
+
+/* ---------- the room and the chassis ---------- */
+
+.pn-room {
+  box-sizing: border-box;
+  display: flex;
+  height: 100%;
+  padding: 16px;
+  background: var(--pn-room);
+  color: var(--pn-print);
+  font-family: var(--pn-font);
+  font-size: 14px;
+  line-height: 1.45;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+}
+
+.pn-room *,
+.pn-room *::before,
+.pn-room *::after {
+  box-sizing: border-box;
+}
+
+.pn-room [hidden] {
+  display: none !important;
+}
+
+:where(.pn-room) :where(h1, h2, h3, p, ul, ol, dl, dd) {
+  margin: 0;
+}
+
+:where(.pn-room) button {
+  font: inherit;
+}
+
+.pn-room .num {
+  font-variant-numeric: tabular-nums;
+}
+
+.pn-sr {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.pn-chassis {
+  position: relative;
+  isolation: isolate;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 196px;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "plate plate plate"
+    "left centre right";
+  gap: 8px 24px;
+  padding: 12px 24px 22px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, var(--pn-body-hi), var(--pn-body-lo));
+  box-shadow:
+    var(--pn-shadow),
+    inset 0 1px 0 var(--pn-chamfer),
+    inset 0 -1px 0 var(--pn-chamfer-low),
+    0 0 0 1px var(--pn-body-edge);
+}
+
+/* Bead blasting: a fine isotropic grain, never directional brushing. */
+.pn-chassis::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: var(--pn-grain);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+.pn-plate {
+  grid-area: plate;
+  display: flex;
+  align-items: center;
+  padding: 0 2px;
+}
+
+.pn-print {
+  color: var(--pn-print-2);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* Latin prints are capitals, spaced as engraved; Hangul prints stay as written. */
+.pn-print:lang(en),
+.pn-pagekey .pn-key-print:lang(en) {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pn-brand {
+  color: var(--pn-print);
+  font-size: 13px;
+}
+
+.pn-left {
+  grid-area: left;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+  padding-top: 10px;
+}
+
+.pn-centre {
+  grid-area: centre;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pn-right {
+  grid-area: right;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  padding-top: 4px;
+}
+
+.pn-part {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---------- power ---------- */
+
+.pn-power {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--pn-power-size);
+  height: var(--pn-power-size);
+  margin: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(160deg, var(--pn-key-hi), var(--pn-key-lo));
+  box-shadow:
+    0 0 0 1px var(--pn-key-edge),
+    1px 3px 6px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 var(--pn-chamfer);
+  color: var(--pn-print);
+  cursor: pointer;
+}
+
+/* The lamp's socket, and the ring of light in it. */
+.pn-power::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  z-index: -1;
+  border-radius: 50%;
+  background: var(--pn-socket);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 0 var(--pn-chamfer);
+}
+
+.pn-power-ring {
+  --pn-c: var(--pn-lens);
+  position: absolute;
+  inset: -5px;
+  z-index: -1;
+  border-radius: 50%;
+  border: 2.5px solid var(--pn-c);
+}
+
+.pn-power-ring[data-lamp="on"] {
+  --pn-c: var(--pn-on);
+}
+
+.pn-power-ring[data-lamp="wait"] {
+  --pn-c: var(--pn-wait);
+}
+
+.pn-power-ring[data-lamp="fault"] {
+  --pn-c: var(--pn-fault);
+}
+
+.pn-power-ring:not([data-lamp="off"]) {
+  box-shadow:
+    0 0 0 var(--pn-rim) var(--pn-led-rim),
+    inset 0 0 0 var(--pn-rim) var(--pn-led-rim),
+    0 0 10px 2px var(--pn-c);
+}
+
+.pn-power[aria-busy="true"] .pn-power-ring {
+  animation: pn-breathe 1.2s ease-in-out infinite;
+}
+
+.pn-power:not(:disabled):active {
+  background: var(--pn-key-press);
+  box-shadow: 0 0 0 1px var(--pn-key-edge), inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.pn-power:disabled {
+  cursor: default;
+  color: var(--pn-print-2);
+}
+
+.pn-power:focus-visible {
+  outline: 2px solid var(--pn-focus);
+  outline-offset: 12px;
+}
+
+/* ---------- signal lamps ---------- */
+
+.pn-lamps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.pn-lamp {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pn-room [data-lane="0"] {
+  --pn-lane: var(--pn-lane-0);
+  --pn-dlane: var(--pn-d-lane-0);
+}
+
+.pn-room [data-lane="1"] {
+  --pn-lane: var(--pn-lane-1);
+  --pn-dlane: var(--pn-d-lane-1);
+}
+
+.pn-room [data-lane="2"] {
+  --pn-lane: var(--pn-lane-2);
+  --pn-dlane: var(--pn-d-lane-2);
+}
+
+.pn-room [data-lane="3"] {
+  --pn-lane: var(--pn-lane-3);
+  --pn-dlane: var(--pn-d-lane-3);
+}
+
+.pn-led {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--pn-lens);
+  box-shadow: var(--pn-lens-edge);
+}
+
+.pn-lamp[data-signal="sound"] .pn-led {
+  background: var(--pn-lane);
+  box-shadow: 0 0 0 var(--pn-rim) var(--pn-led-rim), 0 0 8px 2px var(--pn-lane);
+}
+
+/* A format but silent: the lens tinted, no halo. */
+.pn-lamp[data-signal="idle"] .pn-led {
+  background: color-mix(in srgb, var(--pn-lane) 45%, var(--pn-lens));
+  box-shadow: 0 0 0 var(--pn-rim) var(--pn-led-rim);
+}
+
+/* ---------- encoder ---------- */
+
+.pn-encoder {
+  position: relative;
+  width: var(--pn-enc);
+  height: var(--pn-enc);
+}
+
+.pn-ring-well {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--pn-groove);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7), 0 1px 0 var(--pn-chamfer);
+}
+
+.pn-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.pn-ring-led {
+  fill: var(--pn-ring-off);
+}
+
+.pn-ring-led.is-lit {
+  fill: var(--pn-key-led);
+  filter: drop-shadow(0 0 1.5px rgba(244, 246, 248, 0.9));
+}
+
+.pn-knob {
+  position: absolute;
+  left: 14%;
+  top: 14%;
+  width: 72%;
+  height: 72%;
+  border-radius: 50%;
+  background:
+    repeating-conic-gradient(var(--pn-knurl) 0deg 1.4deg, transparent 1.4deg 4deg),
+    linear-gradient(160deg, var(--pn-knob-mid), var(--pn-knob-lo));
+  box-shadow:
+    4px 9px 16px rgba(0, 0, 0, 0.35),
+    1px 2px 4px rgba(0, 0, 0, 0.3),
+    0 0 0 1px var(--pn-key-edge);
+  cursor: grab;
+  touch-action: none;
+}
+
+.pn-knob:active {
+  cursor: grabbing;
+}
+
+.pn-knob[aria-disabled="true"] {
+  cursor: default;
+}
+
+.pn-knob:focus-visible {
+  outline: 2px solid var(--pn-focus);
+  outline-offset: calc(var(--pn-enc) * 0.16);
+}
+
+/* The spun cap: its highlights stay where the light is. */
+.pn-knob-face {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 20deg,
+    var(--pn-knob-hi),
+    var(--pn-knob-lo) 12%,
+    var(--pn-knob-hi) 25%,
+    var(--pn-knob-mid) 38%,
+    var(--pn-knob-hi) 50%,
+    var(--pn-knob-lo) 62%,
+    var(--pn-knob-hi) 75%,
+    var(--pn-knob-mid) 88%,
+    var(--pn-knob-hi)
+  );
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.45),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.25),
+    0 0 0 1px var(--pn-key-edge);
+}
+
+.pn-knob-turn {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pn-knob-pointer {
+  position: absolute;
+  left: 50%;
+  top: 13%;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: var(--pn-knob-lo);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.65), 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* ---------- keys ---------- */
+
+.pn-okeys-part {
+  width: 100%;
+}
+
+/* The two output keys stack under the encoder. */
+.pn-okeys {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+
+.pn-okey,
+.pn-pagekey {
+  position: relative;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(160deg, var(--pn-key-hi), var(--pn-key-lo));
+  box-shadow:
+    0 0 0 1px var(--pn-key-edge),
+    1px 2px 3px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 var(--pn-chamfer);
+  color: var(--pn-key-print);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pn-okey {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 42px;
+  padding: 0 14px;
+  text-align: left;
+}
+
+.pn-key-print {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pn-key-led {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-lens);
+  box-shadow: var(--pn-lens-edge);
+}
+
+.pn-okey[aria-checked="true"] .pn-key-led {
+  background: var(--pn-white-core, var(--pn-key-led));
+  box-shadow: 0 0 0 var(--pn-rim) var(--pn-led-rim), var(--pn-white-glow);
+}
+
+/* The chosen kind and the open page latch: the key sits a little lower, pressed in. */
+.pn-okey[aria-checked="true"],
+.pn-pagekey[aria-selected="true"] {
+  background: linear-gradient(160deg, var(--pn-latch-hi), var(--pn-latch-lo));
+  box-shadow:
+    0 0 0 1px var(--pn-key-edge),
+    inset 0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.25);
+  transform: translateY(1px);
+}
+
+.pn-okey[aria-busy="true"] .pn-key-led {
+  animation: pn-breathe 1.2s ease-in-out infinite;
+}
+
+.pn-okey[aria-disabled="true"],
+.pn-okey:disabled,
+.pn-pagekey:disabled {
+  color: var(--pn-print-2);
+  cursor: default;
+}
+
+.pn-okey:not(:disabled):not([aria-disabled="true"]):active,
+.pn-pagekey:not(:disabled):active {
+  background: var(--pn-key-press);
+  box-shadow: 0 0 0 1px var(--pn-key-edge), inset 0 2px 3px rgba(0, 0, 0, 0.25);
+}
+
+.pn-okey:focus-visible,
+.pn-pagekey:focus-visible {
+  outline: 2px solid var(--pn-focus);
+  outline-offset: 3px;
+}
+
+.pn-pagekeys {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 4px;
+}
+
+.pn-pagekey {
+  height: 40px;
+  padding: 7px 6px 0;
+}
+
+.pn-key-bar {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  width: 18px;
+  height: 2px;
+  margin-left: -9px;
+  border-radius: 1px;
+  background: var(--pn-lens);
+  box-shadow: var(--pn-lens-edge);
+}
+
+.pn-pagekey[aria-selected="true"] .pn-key-bar {
+  background: var(--pn-white-core, var(--pn-key-led));
+  box-shadow: 0 0 0 var(--pn-rim) var(--pn-led-rim), var(--pn-white-glow);
+}
+
+/* ---------- the display ---------- */
+
+/* The cutout in the chassis and the cover glass set into it. */
+.pn-display {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: var(--pn-mask-width);
+  border-radius: 14px;
+  background: var(--pn-mask);
+  box-shadow:
+    0 0 0 1px #000000,
+    0 0 0 5px var(--pn-well),
+    0 1.5px 0 5px var(--pn-chamfer),
+    0 -1px 0 5px var(--pn-chamfer-low);
+}
+
+/*
+ * The cover glass, fixed: one soft sheen toward the light (upper left) that
+ * runs across the whole plate, mask and LCD alike, so it reads as one sheet
+ * laid over the opening. No grain and no veil over the glyphs: noise on a
+ * one-pixel stroke is blur. It never moves.
+ */
+.pn-display::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image:
+    radial-gradient(
+      ellipse 65% 52% at 22% 14%,
+      rgb(255 255 255 / var(--pn-glass-glow)),
+      rgb(255 255 255 / var(--pn-glass-glow-2)) 48%,
+      rgb(255 255 255 / 0) 80%
+    ),
+    linear-gradient(rgb(255 255 255 / var(--pn-glass-veil)), rgb(255 255 255 / var(--pn-glass-veil)));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 0 14px 20px -14px var(--pn-glass-edge);
+}
+
+/* The LCD's shadow under the mask's edge, where the glass stands off the panel. */
+.pn-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  box-shadow: var(--pn-lcd-gap);
+  pointer-events: none;
+}
+
+/* The active pixels: flat; on the LCD nothing has a bevel, a gradient or a shadow of its own. */
+.pn-screen {
+  container: pn-screen / inline-size;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--pn-d-bg);
+  color: var(--pn-d-text);
+  font-size: var(--pn-fs-body, 15px);
+  text-shadow: var(--pn-d-shadow);
+  font-family: var(--pn-ff-body, var(--pn-px14));
+  line-height: var(--pn-lh-body, 24px);
+  font-synthesis: none;
+}
+
+.pn-statusline {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 50px;
+  padding: 6px 20px;
+  border-bottom: 1px solid var(--pn-d-line);
+  color: var(--pn-d-text-2);
+  font-size: var(--pn-fs-body, 15px);
+}
+
+.pn-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  color: var(--pn-d-text);
+  font-weight: 700;
+  font-family: var(--pn-px11);
+  font-size: var(--pn-fs-head, 24px);
+  line-height: var(--pn-lh-head, 36px);
+}
+
+.pn-page-title {
+  padding-left: 15px;
+  border-left: 1px solid var(--pn-d-line-2);
+  color: var(--pn-d-text);
+  font-weight: 400;
+  font-family: var(--pn-px11);
+  font-size: var(--pn-fs-head, 24px);
+  line-height: var(--pn-lh-head, 36px);
+}
+
+.pn-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.pn-meta-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pn-kind-icon {
+  flex: none;
+}
+
+/* The lamps of the display: state colours, and the lanes. */
+.pn-dot {
+  --pn-c: var(--pn-d-off);
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-c);
+  box-shadow: 0 0 calc(6px * var(--pn-glow)) var(--pn-c);
+}
+
+.pn-dot.is-off,
+.pn-dot[data-lamp="off"] {
+  box-shadow: none;
+}
+
+.pn-dot.is-on,
+.pn-dot[data-lamp="on"] {
+  --pn-c: var(--pn-d-on);
+}
+
+.pn-dot.is-wait,
+.pn-dot[data-lamp="wait"] {
+  --pn-c: var(--pn-d-wait);
+}
+
+.pn-dot.is-fault,
+.pn-dot[data-lamp="fault"] {
+  --pn-c: var(--pn-d-fault);
+}
+
+.pn-dot.is-white {
+  --pn-c: var(--pn-d-text);
+}
+
+.pn-dot.is-lane-0 {
+  --pn-c: var(--pn-d-lane-0);
+}
+
+.pn-dot.is-lane-1 {
+  --pn-c: var(--pn-d-lane-1);
+}
+
+.pn-dot.is-lane-2 {
+  --pn-c: var(--pn-d-lane-2);
+}
+
+.pn-dot.is-lane-3 {
+  --pn-c: var(--pn-d-lane-3);
+}
+
+.pn-bands {
+  flex: none;
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--pn-d-line);
+}
+
+.pn-band {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 2px 9px;
+  padding: 10px 0 8px;
+}
+
+.pn-band + .pn-band {
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-band > .pn-dot {
+  margin-top: 7px;
+}
+
+.pn-band-message {
+  color: var(--pn-d-text);
+  text-wrap: pretty;
+}
+
+.pn-room[data-phase="faulted"] .pn-band:not(.is-refusal) .pn-band-message {
+  font-family: var(--pn-px11);
+  font-size: var(--pn-fs-head, 24px);
+  line-height: var(--pn-lh-head, 36px);
+}
+
+.pn-band-action {
+  grid-column: 2;
+}
+
+.pn-band-action .pn-row {
+  min-height: 34px;
+}
+
+.pn-notes {
+  padding: 8px 0;
+  color: var(--pn-d-text-2);
+  list-style: none;
+}
+
+.pn-notes li::before {
+  content: "· ";
+}
+
+.pn-bands > .pn-notes:not(:first-child) {
+  border-top: 1px solid var(--pn-d-line);
+}
+
+/* The page scrolls inside the display; the chassis never does. */
+.pn-pagewrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* More above or below: a dot-matrix arrow at the right edge, only while there is. */
+.pn-cue {
+  position: absolute;
+  right: 5px;
+  z-index: 1;
+  display: block;
+  padding: 3px 2px;
+  background: var(--pn-d-bg);
+  color: var(--pn-d-text-2);
+  line-height: 0;
+  pointer-events: none;
+}
+
+.pn-cue svg {
+  fill: currentColor;
+  filter: drop-shadow(0 0 calc(2px * var(--pn-glow)) rgb(241 239 233 / 0.45));
+}
+
+.pn-cue.is-up {
+  top: 4px;
+}
+
+.pn-cue.is-down {
+  bottom: 4px;
+}
+
+.pn-page {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-color: var(--pn-d-scroll) transparent;
+  scrollbar-width: thin;
+}
+
+.pn-page:focus-visible {
+  outline: 1.5px solid var(--pn-d-text-2);
+  outline-offset: -2px;
+}
+
+.pn-refusals {
+  flex: none;
+  padding: 0 20px;
+  border-top: 1px solid var(--pn-d-line-2);
+  background: var(--pn-d-strip);
+}
+
+/* The OSD: a line across the foot of the display for a moment. */
+.pn-osd {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: 8px 20px 9px;
+  border-top: 1px solid var(--pn-d-line-2);
+  background: var(--pn-d-osd);
+  color: var(--pn-d-osd-text);
+  text-shadow: none;
+  font-size: var(--pn-fs-head, 24px);
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: pn-osd-in 0.16s ease-out;
+  font-family: var(--pn-px11);
+  line-height: var(--pn-lh-head, 36px);
+}
+
+/* ---------- display grammar ---------- */
+
+.pn-sec {
+  padding: 14px 0;
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-sec:first-child {
+  border-top: 0;
+}
+
+/* Section heads in the larger pixel face; a head inside a section in the text face. */
+.pn-sec-title {
+  margin-bottom: 10px;
+  color: var(--pn-d-text-2);
+  font-family: var(--pn-px11);
+  font-size: var(--pn-fs-head, 24px);
+  font-weight: 400;
+  line-height: var(--pn-lh-head, 36px);
+  text-wrap: balance;
+}
+
+.pn-sub-title {
+  margin: 14px 0 4px;
+  color: var(--pn-d-text-3);
+  font-family: var(--pn-ff-body, var(--pn-px14));
+  font-size: var(--pn-fs-body, 15px);
+  font-weight: 400;
+  line-height: var(--pn-lh-body, 24px);
+}
+
+.pn-hint {
+  max-width: 68ch;
+  margin: 4px 0;
+  color: var(--pn-d-text-2);
+  text-wrap: pretty;
+}
+
+.pn-hint-head {
+  color: var(--pn-d-text);
+}
+
+.pn-line {
+  max-width: 68ch;
+  margin: 4px 0;
+  color: var(--pn-d-text);
+  text-wrap: pretty;
+}
+
+.pn-dim {
+  color: var(--pn-d-text-3);
+}
+
+.pn-path {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.pn-tag {
+  margin-left: 8px;
+  color: var(--pn-d-text-2);
+  white-space: nowrap;
+}
+
+.pn-tag::before {
+  content: "· ";
+}
+
+.pn-row-label .pn-tag {
+  margin-left: 0;
+}
+
+.pn-facts {
+  display: grid;
+}
+
+.pn-fact {
+  display: grid;
+  grid-template-columns: minmax(96px, round(down, 36%, 4px)) minmax(0, 1fr);
+  gap: 12px;
+  padding: 7px 0;
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-fact:first-child {
+  border-top: 0;
+}
+
+.pn-fact dt {
+  color: var(--pn-d-text-3);
+}
+
+.pn-fact dd {
+  min-width: 0;
+  color: var(--pn-d-text);
+  overflow-wrap: anywhere;
+}
+
+/* Rows: every action in the display is a row chosen from a list. */
+.pn-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* The row's text lines up with the section's; its hover reaches past it. */
+  width: calc(100% + 16px);
+  min-height: 40px;
+  margin-inline: -8px;
+  padding: 8px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--pn-d-text);
+  text-align: left;
+  text-shadow: inherit;
+  cursor: pointer;
+}
+
+.pn-row + .pn-row,
+.pn-hint + .pn-row,
+.pn-facts + .pn-row,
+.pn-line + .pn-row {
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-row:hover:not(:disabled) {
+  background: var(--pn-d-hover);
+}
+
+/*
+ * Focus is a thin outline of light on the emissive panel; the LCD inverts
+ * the row (dark pixels, the reflector showing through the text), as such
+ * displays mark a cursor. Either way the chosen row keeps its own mark.
+ */
+.pn-row:focus-visible,
+.pn-tab:focus-visible,
+.pn-map-point:focus-visible {
+  outline: 1.5px solid var(--pn-d-text);
+  outline-offset: -1.5px;
+}
+
+@media not all and (prefers-color-scheme: dark) {
+  .pn-row:focus-visible {
+    --pn-d-hi: var(--pn-d-ink-text);
+    --pn-d-text: var(--pn-d-ink-text);
+    --pn-d-text-2: var(--pn-d-ink-text-2);
+    --pn-d-text-3: var(--pn-d-ink-text-2);
+    outline: none;
+    background: var(--pn-d-ink);
+    text-shadow: none;
+  }
+}
+
+.pn-row:disabled .pn-row-go,
+.pn-row:disabled .pn-mark {
+  opacity: 0.4;
+}
+
+.pn-row:disabled {
+  color: var(--pn-d-text-3);
+  cursor: default;
+}
+
+.pn-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pn-row-label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+}
+
+.pn-row-detail {
+  color: var(--pn-d-text-2);
+}
+
+.pn-row:disabled .pn-row-detail {
+  color: var(--pn-d-text-3);
+}
+
+.pn-row-value {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  color: var(--pn-d-text-2);
+}
+
+.pn-row-go {
+  flex: none;
+  width: 14px;
+  color: var(--pn-d-text-3);
+  font-size: var(--pn-fs-head, 24px);
+  line-height: var(--pn-fs-head, 24px);
+  text-align: center;
+  font-family: var(--pn-px11);
+}
+
+.pn-row-go.is-busy::before,
+.pn-busy {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-d-wait);
+  box-shadow: 0 0 calc(6px * var(--pn-glow)) var(--pn-d-wait);
+  animation: pn-breathe 1s ease-in-out infinite;
+}
+
+/* The chosen mark: a lit dot; the others an unlit ring. */
+.pn-mark {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--pn-d-text-3);
+  border-radius: 50%;
+}
+
+.pn-choice.is-chosen .pn-mark,
+.pn-step.is-current .pn-mark {
+  border-color: var(--pn-d-text);
+  background: var(--pn-d-text);
+  box-shadow: 0 0 calc(6px * var(--pn-glow)) rgb(241 239 233 / 0.45);
+}
+
+.pn-choice {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.pn-choice .pn-mark {
+  margin-top: 5px;
+}
+
+.pn-choices.is-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  margin-inline: -8px;
+}
+
+.pn-choices.is-inline .pn-choice {
+  width: auto;
+  margin-inline: 0;
+  min-height: 36px;
+  padding: 7px 12px 7px 8px;
+  border-top: 0;
+}
+
+.pn-choices.is-inline .pn-choice .pn-row-text {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.pn-choices.is-inline .pn-choice .pn-mark {
+  margin-top: 4px;
+}
+
+.pn-choice[aria-checked="true"] .pn-row-label {
+  color: var(--pn-d-hi);
+}
+
+.pn-choices[aria-busy="true"] .pn-choice.is-chosen .pn-mark {
+  animation: pn-breathe 1s ease-in-out infinite;
+}
+
+.pn-toggle .pn-row-value {
+  min-width: 64px;
+  justify-content: flex-end;
+}
+
+.pn-toggle.is-on .pn-row-value {
+  color: var(--pn-d-text);
+}
+
+/* A level: a hairline track lit up to the value. */
+.pn-level-wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 460px;
+  padding: 6px 0;
+}
+
+.pn-level {
+  flex: 1;
+  padding: 10px 0;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.pn-level[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.pn-level:focus-visible {
+  outline: 1.5px solid var(--pn-d-text);
+  outline-offset: 2px;
+}
+
+.pn-level-track {
+  position: relative;
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--pn-d-line-2);
+}
+
+.pn-level-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--pn-d-text);
+  transform-origin: left center;
+}
+
+.pn-level-readout {
+  min-width: 84px;
+  color: var(--pn-d-text);
+  font-size: var(--pn-fs-head, 24px);
+  text-align: right;
+  font-family: var(--pn-px11);
+  line-height: var(--pn-lh-head, 36px);
+}
+
+.pn-big {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 6px 0 12px;
+  color: var(--pn-d-hi);
+}
+
+.pn-big .num {
+  font-size: var(--pn-fs-num, 48px);
+  font-weight: 400;
+  line-height: var(--pn-lh-num, 48px);
+  text-shadow: var(--pn-d-num-shadow);
+  font-family: var(--pn-px11);
+}
+
+.pn-big small {
+  color: var(--pn-d-text-2);
+  font-size: var(--pn-fs-head, 24px);
+  font-family: var(--pn-px11);
+  line-height: var(--pn-fs-head, 24px);
+}
+
+.pn-scale {
+  color: var(--pn-d-text-2);
+}
+
+.pn-kind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--pn-d-text-2);
+}
+
+.pn-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.pn-table th,
+.pn-table td {
+  padding: 6px 8px;
+  border-top: 1px solid var(--pn-d-line);
+  text-align: left;
+}
+
+.pn-table thead th {
+  border-top: 0;
+  color: var(--pn-d-text-3);
+}
+
+.pn-table td.num {
+  width: 64px;
+  color: var(--pn-d-text-2);
+}
+
+/* ---------- status ---------- */
+
+.pn-status-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.pn-col {
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-col:first-child {
+  border-top: 0;
+}
+
+.pn-col .pn-fact {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+}
+
+.pn-input {
+  position: relative;
+  padding: 10px 0 11px 16px;
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-sec-title + .pn-input {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+.pn-input-tick {
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 11px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--pn-dlane, var(--pn-d-text-2));
+  opacity: 0.2;
+}
+
+.pn-sec-title + .pn-input .pn-input-tick {
+  top: 2px;
+}
+
+.pn-input[data-signal="idle"] .pn-input-tick {
+  opacity: 0.5;
+}
+
+.pn-input[data-signal="sound"] .pn-input-tick {
+  opacity: 1;
+  box-shadow: 0 0 calc(6px * var(--pn-glow)) var(--pn-dlane);
+}
+
+.pn-input-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pn-input-name {
+  font-weight: 400;
+  color: var(--pn-d-hi);
+}
+
+.pn-input-volume {
+  color: var(--pn-d-text);
+  white-space: nowrap;
+}
+
+.pn-input-endpoint,
+.pn-input-sub {
+  color: var(--pn-d-text-3);
+}
+
+.pn-input-format {
+  color: var(--pn-d-text-2);
+}
+
+.pn-meter {
+  display: block;
+  height: 3px;
+  margin-top: 7px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--pn-d-line-2);
+}
+
+.pn-meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--pn-dlane);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.pn-input-note {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin-top: 6px;
+  color: var(--pn-d-text-2);
+}
+
+.pn-input-note > .pn-dot {
+  transform: translateY(-1px);
+}
+
+.pn-input-reason,
+.pn-upstate-detail {
+  display: block;
+  color: var(--pn-d-text-3);
+}
+
+.pn-gain-big {
+  margin-top: 8px;
+}
+
+.pn-metrics {
+  display: grid;
+  grid-template-columns: round(down, 50%, 4px) minmax(0, 1fr);
+  border-top: 1px solid var(--pn-d-line);
+  border-bottom: 1px solid var(--pn-d-line);
+}
+
+.pn-metric {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 10px 20px 12px;
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-metric:nth-child(-n + 2) {
+  border-top: 0;
+}
+
+.pn-metric:nth-child(even) {
+  box-shadow: inset 1px 0 0 var(--pn-d-line);
+}
+
+.pn-metric dt {
+  color: var(--pn-d-text-3);
+}
+
+.pn-metric dd {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.pn-metric .num {
+  font-size: var(--pn-fs-mid, 36px);
+  font-weight: 400;
+  line-height: var(--pn-lh-mid, 36px);
+  font-family: var(--pn-px11);
+}
+
+.pn-metric small {
+  color: var(--pn-d-text-2);
+  font-size: var(--pn-fs-unit, 12px);
+  font-family: var(--pn-ff-unit, var(--pn-px11));
+  line-height: var(--pn-lh-unit, 12px);
+}
+
+.pn-metric .pn-dot {
+  display: none;
+  align-self: center;
+}
+
+.pn-metric.is-warning .pn-dot {
+  display: inline-block;
+}
+
+.pn-details {
+  padding: 14px 20px 20px;
+}
+
+/* Docked at the display's foot (tall windows), the strip is outside the scrolling page. */
+.pn-screen > .pn-metrics {
+  flex: none;
+  border-bottom: 0;
+}
+
+.pn-details-grid {
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 28px;
+}
+
+.pn-details-grid .pn-fact:nth-child(2) {
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-kinds {
+  display: grid;
+  gap: 2px;
+  margin-top: 4px;
+  padding: 0;
+  color: var(--pn-d-text-2);
+  list-style: none;
+}
+
+.pn-kinds:empty {
+  display: none;
+}
+
+.pn-kinds li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+@container pn-screen (min-width: 560px) {
+  .pn-status-main {
+    grid-template-columns: round(down, 50%, 4px) minmax(0, 1fr);
+  }
+
+  .pn-inputs {
+    border-right: 1px solid var(--pn-d-line);
+  }
+
+  .pn-output {
+    border-top: 0;
+  }
+
+  .pn-mapcol {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+
+  .pn-metrics {
+    grid-template-columns: repeat(4, round(down, 20%, 4px)) minmax(0, 1fr);
+  }
+
+  .pn-metric {
+    border-top: 0;
+  }
+
+  .pn-metric + .pn-metric {
+    box-shadow: inset 1px 0 0 var(--pn-d-line);
+  }
+
+  .pn-details-grid {
+    grid-template-columns: round(down, calc(50% - 14px), 4px) minmax(0, 1fr);
+  }
+}
+
+@container pn-screen (min-width: 740px) {
+  .pn-status-main {
+    grid-template-columns: round(down, calc((100% - 300px) / 2), 4px) 300px minmax(0, 1fr);
+  }
+
+  .pn-mapcol {
+    grid-column: auto;
+    order: 0;
+    border-top: 0;
+    border-right: 1px solid var(--pn-d-line);
+  }
+
+  .pn-details-grid {
+    grid-template-columns: repeat(2, round(down, calc((100% - 56px) / 3), 4px)) minmax(0, 1fr);
+  }
+
+  .pn-details-grid .pn-fact:nth-child(3) {
+    border-top: 1px solid var(--pn-d-line);
+  }
+}
+
+/* The standby: dimmer, and only what turning it on would do. */
+.pn-status.is-standby {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100%;
+  padding: 0 20px 20px;
+}
+
+.pn-standby {
+  padding: 22px 0 10px;
+}
+
+.pn-standby-label {
+  color: var(--pn-d-text-3);
+}
+
+.pn-standby-device {
+  margin: 2px 0 14px;
+  color: var(--pn-d-text-2);
+  font-size: var(--pn-fs-mid, 36px);
+  font-weight: 700;
+  line-height: var(--pn-lh-num, 48px);
+  overflow-wrap: anywhere;
+  font-family: var(--pn-px11);
+}
+
+.pn-sublist {
+  padding: 2px 0 6px 20px;
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-gain-standby {
+  color: var(--pn-d-text-2);
+}
+
+.pn-gain-standby .num {
+  font-size: var(--pn-fs-mid, 36px);
+  text-shadow: none;
+  line-height: var(--pn-lh-mid, 36px);
+}
+
+.pn-input.is-standby .pn-input-name {
+  color: var(--pn-d-text-2);
+}
+
+.pn-standby-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container pn-screen (min-width: 600px) {
+  .pn-standby-grid {
+    grid-template-columns: round(down, calc(50% - 18px), 4px) minmax(0, 1fr);
+    column-gap: 36px;
+  }
+
+  .pn-standby-grid > .pn-sec {
+    border-top: 1px solid var(--pn-d-line);
+  }
+}
+
+/* ---------- the map ---------- */
+
+.pn-map-frame {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
+  aspect-ratio: 1;
+}
+
+.pn-map-drawing {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.pn-map-ring {
+  fill: none;
+  stroke: var(--pn-d-line-2);
+  stroke-width: 1;
+}
+
+.pn-map-ring.is-inner {
+  stroke-dasharray: 3 4;
+}
+
+.pn-map-axis {
+  stroke: var(--pn-d-axis);
+  stroke-width: 1;
+}
+
+.pn-map-listener path {
+  fill: var(--pn-d-text-3);
+}
+
+.pn-map-listener circle {
+  fill: var(--pn-d-bg);
+  stroke: var(--pn-d-text-3);
+  stroke-width: 1.5;
+}
+
+.pn-map-object {
+  --pn-c: var(--pn-d-text-2);
+  fill: var(--pn-c);
+}
+
+.pn-map-object.lane-0 {
+  --pn-c: var(--pn-d-lane-0);
+}
+
+.pn-map-object.lane-1 {
+  --pn-c: var(--pn-d-lane-1);
+}
+
+.pn-map-object.lane-2 {
+  --pn-c: var(--pn-d-lane-2);
+}
+
+.pn-map-object.is-up {
+  fill: var(--pn-d-bg);
+  stroke: var(--pn-c);
+  stroke-width: 2;
+}
+
+.pn-map-points {
+  position: absolute;
+  inset: 0;
+}
+
+.pn-map-point {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.pn-map-point::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pn-d-text-2);
+}
+
+.pn-map-point.is-up::before {
+  border: 1.5px solid var(--pn-d-text-2);
+  background: var(--pn-d-bg);
+}
+
+button.pn-map-point {
+  cursor: pointer;
+}
+
+button.pn-map-point:hover:not(:disabled)::before {
+  background: var(--pn-d-hi);
+  border-color: var(--pn-d-hi);
+}
+
+button.pn-map-point.is-up:hover:not(:disabled)::before {
+  background: var(--pn-d-bg);
+}
+
+button.pn-map-point:disabled {
+  cursor: default;
+}
+
+.pn-map-point[aria-busy="true"]::before {
+  background: var(--pn-d-hi);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--pn-d-hi) 25%, transparent);
+  animation: pn-breathe 0.8s ease-in-out infinite;
+}
+
+.pn-map-point:focus-visible {
+  outline-offset: 0;
+}
+
+.pn-map-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: var(--pn-d-text-3);
+  font-size: var(--pn-fs-body, 15px);
+  line-height: var(--pn-fs-body, 15px);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.pn-map-status {
+  margin-top: 4px;
+  color: var(--pn-d-text-3);
+  text-align: center;
+}
+
+.pn-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  margin-top: 6px;
+  padding: 0;
+  color: var(--pn-d-text-3);
+  list-style: none;
+}
+
+.pn-map-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pn-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pn-d-text-2);
+}
+
+.pn-swatch.is-up {
+  border: 1.5px solid var(--pn-d-text-2);
+  background: transparent;
+}
+
+.pn-mapcol > .pn-hint {
+  text-align: center;
+  margin: 6px auto 0;
+}
+
+/* ---------- profile ---------- */
+
+.pn-profile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0 20px 20px;
+}
+
+.pn-note {
+  padding: 12px 0 4px;
+}
+
+.pn-note .pn-tag {
+  margin-left: 0;
+}
+
+.pn-note .pn-tag::before {
+  content: none;
+}
+
+.pn-tabs {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--pn-d-line);
+}
+
+.pn-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  padding: 7px 4px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--pn-d-text-3);
+  text-shadow: inherit;
+  cursor: pointer;
+}
+
+.pn-tab[aria-selected="true"] {
+  color: var(--pn-d-text);
+}
+
+.pn-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--pn-d-text);
+  box-shadow: 0 0 calc(6px * var(--pn-glow)) rgb(241 239 233 / 0.5);
+}
+
+.pn-sub {
+  padding: 12px 0 8px;
+}
+
+.pn-in-use {
+  display: flex;
+  align-items: center;
+  padding: 10px 0 4px;
+}
+
+.pn-in-use .pn-dot {
+  margin-right: 9px;
+}
+
+.pn-tests {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 160px);
+  column-gap: 28px;
+}
+
+.pn-tests .pn-row {
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-profile-side .pn-map-frame {
+  max-width: 300px;
+}
+
+@container pn-screen (min-width: 760px) {
+  .pn-profile {
+    grid-template-columns: round(down, 55%, 4px) minmax(0, 1fr);
+    column-gap: 0;
+    padding: 0;
+  }
+
+  .pn-profile-main {
+    padding: 0 24px 20px 20px;
+    border-right: 1px solid var(--pn-d-line);
+  }
+
+  .pn-profile-side {
+    padding: 0 20px 20px 24px;
+  }
+}
+
+/* ---------- upmix ---------- */
+
+.pn-upmix {
+  padding: 0 20px 20px;
+}
+
+.pn-upmix-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 28px;
+}
+
+.pn-lane-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--pn-d-text);
+}
+
+.pn-upstate {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 8px 0 4px;
+}
+
+.pn-upstate > .pn-dot,
+.pn-upstate > .pn-busy {
+  transform: translateY(-1px);
+}
+
+@container pn-screen (min-width: 600px) {
+  .pn-upmix-inputs {
+    grid-template-columns: round(down, calc(50% - 14px), 4px) minmax(0, 1fr);
+  }
+}
+
+@container pn-screen (min-width: 880px) {
+  .pn-upmix-inputs {
+    grid-template-columns: repeat(2, round(down, calc((100% - 56px) / 3), 4px)) minmax(0, 1fr);
+  }
+}
+
+/* ---------- settings ---------- */
+
+.pn-settings {
+  padding: 0 20px 20px;
+}
+
+.pn-setting-body {
+  min-width: 0;
+  max-width: 640px;
+}
+
+@container pn-screen (min-width: 680px) {
+  .pn-setting {
+    display: grid;
+    grid-template-columns: 168px minmax(0, 1fr);
+    column-gap: 28px;
+  }
+
+  .pn-setting > .pn-sec-title {
+    margin-top: 11px;
+  }
+}
+
+.pn-app {
+  padding: 8px 0 6px;
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-app-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+}
+
+.pn-app-name {
+  color: var(--pn-d-hi);
+}
+
+.pn-app-exe {
+  color: var(--pn-d-text-3);
+}
+
+.pn-app .pn-sub-title {
+  margin-top: 6px;
+}
+
+.pn-app .pn-fact {
+  border-top: 0;
+  padding: 2px 0;
+}
+
+/* ---------- wizard and quit ---------- */
+
+.pn-wizard {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  max-width: 780px;
+  padding: 20px 28px 28px;
+}
+
+/* The step's text sits in the middle of the display, the steps above it. */
+.pn-wizard-body {
+  margin: auto 0;
+  padding: 12px 0 24px;
+}
+
+.pn-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin-bottom: 20px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--pn-d-line);
+  color: var(--pn-d-text-3);
+  list-style: none;
+}
+
+.pn-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pn-step.is-current {
+  color: var(--pn-d-text);
+}
+
+.pn-step.is-done {
+  color: var(--pn-d-text-2);
+}
+
+.pn-step.is-done .pn-mark {
+  border-color: var(--pn-d-text-2);
+  background: var(--pn-d-text-2);
+}
+
+.pn-title {
+  margin-bottom: 14px;
+  font-size: var(--pn-fs-head, 24px);
+  font-weight: 700;
+  line-height: var(--pn-lh-head, 36px);
+  font-family: var(--pn-px11);
+  text-wrap: balance;
+}
+
+.pn-body {
+  max-width: 64ch;
+  margin: 0 0 10px;
+  color: var(--pn-d-text-2);
+  text-wrap: pretty;
+}
+
+.pn-wizard .pn-facts,
+.pn-wizard .pn-choices,
+.pn-endpoints {
+  margin: 12px 0;
+}
+
+.pn-wizard .pn-row {
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-endpoints {
+  display: grid;
+  padding: 0;
+  list-style: none;
+}
+
+.pn-endpoints li {
+  display: grid;
+  grid-template-columns: round(down, calc(50% - 6px), 4px) minmax(0, 1fr);
+  gap: 12px;
+  padding: 7px 0 7px 16px;
+  border-top: 1px solid var(--pn-d-line);
+  position: relative;
+}
+
+.pn-endpoints li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--pn-dlane);
+  opacity: 0.6;
+}
+
+.pn-endpoint-name {
+
+}
+
+.pn-quit {
+  padding-top: 40px;
+}
+
+/* ---------- smaller windows ---------- */
+
+/* Under about 1040 px the display goes on top and the parts sit in a row under it. */
+@media (max-width: 1039px) {
+  :root {
+    --pn-enc: 92px;
+    --pn-power-size: 44px;
+  }
+
+  .pn-chassis {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "centre centre"
+      "left right";
+    gap: 14px 20px;
+    padding: 14px 20px 14px;
+  }
+
+  .pn-plate {
+    display: none;
+  }
+
+  .pn-left {
+    flex-direction: row;
+    align-items: center;
+    gap: 26px;
+    padding: 0 0 0 4px;
+  }
+
+  .pn-lamps {
+    flex-direction: row;
+    gap: 16px;
+  }
+
+  .pn-right {
+    flex-direction: row-reverse;
+    align-items: center;
+    gap: 20px;
+    padding-top: 0;
+  }
+
+  .pn-power-part {
+    flex-direction: row;
+  }
+
+  .pn-encoder-part {
+    flex-direction: row;
+  }
+
+  /* The stacked output keys are as tall as the encoder beside them. */
+  .pn-okeys-part {
+    width: 156px;
+  }
+
+  .pn-okeys {
+    gap: 8px;
+  }
+
+  .pn-okey {
+    height: 38px;
+  }
+
+  .pn-knob-pointer {
+    width: 6px;
+    height: 6px;
+    margin-left: -3px;
+  }
+}
+
+/* The smallest windows: the chassis loses its margin, the parts shrink. */
+@media (max-width: 760px), (max-width: 1039px) and (max-height: 560px) {
+  :root {
+    --pn-enc: 64px;
+    --pn-power-size: 36px;
+  }
+
+  .pn-room {
+    padding: 0;
+  }
+
+  .pn-chassis {
+    gap: 8px 12px;
+    padding: 8px 12px 8px;
+    border-radius: 0;
+    box-shadow: inset 0 1px 0 var(--pn-chamfer), inset 0 -1px 0 var(--pn-chamfer-low);
+  }
+
+  .pn-centre {
+    gap: 8px;
+  }
+
+  .pn-display {
+    padding: 8px;
+    border-radius: 10px;
+  }
+
+  .pn-pagekey {
+    height: 32px;
+    padding-top: 6px;
+    font-size: 12px;
+  }
+
+  .pn-key-bar {
+    top: 4px;
+  }
+
+  .pn-pagekeys {
+    gap: 8px;
+  }
+
+  .pn-left {
+    gap: 14px;
+  }
+
+  .pn-lamps {
+    gap: 10px;
+  }
+
+  .pn-right {
+    gap: 12px;
+  }
+
+  .pn-okeys-part {
+    width: 136px;
+  }
+
+  .pn-okeys {
+    gap: 6px;
+  }
+
+  .pn-okey {
+    height: 29px;
+    padding: 0 9px;
+    gap: 7px;
+    font-size: 12px;
+  }
+
+  .pn-power {
+    margin: 7px;
+  }
+
+  .pn-power::before {
+    inset: -7px;
+  }
+
+  .pn-power-ring {
+    inset: -4.5px;
+    border-width: 2px;
+  }
+
+  .pn-power-part,
+  .pn-encoder-part {
+    gap: 6px;
+  }
+
+  .pn-knob-pointer {
+    top: 11%;
+    width: 5px;
+    height: 5px;
+    margin-left: -2.5px;
+  }
+
+  .pn-statusline {
+    min-height: 44px;
+    padding: 4px 16px;
+  }
+
+  .pn-big .num {
+    font-size: var(--pn-fs-mid, 36px);
+    line-height: var(--pn-lh-mid, 36px);
+  }
+
+  .pn-standby-device {
+    font-size: var(--pn-fs-head, 24px);
+    line-height: var(--pn-lh-head, 36px);
+  }
+}
+
+/*
+ * The tightest windows (a 720 x 480 window at 175 or 200 % scaling is about
+ * 400 x 260 CSS px): the parts shrink, the lamps sit two by two, the power
+ * and volume prints stay only for screen readers, and the status line takes
+ * the body size, so the display keeps room to scroll.
+ */
+@media (max-width: 600px), (max-height: 320px) {
+  :root {
+    --pn-enc: 44px;
+    --pn-power-size: 28px;
+  }
+
+  .pn-chassis {
+    gap: 6px 8px;
+    padding: 6px 8px;
+  }
+
+  .pn-centre {
+    gap: 6px;
+  }
+
+  .pn-display {
+    padding: 4px;
+    border-radius: 8px;
+  }
+
+  .pn-pagekey {
+    height: 26px;
+    padding-top: 5px;
+    font-size: 12px;
+  }
+
+  .pn-pagekeys {
+    gap: 6px;
+  }
+
+  .pn-key-bar {
+    top: 3px;
+  }
+
+  .pn-left {
+    gap: 8px;
+  }
+
+  .pn-lamps {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 2px 10px;
+  }
+
+  .pn-lamp {
+    gap: 6px;
+  }
+
+  .pn-led {
+    width: 8px;
+    height: 8px;
+  }
+
+  .pn-power-part .pn-print,
+  .pn-encoder-part .pn-print {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .pn-power {
+    margin: 6px;
+  }
+
+  .pn-power::before {
+    inset: -6px;
+  }
+
+  .pn-power-ring {
+    inset: -4px;
+    border-width: 2px;
+  }
+
+  .pn-right {
+    gap: 8px;
+  }
+
+  .pn-okeys-part {
+    width: 92px;
+  }
+
+  .pn-okeys {
+    gap: 4px;
+  }
+
+  .pn-okey {
+    height: 22px;
+    padding: 0 7px;
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  .pn-statusline {
+    min-height: 0;
+    padding: 2px 12px;
+  }
+
+  .pn-state,
+  .pn-page-title {
+    font-family: var(--pn-ff-body, var(--pn-px14));
+    font-size: var(--pn-fs-body, 15px);
+    line-height: var(--pn-lh-body, 24px);
+  }
+
+  .pn-bands {
+    max-height: 30%;
+  }
+}
+
+/* ---------- motion ---------- */
+
+@keyframes pn-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes pn-osd-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pn-room *,
+  .pn-room *::before,
+  .pn-room *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

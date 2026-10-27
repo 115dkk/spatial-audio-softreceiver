@@ -6,8 +6,9 @@ import { toUserError } from '../api';
 import type { AsioLayout, Entrance, Language, OutputPath, RoutedApp, RuleView } from '../bindings';
 import { type Child, facts, h } from '../dom';
 import { ASIO_ATTENUATION_MAX, ASIO_DEFAULTS, ASIO_LAYOUTS } from '../guard';
+import { SKINS, isSkin, skinOf } from '../skins/names';
 import { text } from '../text';
-import { type Context, type Drawn, button, described, intentButton, panel } from './common';
+import { type Context, type Drawn, button, described, intentButton } from './common';
 import { driverRows, platformRows } from './facts';
 
 function autostart(ctx: Context): HTMLElement {
@@ -113,9 +114,35 @@ function language(ctx: Context): HTMLElement {
   return h(
     'div',
     { class: 'field' },
-    h('label', { for: 'language' }, t.language),
+    // The group's heading says it beside the select; the label stays its name.
+    h('label', { for: 'language', class: 'visually-hidden' }, t.language),
     select,
     h('p', { id: 'language-hint', class: 'hint' }, t.languageHint),
+  );
+}
+
+/** The skin (ADR 0041): the supervisor saves it and the page reloads in it. */
+function skin(ctx: Context): HTMLElement {
+  const t = text.skins;
+  const current = skinOf(ctx.snapshot);
+  const select = h('select', {
+    id: 'skin',
+    'data-key': 'skin',
+    disabled: ctx.busy,
+    'aria-describedby': 'skin-hint',
+  });
+  for (const value of SKINS) {
+    select.append(h('option', { value, selected: value === current }, t[value]));
+  }
+  select.addEventListener('change', () => {
+    if (isSkin(select.value)) ctx.send({ kind: 'set_skin', value: select.value });
+  });
+  return h(
+    'div',
+    { class: 'field' },
+    h('label', { for: 'skin', class: 'visually-hidden' }, t.label),
+    select,
+    h('p', { id: 'skin-hint', class: 'hint' }, t.hint),
   );
 }
 
@@ -147,7 +174,7 @@ function outputPath(ctx: Context): HTMLElement {
   return h(
     'div',
     { class: 'field' },
-    h('label', { for: 'output-path' }, t.outputPath),
+    h('label', { for: 'output-path', class: 'visually-hidden' }, t.outputPath),
     select,
     // Why the choice is locked comes first, next to it.
     running ? h('p', { id: 'output-path-locked', class: 'hint' }, t.outputPathLocked) : null,
@@ -434,9 +461,9 @@ function asio(ctx: Context): Child[] {
         h(
           'div',
           { class: 'gain' },
-          h('span', { class: 'gain-scale muted small' }, '0'),
+          h('span', { class: 'gain-scale' }, '0'),
           slider,
-          h('span', { class: 'gain-scale muted small' }, `${ASIO_ATTENUATION_MAX}`),
+          h('span', { class: 'gain-scale' }, `${ASIO_ATTENUATION_MAX}`),
           readout,
         ),
         h('p', { id: 'asio-attenuation-hint', class: 'hint' }, t.asioAttenuationHint),
@@ -445,19 +472,34 @@ function asio(ctx: Context): Child[] {
   ];
 }
 
+/**
+ * One group of settings: its heading on the left and its controls on the
+ * right, stacked under the heading in a narrow window. Groups are set apart
+ * by space and a hairline, not a box each.
+ */
+function group(title: string, children: Child[]): HTMLElement {
+  return h(
+    'section',
+    { class: 'panel settings-group' },
+    h('h2', { class: 'panel-title' }, title),
+    h('div', { class: 'settings-group-body' }, ...children),
+  );
+}
+
 export function settings(ctx: Context): Drawn {
   const t = text.settings;
   const { platform, driver } = ctx.snapshot;
   const element = h(
     'div',
     { class: 'settings' },
-    panel(t.startup, [autostart(ctx)]),
-    panel(t.language, [language(ctx)]),
-    panel(t.outputPath, [outputPath(ctx)]),
-    panel(t.routing, routing(ctx)),
-    panel(text.asio, asio(ctx)),
-    panel(t.update, [update(ctx)]),
-    panel(t.diagnostics, [
+    group(t.startup, [autostart(ctx)]),
+    group(t.language, [language(ctx)]),
+    group(text.skins.label, [skin(ctx)]),
+    group(t.outputPath, [outputPath(ctx)]),
+    group(t.routing, routing(ctx)),
+    group(text.asio, asio(ctx)),
+    group(t.update, [update(ctx)]),
+    group(t.diagnostics, [
       h('p', { class: 'body-text' }, t.recordHint),
       h(
         'div',
@@ -468,8 +510,8 @@ export function settings(ctx: Context): Drawn {
     h(
       'div',
       { class: 'settings-facts' },
-      panel(t.platform, [platform === null ? h('p', { class: 'muted' }, t.unknown) : facts(platformRows(platform))]),
-      panel(t.driver, [driver === null ? h('p', { class: 'muted' }, t.unknown) : facts(driverRows(driver))]),
+      group(t.platform, [platform === null ? h('p', { class: 'muted' }, t.unknown) : facts(platformRows(platform))]),
+      group(t.driver, [driver === null ? h('p', { class: 'muted' }, t.unknown) : facts(driverRows(driver))]),
     ),
   );
   return { element };

@@ -340,6 +340,9 @@ pub enum Arch {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
 pub struct Platform {
+    /// The PC's name as Windows shows it (COMPUTERNAME); empty when unknown.
+    #[serde(default)]
+    pub computer_name: String,
     pub os_build: u32,
     pub arch: Arch,
     pub test_signing: bool,

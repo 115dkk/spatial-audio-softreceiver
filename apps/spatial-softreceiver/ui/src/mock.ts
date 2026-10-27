@@ -978,6 +978,10 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
         state.language_choice = intent.value;
         state.language = intent.value ?? systemLanguage;
         return done;
+      case 'set_skin':
+        // As the supervisor: taken in every phase but quit, the error kept.
+        state.skin = intent.value;
+        return done;
       case 'set_output_path':
         // As the supervisor: only while stopped; a running engine refuses with a reason.
         if (phase.kind === 'running') return failed(say.disableBeforeChangingOutput, 'none');
@@ -1098,12 +1102,12 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
       // Like the supervisor, a snapshot lists the host's outputs afresh; a
       // refusal changed nothing, so its snapshot stays the same.
       if (outcome.kind !== 'refused') state.outputs = structuredClone(host.outputs);
-      if (outcome.kind === 'done' && intent.kind !== 'set_language') {
+      if (outcome.kind === 'done' && intent.kind !== 'set_language' && intent.kind !== 'set_skin') {
         kept = null;
         state.error = null;
       }
       if (outcome.kind === 'failed') kept = { message: outcome.message, next: outcome.next };
-      // A language change keeps the error and the notes, said again.
+      // A language or skin change keeps the error and the notes, said again.
       if (kept !== null) state.error = render(kept);
       if (notes !== null) state.notes = notes.map((note) => note[state.language]);
       // The shell replies first and publishes the snapshot after.

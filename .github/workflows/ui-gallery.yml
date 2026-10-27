@@ -71,7 +71,7 @@ jobs:
 
       - uses: ./.github/actions/ui-dist
 
-      - name: Every scene in Korean and English, light and dark (Playwright, Chromium)
+      - name: Every scene in every skin, Korean and English, light and dark (Playwright, Chromium)
         working-directory: apps/spatial-softreceiver/ui
         env:
           SSR_UI_SHOTS_DIR: ${{ runner.temp }}/ui-gallery
@@ -85,7 +85,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: ui-gallery
-          path: ${{ runner.temp }}/ui-gallery/*.png
+          path: ${{ runner.temp }}/ui-gallery
           if-no-files-found: error
 
   publish:
@@ -194,33 +194,38 @@ jobs:
             return 1
           }
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          node tools/ui-gallery-issue.mjs --shots "$RUNNER_TEMP/ui-gallery" \
-            --base "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$GALLERY_SHA/$DIR" \
-            --tree "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/$GALLERY_SHA/$DIR" \
-            --run "$run_url" --run-number "$GITHUB_RUN_NUMBER" \
-            --commit "$COMMIT" --source "$SOURCE" > "$RUNNER_TEMP/body.md"
-
           retry gh label create ui-gallery --force --color 0e8a16 \
             --description "화면 갤러리(ui-gallery.yml)가 여는 리뷰 이슈" >/dev/null
           # The list endpoint, not search: a just-created issue is not in the
           # search index yet, and a second issue for the same context would
           # follow. Every open issue, label or not, so a removed label does
           # not open a second one.
-          issue="$(retry gh issue list --state open --limit 5000 --json number,title \
-            --jq "map(select(.title == env.TITLE)) | .[0].number // empty")"
-          if [ -n "$issue" ]; then
-            retry gh issue edit "$issue" --body-file "$RUNNER_TEMP/body.md" >/dev/null
-            retry gh issue comment "$issue" --body "실행 [#$GITHUB_RUN_NUMBER]($run_url)의 갤러리로 본문을 바꿨습니다(커밋 \`${COMMIT:0:7}\`)." >/dev/null
-            echo "Updated issue #$issue"
-          else
-            url="$(retry gh issue create --title "$TITLE" --label ui-gallery --body-file "$RUNNER_TEMP/body.md")"
-            issue="${url##*/}"
-            echo "Opened issue #$issue"
-            if [ "$EVENT" = pull_request ]; then
-              retry gh pr comment "$PR" --body "이 PR의 화면 갤러리: #$issue (화면이 바뀌어 다시 찍을 때마다 그 이슈의 본문이 바뀝니다)" >/dev/null
+          # One issue per skin (ADR 0041): the standard skin keeps the plain
+          # title, the others add their name. Three skins do not fit one body.
+          while IFS=$'\t' read -r skin name <&3; do
+            if [ "$skin" = standard ]; then SKIN_TITLE="$TITLE"; else SKIN_TITLE="$TITLE · $name"; fi
+            export SKIN_TITLE
+            node tools/ui-gallery-issue.mjs --shots "$RUNNER_TEMP/ui-gallery" --skin "$skin" \
+              --base "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$GALLERY_SHA/$DIR" \
+              --tree "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/$GALLERY_SHA/$DIR" \
+              --run "$run_url" --run-number "$GITHUB_RUN_NUMBER" \
+              --commit "$COMMIT" --source "$SOURCE" > "$RUNNER_TEMP/body.md"
+            issue="$(retry gh issue list --state open --limit 5000 --json number,title \
+              --jq "map(select(.title == env.SKIN_TITLE)) | .[0].number // empty")"
+            if [ -n "$issue" ]; then
+              retry gh issue edit "$issue" --body-file "$RUNNER_TEMP/body.md" >/dev/null
+              retry gh issue comment "$issue" --body "실행 [#$GITHUB_RUN_NUMBER]($run_url)의 갤러리로 본문을 바꿨습니다(커밋 \`${COMMIT:0:7}\`)." >/dev/null
+              echo "Updated issue #$issue ($skin)"
+            else
+              url="$(retry gh issue create --title "$SKIN_TITLE" --label ui-gallery --body-file "$RUNNER_TEMP/body.md")"
+              issue="${url##*/}"
+              echo "Opened issue #$issue ($skin)"
+              if [ "$EVENT" = pull_request ]; then
+                retry gh pr comment "$PR" --body "이 PR의 화면 갤러리, $name 스킨: #$issue (화면이 바뀌어 다시 찍을 때마다 그 이슈의 본문이 바뀝니다)" >/dev/null
+              fi
             fi
-          fi
-          echo "### 화면 갤러리: #$issue" >> "$GITHUB_STEP_SUMMARY"
+            echo "### 화면 갤러리, $name: #$issue" >> "$GITHUB_STEP_SUMMARY"
+          done 3< <(node tools/ui-gallery-issue.mjs --list-skins)
 
   close:
     name: close the closed PR's gallery
@@ -243,23 +248,27 @@ jobs:
         run: |
           bash .github/scripts/ui-gallery-branch.sh drop "pr-$PR" "" "ui-gallery: drop pr-$PR (closed)"
 
-      - name: Close the PR's review issue
+      - name: Close the PR's review issues (one per skin)
         env:
           GH_TOKEN: ${{ github.token }}
           TITLE: "화면 갤러리: PR #${{ github.event.pull_request.number }}"
           MERGED: ${{ github.event.pull_request.merged }}
         run: |
           set -euo pipefail
-          issue="$(gh issue list --state open --limit 5000 --json number,title \
-            --jq "map(select(.title == env.TITLE)) | .[0].number // empty")"
-          if [ -z "$issue" ]; then
-            echo "No open gallery issue titled '$TITLE'"
-            exit 0
-          fi
           if [ "$MERGED" = true ]; then
             why="PR이 머지되어 이 갤러리를 닫습니다. 지금 화면은 \"화면 갤러리: master\" 이슈에 있습니다."
           else
             why="PR이 닫혀 이 갤러리를 닫습니다."
           fi
-          gh issue close "$issue" --comment "$why 그림은 ui-gallery 브랜치에서 지웠습니다." >/dev/null
-          echo "Closed issue #$issue"
+          # The plain title and every "$TITLE · <skin name>"; a PR from
+          # before the skins has only the first.
+          issues="$(gh issue list --state open --limit 5000 --json number,title \
+            --jq '.[] | select(.title == env.TITLE or (.title | startswith(env.TITLE + " · "))) | .number')"
+          if [ -z "$issues" ]; then
+            echo "No open gallery issue titled '$TITLE'"
+            exit 0
+          fi
+          for issue in $issues; do
+            gh issue close "$issue" --comment "$why 사진은 ui-gallery 브랜치에서 지웠습니다." >/dev/null
+            echo "Closed issue #$issue"
+          done

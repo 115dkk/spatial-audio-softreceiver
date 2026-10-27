@@ -1,0 +1,153 @@
+/*
+ * The review page (`?gallery=1`): every scene of e2e/gallery.json, group by
+ * group, its languages side by side, for one skin at a time. Each frame draws
+ * the scene at its own window size and shows it at half that, so the small
+ * windows stay small. The page has its own few colours: no skin is loaded on
+ * it, only in its frames.
+ */
+
+.gallery {
+  --frame-scale: 0.5;
+  --gallery-bg: #f4f4f2;
+  --gallery-text: #1b1b1a;
+  --gallery-muted: #62625e;
+  --gallery-line: #d6d6d1;
+  color-scheme: light dark;
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--gallery-bg);
+  color: var(--gallery-text);
+  font-family: "IBM Plex Sans KR", "Malgun Gothic", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .gallery {
+    --gallery-bg: #121211;
+    --gallery-text: #ecece8;
+    --gallery-muted: #a2a29c;
+    --gallery-line: #3a3a37;
+  }
+}
+
+html.gallery-page,
+html.gallery-page body {
+  margin: 0;
+  background: var(--gallery-bg, #f4f4f2);
+}
+
+.gallery h1,
+.gallery h2,
+.gallery h3 {
+  margin: 0;
+}
+
+.gallery-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 24px;
+}
+
+.gallery h1 {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.gallery-skins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gallery-skins a {
+  color: var(--gallery-muted);
+  font-weight: 500;
+}
+
+.gallery-skins a[aria-current="page"] {
+  color: var(--gallery-text);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.gallery-group {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.gallery-group h2 {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--gallery-line);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.gallery-scene {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gallery-scene-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+}
+
+.gallery-scene h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gallery-scene code,
+.gallery-size {
+  font-family: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--gallery-muted);
+}
+
+.gallery-frames {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px 20px;
+}
+
+.gallery-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.gallery-frame a {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gallery-text);
+}
+
+.gallery-viewport {
+  width: calc(var(--frame-width) * var(--frame-scale) + 2px);
+  height: calc(var(--frame-height) * var(--frame-scale) + 2px);
+  overflow: hidden;
+  border: 1px solid var(--gallery-line);
+  border-radius: 6px;
+}
+
+.gallery-viewport iframe {
+  display: block;
+  border: 0;
+  transform: scale(var(--frame-scale));
+  transform-origin: 0 0;
+}

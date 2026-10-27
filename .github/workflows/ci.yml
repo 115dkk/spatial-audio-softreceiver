@@ -12,7 +12,7 @@ name: CI
 #   ui        the app's screens (apps/spatial-softreceiver/ui): fonts pinned
 #             by SHA-256, tsc, vitest, the generated TypeScript bindings and
 #             snapshot fixtures compared with ssr-types (tests/ui_contract.rs),
-#             and the screen gallery (every scene in Korean and English, light
+#             and the screen gallery (every scene in every skin, Korean and English, light
 #             and dark) as an artifact; ui-gallery.yml posts it to an issue
 #   test      cargo test on Linux, Windows Server 2022 and 2025 (x64) and
 #             Windows 11 (ARM64), debug and release; on Windows also the app
@@ -143,7 +143,7 @@ jobs:
       - name: The committed bindings and fixtures match ssr-types (tests/ui_contract.rs)
         run: cargo test -p ssr-types --features ts --test ui_contract --locked
 
-      # Every scene of ui/e2e/gallery.json in Korean and English, light and
+      # Every scene of ui/e2e/gallery.json in every skin (ADR 0041), Korean and English, light and
       # dark: no console error, the font loaded, no sideways scroll and no
       # Hangul on an English screen. ui-gallery.yml takes the same pictures
       # and posts them to a review issue.

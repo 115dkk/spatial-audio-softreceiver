@@ -1,5 +1,7 @@
 {
-  "$comment": "화면 갤러리의 장면 표. e2e/gallery.spec.ts가 장면마다 languages × schemes 장을 <name>.<language>.<scheme>.png로 찍고, tools/ui-gallery-issue.mjs가 같은 표로 찍힌 파일을 대조해 리뷰 이슈 본문을 만듭니다. fixture는 fixtures/index.json의 이름이고 모든 이름이 한 장면 이상에 나와야 합니다. tab은 status, profile, upmix, settings 중 하나(마법사와 종료 화면은 null). shell은 앱 셸이 OS에서 읽는 값(로그인 자동 시작, 업데이트)을 정합니다. hold가 true면 의도가 끝나지 않아 버튼이 진행 중인 모습으로 남습니다. steps는 찍기 전에 차례로 하는 일입니다: click은 그 선택자를 누르고 focus는 그 선택자에 키보드 초점을 두며 wait는 그 선택자가 보일 때까지 기다립니다.",
+  "$comment": "화면 갤러리의 장면 표. e2e/gallery.spec.ts가 장면마다 skins × languages × schemes 장을 <skin>/<name>.<language>.<scheme>.png로 찍고(스킨은 ADR 0041), tools/ui-gallery-issue.mjs가 같은 표로 찍힌 파일을 대조해 리뷰 이슈 본문을 만듭니다. fixture는 fixtures/index.json의 이름이고 모든 이름이 한 장면 이상에 나와야 합니다. tab은 status, profile, upmix, settings 중 하나(마법사와 종료 화면은 null). shell은 앱 셸이 OS에서 읽는 값(로그인 자동 시작, 업데이트)을 정합니다. hold가 true면 의도가 끝나지 않아 버튼이 진행 중인 모습으로 남습니다. steps는 찍기 전에 차례로 하는 일입니다: click은 그 선택자를 누르고 focus는 그 선택자에 키보드 초점을 두며 wait는 그 선택자가 보일 때까지 기다립니다. 컨트롤이 달라 그 단계를 따를 수 없는 스킨은 skinSteps에 스킨 이름을 키로 자기 단계를 둡니다.",
+  "skins": ["standard", "panel", "console"],
+  "skinNames": { "standard": "기본", "panel": "전면 패널", "console": "콘솔" },
   "languages": ["ko", "en"],
   "languageNames": { "ko": "한국어", "en": "English" },
   "schemeNames": { "light": "밝게", "dark": "어둡게" },
@@ -46,7 +48,7 @@
       "title": "출력 목록을 연 상태",
       "fixture": "ready",
       "tab": "status",
-      "steps": [{ "click": "[data-key=\"outputs-toggle\"]" }, { "wait": ".output-list" }]
+      "steps": [{ "click": "[data-key=\"outputs-toggle\"]" }, { "wait": "[data-region=\"output-list\"]" }]
     },
     {
       "name": "ready-turning-on",
@@ -70,7 +72,7 @@
       "title": "헤드폰 탭, BRIR 없음",
       "fixture": "ready",
       "tab": "profile",
-      "steps": [{ "click": "[data-key=\"profile-tab-headphones\"]" }, { "wait": "#profile-panel-headphones" }]
+      "steps": [{ "click": "[data-key=\"profile-tab-headphones\"]" }, { "wait": "[data-region=\"profile-headphones\"]" }]
     },
     { "name": "ready-headphones-profile", "group": "profile", "title": "헤드폰 사용 중, 꺼짐", "fixture": "ready-headphones", "tab": "profile" },
     {
@@ -79,7 +81,7 @@
       "title": "헤드폰 사용 중, 스피커 탭(7.1 배치가 남아 있음)",
       "fixture": "ready-headphones",
       "tab": "profile",
-      "steps": [{ "click": "[data-key=\"profile-tab-speakers\"]" }, { "wait": "#profile-panel-speakers" }]
+      "steps": [{ "click": "[data-key=\"profile-tab-speakers\"]" }, { "wait": "[data-region=\"profile-speakers\"]" }]
     },
     { "name": "ready-speakers-profile", "group": "profile", "title": "스피커, SECS 2R 보정", "fixture": "ready-speakers", "tab": "profile" },
     { "name": "ready-layout-unsupported", "group": "profile", "title": "스피커 7.1.4, 장치가 배치를 받지 않음", "fixture": "ready-layout-unsupported", "tab": "profile" },
@@ -101,7 +103,8 @@
       "title": "(i) 툴팁을 키보드 초점으로 연 상태",
       "fixture": "running-upmix-pass",
       "tab": "upmix",
-      "steps": [{ "focus": "[data-key=\"upmix-info\"]" }, { "wait": ".info-tip-wrap.is-open [role=\"tooltip\"]" }]
+      "steps": [{ "focus": "[data-key=\"upmix-info\"]" }, { "wait": ".info-tip-wrap.is-open [role=\"tooltip\"]" }],
+      "skinSteps": { "panel": [{ "wait": "#upmix-info" }] }
     },
     { "name": "ready-upmix-failed", "group": "upmix", "title": "세 번 멈춰 꺼짐", "fixture": "ready-upmix-failed", "tab": "upmix" },
     {
@@ -142,7 +145,7 @@
       "title": "거절된 의도의 띠(진단 녹음)",
       "fixture": "ready",
       "tab": "settings",
-      "steps": [{ "click": "[data-key=\"record\"]" }, { "wait": ".banner" }]
+      "steps": [{ "click": "[data-key=\"record\"]" }, { "wait": "[data-region=\"error-band\"]" }]
     },
 
     { "name": "quit", "group": "quit", "title": "종료한 뒤", "fixture": "quit", "tab": null },
@@ -160,7 +163,8 @@
       "tab": "upmix",
       "size": [720, 480],
       "schemes": ["light"],
-      "steps": [{ "focus": "[data-key=\"upmix-info\"]" }, { "wait": ".info-tip-wrap.is-open [role=\"tooltip\"]" }]
+      "steps": [{ "focus": "[data-key=\"upmix-info\"]" }, { "wait": ".info-tip-wrap.is-open [role=\"tooltip\"]" }],
+      "skinSteps": { "panel": [{ "wait": "#upmix-info" }] }
     },
     { "name": "ready-settings-720x480", "group": "window", "title": "설정, 720×480", "fixture": "ready", "tab": "settings", "size": [720, 480], "schemes": ["light"] },
     { "name": "setup-choose-output-720x480", "group": "window", "title": "출력 고르기, 720×480", "fixture": "setup-choose-output", "tab": null, "size": [720, 480], "schemes": ["light"] }

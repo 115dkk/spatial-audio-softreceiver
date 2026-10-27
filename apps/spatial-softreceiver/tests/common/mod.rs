@@ -68,6 +68,7 @@ impl Host for FakeHost {
     /// A supported, test-signing PC.
     fn platform(&mut self) -> Platform {
         Platform {
+            computer_name: "TEST-PC".to_owned(),
             os_build: 26_100,
             arch: Arch::X64,
             test_signing: true,

@@ -207,6 +207,7 @@ mod tests {
 
     fn platform() -> Platform {
         Platform {
+            computer_name: "TEST-PC".to_owned(),
             os_build: 26_100,
             arch: Arch::X64,
             test_signing: true,

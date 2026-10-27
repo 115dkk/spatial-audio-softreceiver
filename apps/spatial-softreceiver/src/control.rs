@@ -39,7 +39,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use ssr_guard::marker::{self, Marker};
-use ssr_types::app::{Heartbeat, Intent, Language, NextAction, Phase, Snapshot, UserError};
+use ssr_types::app::{Heartbeat, Intent, Language, NextAction, Phase, Skin, Snapshot, UserError};
 use ssr_types::{EngineStatus, Host};
 use supervisor::machine::Config;
 use supervisor::upmix::PluginHost;
@@ -635,12 +635,14 @@ fn quit_snapshot(language: Language) -> Snapshot {
     Snapshot {
         language,
         language_choice: None,
+        skin: Skin::Standard,
         phase: Phase::Quit,
         profile: supervisor::machine::default_profile_view_for(language),
         upmix: supervisor::default_upmix_view(),
         routing: ssr_types::app::RoutingView::default(),
         asio: Default::default(),
         engine: None,
+        health: Default::default(),
         outputs: Vec::new(),
         chosen_output: None,
         output_path: ssr_types::app::OutputPath::Wasapi,

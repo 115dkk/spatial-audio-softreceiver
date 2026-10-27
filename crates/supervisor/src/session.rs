@@ -348,6 +348,7 @@ impl Session {
         Snapshot {
             language: ssr_types::app::Language::Ko,
             language_choice: None,
+            skin: ssr_types::app::Skin::Standard,
             output_path: ssr_types::app::OutputPath::Wasapi,
             phase,
             profile: crate::machine::default_profile_view(),
@@ -355,6 +356,7 @@ impl Session {
             routing: ssr_types::app::RoutingView::default(),
             asio: self.asio,
             engine: Some(status),
+            health: Default::default(),
             outputs: Vec::new(),
             chosen_output: None,
             driver: None,

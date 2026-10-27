@@ -1,27 +1,30 @@
 // The screen gallery (`?gallery=1`): every screen state drawn by the real
 // screen code over the mock supervisor, from the scene table e2e/gallery.json.
 //
-// - `?gallery=1&scene=<name>&lang=<ko|en>` draws one scene as the whole
-//   window: its fixture in that language, its tab and shell, then its steps.
+// - `?gallery=1&scene=<name>&lang=<ko|en>[&skin=<skin>]` draws one scene as
+//   the whole window: its fixture in that language, its tab and shell, then
+//   its steps (the skin's own steps when the table gives them), in the skin
+//   (standard when not given, ADR 0041).
 //   When everything is drawn and the fonts are in, <html> gets
 //   `data-gallery-ready="true"`; that is what e2e/gallery.spec.ts waits for
 //   before it takes the picture. A scene that cannot be drawn throws.
-// - `?gallery=1&fixture=<name>[&lang=…][&tab=…]` draws one fixture alone.
-// - `?gallery=1` alone is the page a person reads: every scene, group by
-//   group, in each language side by side.
+// - `?gallery=1&fixture=<name>[&lang=…][&tab=…][&skin=…]` draws one fixture alone.
+// - `?gallery=1[&skin=…]` alone is the page a person reads: every scene, group
+//   by group, in each language side by side, in one skin.
 //
 // In a person's browser the running fixtures' meters move (the object map
 // turns) and a plugin host that starts comes up; under automation
 // (`navigator.webdriver`, the screenshots) both hold still so every shot is
 // the fixture as written.
 
-import { mountApp } from './app';
-import type { Language } from './bindings';
+import './gallery.css';
+import type { Language, Skin } from './bindings';
 import { h } from './dom';
 import { fixture } from './fixtures';
 import { type GalleryShell, createMockApi } from './mock';
-import { text } from './text';
+import { setLanguage, text } from './text';
 import type { Tab } from './screens/common';
+import { SKINS, isSkin, loadSkin } from './skins';
 import table from '../e2e/gallery.json';
 
 type Scheme = 'light' | 'dark';
@@ -37,6 +40,8 @@ interface SceneEntry {
   shell?: GalleryShell;
   hold?: boolean;
   steps?: Step[];
+  /** A skin whose controls differ gives its own steps for the same state. */
+  skinSteps?: Partial<Record<Skin, Step[]>>;
   size?: [number, number];
   schemes?: Scheme[];
 }
@@ -59,6 +64,7 @@ export interface Scene {
   shell: GalleryShell;
   hold: boolean;
   steps: Step[];
+  skinSteps: Partial<Record<Skin, Step[]>>;
   size: [width: number, height: number];
   schemes: Scheme[];
 }
@@ -75,6 +81,7 @@ export const scenes: readonly Scene[] = scenesTable.scenarios.map((entry) => ({
   shell: entry.shell ?? scenesTable.defaults.shell,
   hold: entry.hold ?? false,
   steps: entry.steps ?? [],
+  skinSteps: entry.skinSteps ?? {},
   size: entry.size ?? scenesTable.defaults.size,
   schemes: entry.schemes ?? scenesTable.defaults.schemes,
 }));
@@ -83,6 +90,12 @@ export const scenes: readonly Scene[] = scenesTable.scenarios.map((entry) => ({
 const WAIT_MS = 5000;
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+function skinParam(value: string | null): Skin {
+  if (value === null) return 'standard';
+  if (isSkin(value)) return value;
+  throw new Error(`gallery: unknown skin ${value}`);
+}
 
 function language(value: string | null): Language {
   if (value === null) return 'ko';
@@ -129,44 +142,50 @@ async function ready(): Promise<void> {
   document.documentElement.dataset.galleryReady = 'true';
 }
 
-/** Draws the fixture `name` in `lang` as the whole window over a mock, as the app would. */
+/** Draws the fixture `name` in `lang` and `skin` as the whole window over a mock, as the app would. */
 async function drawWindow(
   root: HTMLElement,
   name: string,
   lang: Language,
+  skin: Skin,
   tab: Tab | null | undefined,
   options: { shell?: GalleryShell; hold?: boolean } = {},
 ) {
   const still = navigator.webdriver;
-  const api = createMockApi(fixture(name, lang), {
+  // The fixtures are the supervisor's snapshots with the default skin; the
+  // skin drawn is the one the snapshot says is chosen.
+  const start = { ...fixture(name, lang), skin };
+  const api = createMockApi(start, {
     meters: !still,
     latencyMs: 400,
     upmixStartMs: still ? null : 800,
     ...options,
   });
-  const app = mountApp(root, api, tab === null || tab === undefined ? {} : { tab });
+  const module = await loadSkin(skin);
+  document.documentElement.dataset.skin = skin;
+  const app = module.mount(root, api, tab === null || tab === undefined ? {} : { tab });
   app.draw(await api.snapshot());
   await api.onSnapshot(app.draw);
   await api.onMeters(app.updateMeters);
 }
 
-async function scenePage(root: HTMLElement, name: string, lang: Language): Promise<void> {
+async function scenePage(root: HTMLElement, name: string, lang: Language, skin: Skin): Promise<void> {
   const scene = scenes.find((candidate) => candidate.name === name);
   if (scene === undefined) throw new Error(`gallery: no scene named ${name} in e2e/gallery.json`);
-  await drawWindow(root, scene.fixture, lang, scene.tab, { shell: scene.shell, hold: scene.hold });
+  await drawWindow(root, scene.fixture, lang, skin, scene.tab, { shell: scene.shell, hold: scene.hold });
   // The shell's autostart and updater answers land before the first step.
   await new Promise((resolve) => setTimeout(resolve, 0));
-  for (const step of scene.steps) await run(step, scene.name);
+  for (const step of scene.skinSteps[skin] ?? scene.steps) await run(step, scene.name);
   await ready();
 }
 
-function sceneUrl(scene: Scene, lang: Language): string {
-  return `?gallery=1&scene=${encodeURIComponent(scene.name)}&lang=${lang}`;
+function sceneUrl(scene: Scene, lang: Language, skin: Skin): string {
+  return `?gallery=1&scene=${encodeURIComponent(scene.name)}&lang=${lang}&skin=${skin}`;
 }
 
-function frame(scene: Scene, lang: Language): HTMLElement {
+function frame(scene: Scene, lang: Language, skin: Skin): HTMLElement {
   const [width, height] = scene.size;
-  const url = sceneUrl(scene, lang);
+  const url = sceneUrl(scene, lang, skin);
   const label = scenesTable.languageNames[lang];
   const viewport = h(
     'div',
@@ -183,9 +202,24 @@ function frame(scene: Scene, lang: Language): HTMLElement {
   );
 }
 
-function listPage(root: HTMLElement): void {
+function listPage(root: HTMLElement, skin: Skin): void {
   document.documentElement.classList.add('gallery-page');
-  const page = h('div', { class: 'gallery' }, h('h1', null, text.gallery.title));
+  setLanguage('ko');
+  const skins = h('ul', { class: 'gallery-skins' });
+  for (const other of SKINS) {
+    const link = h('a', { href: `?gallery=1&skin=${other}`, 'aria-current': other === skin ? 'page' : null }, text.skins[other]);
+    skins.append(h('li', null, link));
+  }
+  const page = h(
+    'div',
+    { class: 'gallery' },
+    h(
+      'header',
+      { class: 'gallery-top' },
+      h('h1', null, text.gallery.title),
+      h('nav', { 'aria-label': text.skins.label }, skins),
+    ),
+  );
   for (const group of scenesTable.groups) {
     const section = h('section', { class: 'gallery-group' }, h('h2', null, group.title));
     for (const scene of scenes.filter((candidate) => candidate.group === group.id)) {
@@ -199,9 +233,9 @@ function listPage(root: HTMLElement): void {
             { class: 'gallery-scene-head' },
             h('h3', null, scene.title),
             h('code', null, scene.name),
-            h('span', { class: 'muted small num' }, `${width}×${height}`),
+            h('span', { class: 'gallery-size' }, `${width}×${height}`),
           ),
-          h('div', { class: 'gallery-frames' }, ...scenesTable.languages.map((lang) => frame(scene, lang))),
+          h('div', { class: 'gallery-frames' }, ...scenesTable.languages.map((lang) => frame(scene, lang, skin))),
         ),
       );
     }
@@ -213,12 +247,13 @@ function listPage(root: HTMLElement): void {
 export async function gallery(root: HTMLElement, params: URLSearchParams, tab: Tab | undefined): Promise<void> {
   const scene = params.get('scene');
   const name = params.get('fixture');
+  const skin = skinParam(params.get('skin'));
   if (scene !== null) {
-    await scenePage(root, scene, language(params.get('lang')));
+    await scenePage(root, scene, language(params.get('lang')), skin);
   } else if (name !== null) {
-    await drawWindow(root, name, language(params.get('lang')), tab);
+    await drawWindow(root, name, language(params.get('lang')), skin, tab);
     await ready();
   } else {
-    listPage(root);
+    listPage(root, skin);
   }
 }

@@ -133,6 +133,7 @@ impl WindowsHost {
 impl Host for WindowsHost {
     fn platform(&mut self) -> Platform {
         Platform {
+            computer_name: std::env::var("COMPUTERNAME").unwrap_or_default(),
             os_build: os_build(),
             arch: native_arch(),
             test_signing: test_signing(),

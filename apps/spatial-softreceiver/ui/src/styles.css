@@ -1,42 +1,23 @@
 /*
- * Spatial SoftReceiver screen. Calm and dense like an instrument's front
- * panel: one accent, no ornament, numbers in tabular figures.
+ * Spatial SoftReceiver screen, the standard skin (ADR 0041): a quiet desktop
+ * utility. One readable column under a bar of tabs, generous type, numbers
+ * in tabular figures, and colour only where it means something.
  *
- * The only typeface is IBM Plex Sans KR (OFL-1.1), fetched by
- * tools/ui-fonts.mjs into public/fonts/ and pinned by SHA-256.
+ * Colour has three jobs and no others:
+ * - Interactive emphasis (the primary button, the chosen tab, checked
+ *   controls, the slider's fill, the focus ring) is ink in the light palette
+ *   and the teal in the dark one, where it reads as emitted light. Neither
+ *   ever tints an area.
+ * - State: on (green), warning (amber), stopped or failed (red).
+ * - Entrance identity on the object map (--lane-0..2), with the legend
+ *   naming each, so colour is never the only cue.
+ *
+ * Type: body 15 px, UI text (labels, rows, hints) never under 14 px, 13 px
+ * only for tags, units and scale ends and then in full ink, values 16 px
+ * and up, page titles 24 px. Grey is for text 14 px and larger.
+ *
+ * The typeface is declared once for every skin in src/base.css.
  */
-
-@font-face {
-  font-family: "IBM Plex Sans KR";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("/fonts/ibm-plex-sans-kr/IBMPlexSansKR-Regular.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "IBM Plex Sans KR";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("/fonts/ibm-plex-sans-kr/IBMPlexSansKR-Medium.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "IBM Plex Sans KR";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("/fonts/ibm-plex-sans-kr/IBMPlexSansKR-SemiBold.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "IBM Plex Sans KR";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("/fonts/ibm-plex-sans-kr/IBMPlexSansKR-Bold.woff2") format("woff2");
-}
 
 /* ---- Tokens ---------------------------------------------------------- */
 
@@ -45,64 +26,87 @@
 
   --font: "IBM Plex Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
 
-  --bg: #eef1f4;
+  /* Neutral grounds: no blue cast, white surfaces, hairlines. */
+  --bg: #f6f6f5;
   --surface: #ffffff;
-  --surface-sunk: #f6f8fa;
-  --text: #151a21;
-  --text-muted: #5b6674;
-  --line: #d8dee5;
-  --line-strong: #b4bec9;
-  --accent: #0b7285;
-  --accent-hover: #085f6f;
-  --accent-text: #ffffff;
-  --accent-soft: #e0f1f4;
-  --success: #2b8a3e;
-  --warning: #a85300;
-  --warning-soft: #fff2e0;
-  --error: #c42b2b;
-  --error-soft: #fcebea;
+  --surface-sunk: #f1f1ef;
+  --text: #1c1c1b;
+  --text-muted: #5d5d59;
+  --line: #e2e2df;
+  --line-strong: #c9c9c5;
+  /* The edge of a control that must be seen to be found (select, switch):
+     3:1 on the surface. */
+  --control-edge: #8a8a85;
 
-  /* Object map lanes (main, music, PASS). Checked as a set for colour
-     vision deficiency and contrast on --surface-sunk in each palette. */
-  --lane-0: #1098ad;
-  --lane-1: #6250d6;
-  --lane-2: #eb6834;
+  /* Interactive emphasis: ink. */
+  --mark: #1c1c1b;
+  --mark-text: #ffffff;
+  --primary: #1c1c1b;
+  --primary-hover: #3b3b38;
+  --primary-text: #ffffff;
+  --link: #1c1c1b;
+  --focus: #1c1c1b;
 
-  --radius: 8px;
+  /* State. */
+  --success: #2e7d46;
+  --warning: #965a00;
+  --warning-soft: #fbf1e2;
+  --error: #b42d14;
+  --error-soft: #fcece8;
+
+  /* Object map lanes (main, music, PASS): orchid, olive and raspberry. No
+     hue is shared with the teal, the state colours or purple to blue; the
+     set was checked for pairwise distance under protanopia, deuteranopia
+     and tritanopia and for 3:1 on --surface-sunk in each palette. */
+  --lane-0: #cc50ad;
+  --lane-1: #687300;
+  --lane-2: #820a4b;
+
+  --radius: 10px;
   --radius-control: 6px;
-  --nav-width: 184px;
+  --page-width: 1040px;
+  --gutter: 32px;
 
-  --size-xs: 12px;
-  --size-s: 13px;
-  --size-m: 14px;
-  --size-l: 16px;
-  --size-xl: 20px;
+  --size-tag: 13px;
+  --size-ui: 14px;
+  --size-body: 15px;
+  --size-value: 16px;
+  --size-value-l: 18px;
+  --size-state: 20px;
+  --size-title: 24px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
 
-    --bg: #0d1116;
-    --surface: #151b22;
-    --surface-sunk: #11161c;
-    --text: #e2e7ed;
-    --text-muted: #8f9aa8;
-    --line: #27303a;
-    --line-strong: #3a4552;
-    --accent: #3bc9db;
-    --accent-hover: #6bd8e6;
-    --accent-text: #062a30;
-    --accent-soft: #10303a;
-    --success: #5cc674;
-    --warning: #f0a33a;
-    --warning-soft: #2c2114;
-    --error: #ff7070;
-    --error-soft: #321a1c;
+    --bg: #0f1012;
+    --surface: #17191c;
+    --surface-sunk: #131517;
+    --text: #e7e8ea;
+    --text-muted: #9ea2a8;
+    --line: #2a2d31;
+    --line-strong: #3b3f45;
+    --control-edge: #6f747c;
 
-    --lane-0: #0ca5bb;
-    --lane-1: #8b7cf0;
-    --lane-2: #e0602a;
+    /* Interactive emphasis: the teal, as light on near-black. */
+    --mark: #3bc9db;
+    --mark-text: #06262b;
+    --primary: #3bc9db;
+    --primary-hover: #6bd8e6;
+    --primary-text: #06262b;
+    --link: #3bc9db;
+    --focus: #3bc9db;
+
+    --success: #63c27c;
+    --warning: #e3a03a;
+    --warning-soft: #2a2216;
+    --error: #ff7c62;
+    --error-soft: #33191a;
+
+    --lane-0: #fcaee5;
+    --lane-1: #c8d83c;
+    --lane-2: #e8528e;
   }
 }
 
@@ -120,8 +124,8 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  font-size: var(--size-m);
-  line-height: 1.5;
+  font-size: var(--size-body);
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -139,8 +143,22 @@ body {
 h1,
 h2,
 h3,
+h4,
 p {
   margin: 0;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  text-wrap: balance;
+}
+
+p,
+li,
+.hint {
+  text-wrap: pretty;
 }
 
 button,
@@ -151,7 +169,7 @@ select {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -160,15 +178,6 @@ select {
 }
 
 .muted {
-  color: var(--text-muted);
-}
-
-.small {
-  font-size: var(--size-xs);
-}
-
-.label {
-  font-size: var(--size-xs);
   color: var(--text-muted);
 }
 
@@ -184,28 +193,24 @@ select {
 /* ---- Frame ----------------------------------------------------------- */
 
 .app.mode-main {
-  display: grid;
-  grid-template-columns: var(--nav-width) minmax(0, 1fr);
   min-height: 100vh;
 }
 
 .main {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 20px 24px 32px;
+  padding: 28px var(--gutter) 56px;
 }
 
-.mode-wizard .main {
-  width: 100%;
-  max-width: 720px;
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: var(--page-width);
   margin: 0 auto;
-  padding-top: 28px;
 }
 
 .main-head h1 {
-  font-size: var(--size-xl);
+  font-size: var(--size-title);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -214,95 +219,106 @@ select {
   min-width: 0;
 }
 
-/* ---- Navigation ------------------------------------------------------ */
+/* ---- The bar of tabs ------------------------------------------------- */
 
-.nav-rail {
-  background: var(--surface);
-  border-right: 1px solid var(--line);
-}
-
-.nav {
+.app-bar {
   position: sticky;
   top: 0;
-  height: 100vh;
+  z-index: 10;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.app-bar-inner {
   display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding: 18px 12px 16px;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0 28px;
+  max-width: calc(var(--page-width) + 2 * var(--gutter));
+  min-height: 56px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: var(--size-m);
+  gap: 10px;
+  font-size: var(--size-body);
   font-weight: 600;
   line-height: 1.25;
-}
-
-.nav .brand {
-  padding: 0 6px;
+  white-space: nowrap;
 }
 
 .brand-mark {
   flex: none;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
+}
+
+.nav {
+  display: flex;
 }
 
 .nav-list {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+.nav-list li {
+  display: flex;
+}
+
 .nav-item {
   position: relative;
-  width: 100%;
-  min-height: 34px;
+  min-height: 56px;
   padding: 0 12px;
   border: 0;
-  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-muted);
+  font-size: var(--size-body);
   font-weight: 500;
-  text-align: left;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .nav-item:hover {
-  background: var(--bg);
   color: var(--text);
 }
 
+/* The open tab: ink (teal in the dark) under it and a heavier word. */
 .nav-item[aria-current="page"] {
-  background: var(--accent-soft);
   color: var(--text);
   font-weight: 600;
 }
 
-.nav-item[aria-current="page"]::before {
+.nav-item[aria-current="page"]::after {
   content: "";
   position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  border-radius: 2px;
-  background: var(--accent);
+  right: 12px;
+  bottom: -1px;
+  left: 12px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--mark);
 }
 
+.nav-item:focus-visible {
+  outline-offset: -6px;
+}
+
+/* Away from the status screen, the power state in one small word. */
 .nav-power {
-  margin-top: auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 6px;
-  font-size: var(--size-s);
+  margin-left: auto;
+  font-size: var(--size-ui);
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 /* ---- Lamps and tones ------------------------------------------------- */
@@ -313,6 +329,12 @@ select {
   height: 8px;
   border-radius: 50%;
   background: var(--line-strong);
+}
+
+/* Off is a ring, so off and on differ in more than colour. */
+.tone-off .lamp {
+  border: 1.5px solid var(--control-edge);
+  background: transparent;
 }
 
 .tone-on .lamp {
@@ -333,47 +355,64 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 32px;
-  padding: 0 14px;
+  min-height: 36px;
+  padding: 0 16px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--text);
+  font-size: var(--size-body);
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .button:hover:not(:disabled) {
-  background: var(--bg);
+  border-color: var(--control-edge);
+  background: var(--surface-sunk);
 }
 
 .button.primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-text);
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-text);
 }
 
 .button.primary:hover:not(:disabled) {
-  border-color: var(--accent-hover);
-  background: var(--accent-hover);
+  border-color: var(--primary-hover);
+  background: var(--primary-hover);
 }
 
+/* A text action (바꾸기, 닫기, 지우기): ink and underlined, teal in the dark. */
 .button.quiet {
-  min-height: 28px;
+  min-height: 32px;
   padding: 0 8px;
   border-color: transparent;
   background: transparent;
-  color: var(--accent);
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 4px;
 }
 
 .button.quiet:hover:not(:disabled) {
-  background: var(--accent-soft);
+  border-color: transparent;
+  background: var(--surface-sunk);
+  text-decoration-color: currentColor;
 }
 
 .button:disabled {
   cursor: default;
-  opacity: 0.5;
+  opacity: 0.45;
+}
+
+/* A primary action that cannot be taken now is drawn as an outline, so a
+   dimmed fill never reads as a tinted area. The one being sent keeps its
+   fill under the spinner. */
+.button.primary:disabled:not([aria-busy="true"]) {
+  border-color: var(--control-edge);
+  background: transparent;
+  color: var(--text);
 }
 
 .button[aria-busy="true"] {
@@ -423,12 +462,28 @@ select {
 input[type="range"],
 input[type="checkbox"],
 input[type="radio"] {
-  accent-color: var(--accent);
+  accent-color: var(--mark);
+}
+
+select {
+  min-height: 36px;
+  max-width: 100%;
+  padding: 0 10px;
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  font-size: var(--size-body);
+  cursor: pointer;
+}
+
+select:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 /* An on/off switch (role="switch"): the track and thumb, then the label, all
-   one button. Off is a hollow track with a muted thumb, on the accent with
-   the thumb at the right, so the two differ in more than colour. */
+   one button. Off is a hollow track with a grey thumb, on a filled track
+   with the thumb at the right, so the two differ in more than colour. */
 .switch {
   display: inline-flex;
   align-items: center;
@@ -438,6 +493,7 @@ input[type="radio"] {
   border: 0;
   background: transparent;
   color: var(--text);
+  font-size: var(--size-body);
   font-weight: 500;
   text-align: left;
   cursor: pointer;
@@ -448,7 +504,7 @@ input[type="radio"] {
 }
 
 .switch:focus-visible .switch-track {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -457,9 +513,9 @@ input[type="radio"] {
   flex: none;
   width: 36px;
   height: 20px;
-  border: 1px solid var(--text-muted);
+  border: 1px solid var(--control-edge);
   border-radius: 999px;
-  background: var(--surface-sunk);
+  background: var(--surface);
   transition:
     background-color 120ms ease,
     border-color 120ms ease;
@@ -479,18 +535,18 @@ input[type="radio"] {
 }
 
 .switch[aria-checked="true"] .switch-track {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--mark);
+  background: var(--mark);
 }
 
 .switch[aria-checked="true"] .switch-thumb {
   transform: translateX(16px);
-  background: var(--accent-text);
+  background: var(--mark-text);
 }
 
 .switch:disabled {
   cursor: default;
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
 .switch[aria-busy="true"] {
@@ -513,7 +569,8 @@ input[type="radio"] {
 }
 
 .hint {
-  font-size: var(--size-s);
+  max-width: 70ch;
+  font-size: var(--size-ui);
   color: var(--text-muted);
 }
 
@@ -521,33 +578,34 @@ input[type="radio"] {
 
 .panel {
   min-width: 0;
-  padding: 16px;
+  padding: 20px 24px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
 }
 
-.panel-title {
-  margin-bottom: 10px;
-  font-size: var(--size-s);
+.panel-title,
+.section-title {
+  margin-bottom: 12px;
+  font-size: var(--size-value);
   font-weight: 600;
-  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 .body-text {
-  max-width: 64ch;
+  max-width: 70ch;
   line-height: 1.65;
 }
 
 .body-text + .body-text {
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .facts {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   margin: 14px 0 0;
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
 }
 
 .fact {
@@ -557,7 +615,7 @@ input[type="radio"] {
 .facts dt,
 .facts dd {
   margin: 0;
-  padding: 6px 0;
+  padding: 7px 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -570,23 +628,23 @@ input[type="radio"] {
   font-variant-numeric: tabular-nums;
 }
 
+/* A small mark beside a name: an outline and full ink, never a tint. */
 .tag {
   display: inline-block;
-  padding: 2px 8px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: var(--size-xs);
+  color: var(--text);
+  font-size: var(--size-tag);
   font-weight: 500;
+  line-height: 1.6;
   white-space: nowrap;
 }
 
 /* A tag that marks something not there yet, not something chosen. */
 .tag.tag-quiet {
-  padding: 1px 7px;
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
-  color: var(--text-muted);
+  border-style: dashed;
+  border-color: var(--control-edge);
 }
 
 /* ---- Error band and notes -------------------------------------------- */
@@ -613,8 +671,8 @@ input[type="radio"] {
   display: grid;
   grid-template-columns: 4px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding-right: 12px;
+  gap: 14px;
+  padding-right: 14px;
   border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent);
   border-radius: var(--radius-control);
   background: var(--tone-soft);
@@ -632,7 +690,7 @@ input[type="radio"] {
 }
 
 .banner-text {
-  padding: 10px 0;
+  padding: 12px 0;
 }
 
 .banner-message {
@@ -641,7 +699,7 @@ input[type="radio"] {
 
 .banner-hint {
   margin-top: 2px;
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
   color: var(--text-muted);
 }
 
@@ -649,7 +707,7 @@ input[type="radio"] {
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
   color: var(--text-muted);
 }
 
@@ -659,17 +717,37 @@ input[type="radio"] {
 
 /* ---- Wizard ---------------------------------------------------------- */
 
+/* One centred column that sits a little below the top. */
+.mode-wizard .main {
+  padding-top: clamp(32px, 10vh, 104px);
+}
+
+.mode-wizard .page {
+  max-width: 640px;
+}
+
+.wizard-head {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .wizard-brand {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 4px 12px;
+}
+
+.wizard-brand .muted {
+  font-size: var(--size-ui);
 }
 
 .steps {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  margin: 20px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -679,14 +757,14 @@ input[type="radio"] {
   align-items: center;
   gap: 8px;
   padding-top: 10px;
-  border-top: 3px solid var(--line);
+  border-top: 2px solid var(--line);
   color: var(--text-muted);
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
 }
 
 .step.done,
 .step.current {
-  border-top-color: var(--accent);
+  border-top-color: var(--mark);
   color: var(--text);
 }
 
@@ -702,47 +780,47 @@ input[type="radio"] {
   height: 22px;
   border: 1px solid var(--line-strong);
   border-radius: 50%;
-  font-size: var(--size-xs);
+  color: var(--text);
+  font-size: var(--size-tag);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
 .step.done .step-number {
-  border-color: transparent;
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-color: var(--mark);
 }
 
 .step.current .step-number {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-text);
+  border-color: var(--mark);
+  background: var(--mark);
+  color: var(--mark-text);
 }
 
 .wizard-card {
-  padding: 24px;
+  padding: 28px 32px;
 }
 
 .wizard-card .button {
-  min-height: 36px;
-  padding: 0 18px;
+  min-height: 40px;
+  padding: 0 20px;
 }
 
 .wizard-title {
-  margin-bottom: 12px;
-  font-size: var(--size-xl);
+  margin-bottom: 14px;
+  font-size: 22px;
   font-weight: 600;
   line-height: 1.35;
 }
 
 .endpoint-names {
   display: grid;
-  gap: 4px;
-  margin: 12px 0 0;
-  padding: 10px 12px;
+  gap: 6px;
+  margin: 16px 0 0;
+  padding: 12px 14px;
   border-radius: var(--radius-control);
   background: var(--surface-sunk);
   list-style: none;
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
 }
 
 .endpoint-names li {
@@ -756,7 +834,7 @@ input[type="radio"] {
 }
 
 .output-list {
-  margin: 14px 0 0;
+  margin: 16px 0 0;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
@@ -768,8 +846,8 @@ input[type="radio"] {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 48px;
-  padding: 8px 12px;
+  min-height: 52px;
+  padding: 8px 14px;
 }
 
 .output-row + .output-row {
@@ -794,39 +872,64 @@ input[type="radio"] {
   gap: 16px;
 }
 
-.status-head-row {
+/* The summary line: the switch, then label-over-value stops that wrap as
+   the window narrows. */
+.summary-line {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 16px 28px;
-  /* The output's divider sits in the gap before it; when the output wraps
-     to a line of its own (a longer state line, a narrower window), the
-     divider falls outside the row and is clipped. The margin keeps focus
-     rings. */
-  overflow: clip;
-  overflow-clip-margin: 6px;
+  align-items: flex-start;
+  gap: 16px 32px;
 }
 
+/* The switch stands level with the first line of facts, however many lines
+   they wrap onto. */
 .button.power {
   min-width: 112px;
   min-height: 48px;
-  font-size: var(--size-l);
+  margin-top: 4px;
+  font-size: var(--size-value);
   font-weight: 600;
 }
 
-.power-state,
-.output-state {
+.summary-facts {
+  display: flex;
+  flex: 1 1 420px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 14px 36px;
+  min-width: 0;
+  margin: 0;
+}
+
+.summary-item {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
+.summary-label {
+  font-size: var(--size-ui);
+  color: var(--text-muted);
+}
+
+.summary-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  min-height: 32px;
+  margin: 0;
+  font-size: var(--size-value-l);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
 .state-word {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--size-xl);
+  font-size: var(--size-state);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -836,88 +939,135 @@ input[type="radio"] {
   height: 10px;
 }
 
-.power-state {
-  padding-right: 29px;
+.output-current.is-missing {
+  color: var(--text-muted);
 }
 
-.output-state {
-  flex: 1 1 240px;
-  margin-left: -29px;
-  padding-left: 28px;
-  border-left: 1px solid var(--line);
+.outputs-toggle {
+  margin-left: -4px;
 }
 
-.output-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
+.profile-kind {
+  font-weight: 600;
 }
 
-.output-current {
-  font-size: var(--size-l);
-  font-weight: 500;
+.summary-profile .tag {
+  align-self: center;
+}
+
+/* Clean: the word alone. Dropped out: the warning lamp before the count. */
+.summary-health .lamp {
+  display: none;
+}
+
+.summary-health.tone-warning .lamp {
+  display: block;
+}
+
+.summary-note {
+  margin-top: 14px;
+  font-size: var(--size-ui);
+  color: var(--text-muted);
 }
 
 .status-outputs .output-list {
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
-.status-body {
-  display: grid;
-  gap: 16px;
+/* Off or stopped, the summary is the page: what would play where, and the
+   one action, a size larger. */
+.status.is-off .summary {
+  padding: 28px;
 }
 
-@container (min-width: 880px) {
-  .status-body.with-meters {
-    grid-template-columns: minmax(0, 1fr) 248px;
-    align-items: start;
-  }
+.status.is-off .summary-value {
+  font-size: var(--size-state);
 }
 
-@container (max-width: 600px) {
-  .endpoint-card .card-format {
-    font-size: var(--size-m);
-  }
+.status.is-off .button.power {
+  min-width: 128px;
+  min-height: 52px;
+  font-size: 17px;
 }
 
-/* The entrance cards side by side, and the ASIO line under them while it
-   stands. */
-.entrances {
+/* Off: the entrances by name, quietly, under the summary. */
+.entrance-line {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  padding: 0 4px;
+  font-size: var(--size-ui);
+}
+
+.entrance-line-label {
+  color: var(--text-muted);
+}
+
+.entrance-line-sep {
+  color: var(--text-muted);
+}
+
+/* The entrances as rows: name and purpose on the left, what comes in on
+   the right; stacked in a narrow window. */
+.entrances {
+  padding-bottom: 6px;
+}
+
+.entrances .section-title {
+  margin-bottom: 4px;
+}
+
+.endpoint-card,
+.asio-line {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 6px 28px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+
+@container (max-width: 620px) {
+  .endpoint-card,
+  .asio-line {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.card-head {
   min-width: 0;
 }
 
-.entrance-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
+.card-title {
+  font-size: var(--size-body);
+  font-weight: 600;
+  line-height: 1.4;
 }
 
-.endpoint-card {
+.card-purpose {
+  font-size: var(--size-ui);
+  color: var(--text-muted);
+}
+
+.card-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-}
-
-.card-title {
-  font-size: var(--size-m);
-  font-weight: 600;
-  line-height: 1.35;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
 }
 
 .card-format {
-  font-size: var(--size-l);
+  font-size: var(--size-value-l);
   font-weight: 500;
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
 }
 
 .card-carrier {
-  margin-top: 2px;
+  margin-top: -4px;
+  font-size: var(--size-ui);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .card-carrier[hidden] {
@@ -925,26 +1075,21 @@ input[type="radio"] {
 }
 
 .endpoint-card.is-idle .card-format,
-.endpoint-card.is-off .card-format,
-.endpoint-card.is-off .card-title {
+.endpoint-card.is-off .card-format {
   color: var(--text-muted);
-}
-
-.endpoint-card.is-off {
-  background: var(--surface-sunk);
 }
 
 .card-upmix {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  color: var(--text-muted);
+  gap: 8px;
+  font-size: var(--size-ui);
   font-weight: 500;
 }
 
 /* The lamp stands at the first line when the name wraps. */
 .card-upmix .lamp {
-  margin-top: 5px;
+  margin-top: 7px;
 }
 
 /* The name, and under it why the sound now goes around the upmixer. */
@@ -955,6 +1100,7 @@ input[type="radio"] {
 }
 
 .card-upmix-reason {
+  color: var(--text-muted);
   font-weight: 400;
 }
 
@@ -963,11 +1109,11 @@ input[type="radio"] {
 }
 
 .card-warning {
-  padding: 6px 8px;
+  padding: 6px 10px;
   border-radius: var(--radius-control);
   background: var(--warning-soft);
   color: var(--warning);
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
   font-weight: 500;
 }
 
@@ -975,17 +1121,97 @@ input[type="radio"] {
   display: none;
 }
 
-/* The ASIO input (ADR 0025): a line under the entrance cards, as wide as
-   they are, its name over the state like the output in the head. The DAW's
-   program file reads like the output's name, the facts after it like the
-   upmix state's details. */
-.asio-line {
+/* Volume and the processing errors, side by side under the format. */
+.card-meta {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px 32px;
+  font-size: var(--size-ui);
 }
 
+.card-meta[hidden] {
+  display: none;
+}
+
+.card-rows {
+  margin: 0;
+}
+
+.card-rows .fact {
+  display: flex;
+  gap: 8px;
+}
+
+.card-rows dt,
+.card-rows dd {
+  margin: 0;
+}
+
+.card-meta-label {
+  color: var(--text-muted);
+}
+
+.card-meta-value {
+  color: var(--text);
+}
+
+.card-errors summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.card-errors summary::-webkit-details-marker {
+  display: none;
+}
+
+.card-errors.has-errors summary .card-meta-value {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+/* A small chevron says the count opens into its kinds. */
+.card-errors.has-errors summary::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 0 3px 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.card-errors.has-errors[open] summary::after {
+  margin-bottom: -2px;
+  transform: rotate(225deg);
+}
+
+.card-errors:not(.has-errors) summary {
+  cursor: default;
+  pointer-events: none;
+}
+
+.error-kinds {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.error-kinds li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 0;
+  color: var(--text-muted);
+}
+
+/* The ASIO input (ADR 0025): the last row, its name on the left like the
+   entrances'. The DAW's program file reads like a format, the facts after
+   it like the carrier. */
 .asio-state {
   display: flex;
   align-items: flex-start;
@@ -994,7 +1220,7 @@ input[type="radio"] {
 
 /* The lamp stands at the first line, centred on the program file. */
 .asio-state .lamp {
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 /* The dot before each fact stands in the gap to its left; the box clips the
@@ -1009,19 +1235,19 @@ input[type="radio"] {
 }
 
 .asio-client {
-  font-size: var(--size-l);
+  font-size: var(--size-value-l);
   font-weight: 500;
 }
 
 /* No DAW: one quiet line in body text. */
 .asio-state.tone-off .asio-client {
   color: var(--text-muted);
-  font-size: var(--size-m);
+  font-size: var(--size-body);
   font-weight: 400;
 }
 
 .asio-state.tone-off .lamp {
-  margin-top: 7px;
+  margin-top: 8px;
 }
 
 .asio-state.tone-error .asio-client {
@@ -1030,7 +1256,7 @@ input[type="radio"] {
 
 .asio-detail {
   position: relative;
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -1041,16 +1267,16 @@ input[type="radio"] {
   right: 100%;
   width: 18px;
   text-align: center;
-  color: var(--line-strong);
+  color: var(--text-muted);
 }
 
 /* Why the input could not start, as the engine wrote it. */
 .asio-fault {
-  padding: 6px 8px;
+  padding: 6px 10px;
   border-radius: var(--radius-control);
   background: var(--error-soft);
   color: var(--error);
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
   font-weight: 500;
 }
 
@@ -1058,109 +1284,30 @@ input[type="radio"] {
   display: none;
 }
 
-.card-rows {
+/* Measurements in three groups, side by side when there is room, with the
+   counters for a report folded under them. */
+.meters {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  margin: 0;
-  font-size: var(--size-s);
+  gap: 16px 32px;
 }
 
-.card-rows[hidden] {
-  display: none;
+@container (min-width: 640px) {
+  .meters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
-.card-rows dt,
-.card-rows dd {
-  margin: 0;
-  padding: 4px 0;
-  border-top: 1px solid var(--line);
+.meter-group {
+  min-width: 0;
 }
 
-.card-rows dt {
-  color: var(--text-muted);
-}
-
-.card-rows dd {
-  text-align: right;
-}
-
-.card-errors {
-  margin-top: auto;
-  font-size: var(--size-s);
-}
-
-.card-errors[hidden] {
-  display: none;
-}
-
-.card-errors summary {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 0 0;
-  border-top: 1px solid var(--line);
-  list-style: none;
-  cursor: pointer;
-}
-
-.card-errors summary::-webkit-details-marker {
-  display: none;
-}
-
-.card-errors summary .label {
-  font-size: var(--size-s);
-}
-
-.card-errors.has-errors summary .num {
-  color: var(--warning);
+.meter-group-title {
+  margin-bottom: 4px;
+  font-size: var(--size-ui);
   font-weight: 600;
 }
 
-/* A small chevron says the count opens into its kinds. */
-.card-errors.has-errors summary .label::after {
-  content: "";
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin: 0 0 2px 7px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(45deg);
-}
-
-.card-errors.has-errors[open] summary .label::after {
-  margin-bottom: -1px;
-  transform: rotate(225deg);
-}
-
-.card-errors:not(.has-errors) summary {
-  cursor: default;
-  pointer-events: none;
-}
-
-.error-kinds {
-  margin: 4px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.error-kinds li {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 2px 0;
-  color: var(--text-muted);
-}
-
-/* Meters: a narrow column of rows beside the cards, or a grid of tiles
-   under them when the window is narrow. */
-
-.meter-panel {
-  container-type: inline-size;
-}
-
-.meters {
-  display: grid;
+.meter-list {
   margin: 0;
 }
 
@@ -1170,17 +1317,13 @@ input[type="radio"] {
   align-items: baseline;
   justify-content: space-between;
   gap: 0 12px;
-  padding: 5px 0;
+  padding: 7px 0;
   border-top: 1px solid var(--line);
-}
-
-.meter:first-child {
-  border-top: 0;
 }
 
 .meter dt {
   color: var(--text-muted);
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
 }
 
 .meter dd {
@@ -1188,36 +1331,77 @@ input[type="radio"] {
      format) goes under it, still on the right, instead of breaking both. */
   margin: 0 0 0 auto;
   text-align: right;
+  font-size: var(--size-value);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .meter .unit {
   margin-left: 4px;
-  font-size: var(--size-xs);
+  font-size: var(--size-tag);
   font-weight: 400;
-  color: var(--text-muted);
+  color: var(--text);
 }
 
-@container (min-width: 440px) {
-  .meters {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 0 16px;
-  }
+.meter-more {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
 
-  .meter,
-  .meter:first-child {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0;
-    padding: 6px 0;
-    border-top: 1px solid var(--line);
-  }
+.meter-more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: var(--link);
+  font-size: var(--size-ui);
+  font-weight: 500;
+  list-style: none;
+  cursor: pointer;
+}
 
-  .meter dd {
-    margin-left: 0;
-    text-align: left;
-    font-size: var(--size-l);
+.meter-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.meter-more > summary::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-bottom: 3px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.meter-more[open] > summary::after {
+  margin-bottom: -2px;
+  transform: rotate(225deg);
+}
+
+.meter-more-body {
+  display: grid;
+  gap: 12px 32px;
+  margin-top: 8px;
+}
+
+@container (min-width: 640px) {
+  .meter-more-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+.meter-sub-title {
+  margin-top: 4px;
+  font-size: var(--size-ui);
+  font-weight: 600;
+}
+
+.meter-sub-hint {
+  margin-bottom: 4px;
+  font-size: var(--size-ui);
+  color: var(--text-muted);
 }
 
 /* ---- Profile --------------------------------------------------------- */
@@ -1226,12 +1410,6 @@ input[type="radio"] {
 .settings {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.settings-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 16px;
 }
 
@@ -1253,15 +1431,15 @@ input[type="radio"] {
   min-width: 0;
 }
 
-@container (min-width: 700px) {
+@container (min-width: 820px) {
   .profile-layout {
-    grid-template-columns: minmax(0, 1fr) clamp(260px, 40%, 380px);
+    grid-template-columns: minmax(0, 1fr) clamp(300px, 38%, 380px);
     align-items: start;
   }
 
   .object-map {
     position: sticky;
-    top: 20px;
+    top: 76px;
   }
 }
 
@@ -1270,7 +1448,7 @@ input[type="radio"] {
   word-break: break-all;
 }
 
-/* The output panel: one tab per output kind, the kind in use badged, and
+/* The output panel: one tab per output kind, the kind in use marked, and
    the open tab's settings ending in its footer (the switch, or the line
    that says this kind is in use). */
 .output-tabs {
@@ -1281,45 +1459,43 @@ input[type="radio"] {
 }
 
 .output-tab {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 38px;
+  gap: 10px;
+  min-height: 42px;
   margin-bottom: -1px;
   padding: 0 12px;
   border: 0;
   border-bottom: 2px solid transparent;
-  border-radius: var(--radius-control) var(--radius-control) 0 0;
   background: transparent;
   color: var(--text-muted);
+  font-size: var(--size-body);
   font-weight: 500;
   cursor: pointer;
 }
 
 .output-tab:hover {
-  background: var(--bg);
   color: var(--text);
 }
 
 .output-tab[aria-selected="true"] {
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--mark);
   color: var(--text);
   font-weight: 600;
 }
 
 .output-tab:focus-visible {
-  outline-offset: -2px;
+  outline-offset: -4px;
 }
 
+/* The kind in use: a dot in the emphasis colour and the words. */
 .in-use {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: var(--size-xs);
+  gap: 6px;
+  color: var(--text);
+  font-size: var(--size-tag);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -1330,11 +1506,11 @@ input[type="radio"] {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: currentColor;
+  background: var(--mark);
 }
 
 .output-panel {
-  padding-top: 16px;
+  padding-top: 18px;
 }
 
 .output-panel:focus-visible {
@@ -1348,14 +1524,14 @@ input[type="radio"] {
 
 .tab-section + .tab-section,
 .layout-field + .tab-section {
-  margin-top: 18px;
-  padding-top: 16px;
+  margin-top: 20px;
+  padding-top: 18px;
   border-top: 1px solid var(--line);
 }
 
 .tab-section-title {
   margin-bottom: 6px;
-  font-size: var(--size-m);
+  font-size: var(--size-body);
   font-weight: 600;
 }
 
@@ -1371,8 +1547,8 @@ input[type="radio"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 18px;
-  padding-top: 14px;
+  margin-top: 20px;
+  padding-top: 16px;
   border-top: 1px solid var(--line);
 }
 
@@ -1391,7 +1567,7 @@ input[type="radio"] {
 }
 
 .in-use-line .lamp {
-  background: var(--accent);
+  background: var(--mark);
 }
 
 /* What each device channel plays: a short read-only table, as narrow as
@@ -1401,12 +1577,12 @@ input[type="radio"] {
   max-width: 320px;
   margin-top: 8px;
   border-collapse: collapse;
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
 }
 
 .channel-table th,
 .channel-table td {
-  padding: 4px 0;
+  padding: 5px 0;
   border-bottom: 1px solid var(--line);
   font-weight: 400;
   text-align: left;
@@ -1416,7 +1592,6 @@ input[type="radio"] {
 .channel-table thead th {
   padding-top: 0;
   color: var(--text-muted);
-  font-size: var(--size-xs);
   font-weight: 500;
 }
 
@@ -1436,17 +1611,16 @@ input[type="radio"] {
 /* The tag sits in the row's line, so a subwoofer row is as tall as the rest. */
 .channel-name .tag {
   margin-left: 8px;
-  padding-block: 0;
   line-height: 1.5;
 }
 
 .file-note {
-  margin-bottom: 14px;
-  padding: 8px 10px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
   border-radius: var(--radius-control);
   background: var(--warning-soft);
   color: var(--warning);
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
   font-weight: 500;
 }
 
@@ -1459,7 +1633,7 @@ input[type="radio"] {
 }
 
 .file-note .tag {
-  background: var(--surface);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
   color: var(--warning);
 }
 
@@ -1479,8 +1653,8 @@ input[type="radio"] {
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  margin-top: 18px;
-  padding-top: 14px;
+  margin-top: 20px;
+  padding-top: 16px;
   border-top: 1px solid var(--line);
 }
 
@@ -1490,10 +1664,10 @@ input[type="radio"] {
 
 .gain {
   display: grid;
-  grid-template-columns: auto minmax(80px, 1fr) auto minmax(72px, auto);
+  grid-template-columns: auto minmax(80px, 1fr) auto minmax(80px, auto);
   align-items: center;
-  gap: 8px;
-  margin-top: 14px;
+  gap: 10px;
+  margin-top: 16px;
 }
 
 .gain input[type="range"] {
@@ -1501,16 +1675,24 @@ input[type="radio"] {
   margin: 0;
 }
 
+/* The slider's ends, in full ink at the smaller size. */
+.gain-scale {
+  color: var(--text);
+  font-size: var(--size-tag);
+  font-variant-numeric: tabular-nums;
+}
+
 .gain-readout {
+  font-size: var(--size-value);
   font-weight: 600;
   text-align: right;
 }
 
 .direction-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 16px;
 }
 
 .direction-grid .button {
@@ -1522,6 +1704,10 @@ input[type="radio"] {
 
 .object-map {
   container-type: inline-size;
+}
+
+.object-map .hint {
+  max-width: none;
 }
 
 .map-frame {
@@ -1546,7 +1732,7 @@ input[type="radio"] {
 
 .map-ring {
   fill: none;
-  stroke: var(--line);
+  stroke: var(--line-strong);
   stroke-dasharray: 3 4;
 }
 
@@ -1575,7 +1761,9 @@ input[type="radio"] {
   stroke-width: 1.5;
 }
 
-/* Names wear a halo of the ground they sit on, clear of the rings and axes. */
+/* Names wear a halo of the ground they sit on, clear of the rings and axes.
+   The drawing is 300 units wide and scales with the panel, so the names
+   grow in units as it narrows and stay at 14 px or more on screen. */
 .map-label {
   fill: var(--text-muted);
   stroke: var(--surface);
@@ -1583,7 +1771,7 @@ input[type="radio"] {
   stroke-linejoin: round;
   paint-order: stroke;
   font-family: var(--font);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
 }
 
@@ -1591,10 +1779,21 @@ input[type="radio"] {
   stroke: var(--surface-sunk);
 }
 
-/* The drawing scales with the panel; keep the names readable when it is small. */
-@container (max-width: 320px) {
+@container (max-width: 336px) {
   .map-label {
-    font-size: 14px;
+    font-size: 15px;
+  }
+}
+
+@container (max-width: 290px) {
+  .map-label {
+    font-size: 16.5px;
+  }
+}
+
+@container (max-width: 250px) {
+  .map-label {
+    font-size: 18px;
   }
 }
 
@@ -1629,7 +1828,7 @@ input[type="radio"] {
 
 .map-status {
   margin-top: 10px;
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
   font-weight: 500;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -1642,7 +1841,7 @@ input[type="radio"] {
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
-  font-size: var(--size-xs);
+  font-size: var(--size-ui);
   color: var(--text-muted);
 }
 
@@ -1650,7 +1849,7 @@ input[type="radio"] {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 4px 14px;
+  gap: 4px 16px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1681,10 +1880,11 @@ input[type="radio"] {
 
 /* ---- Upmix ----------------------------------------------------------- */
 
-/* One card per endpoint (main, music, PASS), three abreast when there is
-   room and stacked when there is not: its state, its three upmixers as radio
-   rows with the delay under them, and the VST upmixer's plugin. The screen is
-   the box the intro's (i) line keeps inside. */
+/* One card per endpoint (main, music, PASS), one under another: its name
+   and state on the left, its three upmixers as radio rows with the delay
+   under them and the VST upmixer's plugin on the right; stacked when the
+   window is narrow. The screen is the box the intro's (i) line keeps
+   inside. */
 .upmix {
   container-type: inline-size;
   position: relative;
@@ -1696,32 +1896,48 @@ input[type="radio"] {
 .upmix-cards {
   display: grid;
   gap: 16px;
-  align-items: start;
-}
-
-@container (min-width: 960px) {
-  .upmix-cards {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 
 .upmix-card {
+  display: grid;
+  gap: 16px 32px;
+  align-items: start;
+}
+
+.upmix-card-side,
+.upmix-card-main {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-width: 0;
+}
+
+@container (min-width: 720px) {
+  .upmix-card {
+    grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  }
+
+  .upmix-card-main > .upmix-section:first-child {
+    padding-top: 0;
+    border-top: 0;
+  }
 }
 
 .upmix-card-head {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 10px;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .upmix-card-title {
-  font-size: var(--size-l);
+  font-size: var(--size-value);
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.4;
+}
+
+.upmix-card-purpose {
+  font-size: var(--size-ui);
+  color: var(--text-muted);
 }
 
 /* The lamp at the first line, then the word and its details, which wrap in
@@ -1730,12 +1946,12 @@ input[type="radio"] {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
   color: var(--text-muted);
 }
 
 .upmix-state .lamp {
-  margin-top: 6px;
+  margin-top: 7px;
 }
 
 /* The dot before each detail stands in the gap to its left; the box clips
@@ -1769,7 +1985,7 @@ input[type="radio"] {
   right: 100%;
   width: 18px;
   text-align: center;
-  color: var(--line-strong);
+  color: var(--text-muted);
 }
 
 /* Starting: the spinner turns where the lamp stands. */
@@ -1778,8 +1994,8 @@ input[type="radio"] {
   flex: none;
   width: 12px;
   height: 12px;
-  margin: 4px 0 0;
-  color: var(--accent);
+  margin: 5px 0 0;
+  color: var(--mark);
 }
 
 /* The original stereo in place of the plugin, or the plugin off for good:
@@ -1801,13 +2017,13 @@ input[type="radio"] {
 }
 
 .upmix-section {
-  padding-top: 14px;
+  padding-top: 16px;
   border-top: 1px solid var(--line);
 }
 
 .upmix-section-title {
   margin-bottom: 8px;
-  font-size: var(--size-m);
+  font-size: var(--size-body);
   font-weight: 600;
 }
 
@@ -1821,7 +2037,7 @@ input[type="radio"] {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: 10px;
-  padding: 9px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   background: var(--surface);
@@ -1829,24 +2045,24 @@ input[type="radio"] {
 }
 
 .upmix-option:not(.is-checked):not(.is-locked):hover {
-  background: var(--bg);
+  border-color: var(--line-strong);
 }
 
+/* Chosen: the edge in the emphasis colour, no fill. */
 .upmix-option.is-checked {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--mark);
 }
 
 /* Not built: shown, but neither chosen nor choosable. */
 .upmix-option.is-locked {
-  background: var(--surface-sunk);
+  border-style: dashed;
   cursor: default;
 }
 
 .upmix-option input[type="radio"] {
   width: 16px;
   height: 16px;
-  margin: 3px 0 0;
+  margin: 4px 0 0;
 }
 
 .upmix-option input[type="radio"]:disabled {
@@ -1880,14 +2096,14 @@ input[type="radio"] {
 }
 
 .upmix-option-body {
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
   color: var(--text-muted);
 }
 
 .upmix-default {
-  font-size: var(--size-xs);
+  color: var(--text);
+  font-size: var(--size-tag);
   font-weight: 500;
-  color: var(--accent);
 }
 
 .facts.upmix-facts {
@@ -1934,8 +2150,8 @@ input[type="radio"] {
 
 .info-tip:hover,
 .info-tip-wrap.is-open .info-tip {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--surface-sunk);
+  color: var(--text);
 }
 
 .info-tip-glyph {
@@ -1963,14 +2179,14 @@ input[type="radio"] {
   max-width: min(320px, 100%);
   height: auto;
   margin: 6px 0 0;
-  padding: 6px 10px;
+  padding: 8px 12px;
   overflow: visible;
   clip-path: none;
   white-space: normal;
   border-radius: var(--radius-control);
   background: var(--text);
   color: var(--surface);
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
   font-weight: 400;
   line-height: 1.5;
   position-try-fallbacks: flip-inline, --info-tip-edge;
@@ -1991,16 +2207,77 @@ input[type="radio"] {
 
 /* ---- Settings -------------------------------------------------------- */
 
+/* One sheet; each group has its heading on the left and its controls on
+   the right, set apart from the next by space and a hairline. A narrow
+   window puts the heading over the controls. */
+.settings {
+  container-type: inline-size;
+  gap: 0;
+  padding: 0 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.panel.settings-group {
+  display: grid;
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
+  gap: 10px 32px;
+  padding: 24px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.settings > .settings-group + .settings-group,
+.settings-facts > .settings-group {
+  border-top: 1px solid var(--line);
+}
+
+.settings-group > .panel-title {
+  margin: 0;
+  padding-top: 4px;
+}
+
+.settings-group-body {
+  min-width: 0;
+}
+
+@container (max-width: 700px) {
+  .panel.settings-group {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-group > .panel-title {
+    padding-top: 0;
+  }
+}
+
+.settings-group .facts {
+  margin-top: 0;
+  max-width: 560px;
+}
+
+.settings-group .facts dt,
+.settings-group .facts dd {
+  padding-top: 5px;
+}
+
+.settings-group .facts .fact:last-child dt,
+.settings-group .facts .fact:last-child dd {
+  border-bottom: 0;
+}
+
 .check {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 2px 10px;
+  gap: 4px 10px;
 }
 
 .check input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   margin: 0;
 }
 
@@ -2012,45 +2289,21 @@ input[type="radio"] {
   grid-column: 2;
 }
 
-/* A long hint keeps a readable line, as wide as the routing tables. */
-.check .hint {
-  max-width: 720px;
-}
-
-/* A labelled select (the language), drawn like the other controls. */
+/* A select with its label over it and its hint under it. */
 .field {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 
 .field label {
   font-weight: 500;
 }
 
-.field select,
-.routing-table select {
-  min-height: 32px;
-  max-width: 100%;
-  padding: 0 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-  cursor: pointer;
-}
-
-.field select:disabled,
-.routing-table select:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-/* Under the select on a line of its own, its measure capped like the
-   check's hint; a max-width would let it fit beside the select. */
-.field .hint {
-  flex-basis: 100%;
-  padding-right: max(0px, 100% - 720px);
+.update .hint,
+.update .body-text + .hint {
+  margin-top: 2px;
 }
 
 /* The entrance of each app (ADR 0028): under the switch, the apps with
@@ -2059,15 +2312,15 @@ input[type="radio"] {
    plays, and its choice at the row's end. */
 .routing-section,
 .asio-section {
-  margin-top: 18px;
-  padding-top: 14px;
+  margin-top: 20px;
+  padding-top: 18px;
   border-top: 1px solid var(--line);
 }
 
 /* The ASIO input's layout and the system sound under it, the slider drawn
    like the profile's gain, as wide as a readable line. */
 .asio-attenuation {
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 .asio-attenuation label {
@@ -2085,13 +2338,12 @@ input[type="radio"] {
 }
 
 .asio-attenuation .hint {
-  max-width: 720px;
   margin-top: 4px;
 }
 
 .routing-section-title {
-  margin-bottom: 6px;
-  font-size: var(--size-m);
+  margin-bottom: 8px;
+  font-size: var(--size-body);
   font-weight: 600;
 }
 
@@ -2099,12 +2351,12 @@ input[type="radio"] {
   width: 100%;
   max-width: 720px;
   border-collapse: collapse;
-  font-size: var(--size-s);
+  font-size: var(--size-ui);
 }
 
 .routing-table th,
 .routing-table td {
-  padding: 6px 16px 6px 0;
+  padding: 7px 16px 7px 0;
   border-bottom: 1px solid var(--line);
   font-weight: 400;
   text-align: left;
@@ -2114,7 +2366,6 @@ input[type="radio"] {
 .routing-table thead th {
   padding-top: 0;
   color: var(--text-muted);
-  font-size: var(--size-xs);
   font-weight: 500;
 }
 
@@ -2130,11 +2381,11 @@ input[type="radio"] {
   font-weight: 500;
 }
 
+/* The program file and who set the rule: secondary, so grey, at full size. */
 .routing-exe,
 .routing-moved,
 .routing-built-in-was {
   color: var(--text-muted);
-  font-size: var(--size-xs);
 }
 
 .routing-entrance > span {
@@ -2153,129 +2404,49 @@ input[type="radio"] {
   white-space: nowrap;
 }
 
+.routing-table select {
+  min-height: 34px;
+  font-size: var(--size-ui);
+}
+
 .routing-table .button.quiet {
   margin: -4px 0;
-}
-
-/* ---- Fallback page and gallery --------------------------------------- */
-
-.fatal {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-  max-width: 640px;
-  padding: 32px;
-}
-
-/* The review page (`?gallery=1`): every scene of e2e/gallery.json, group by
-   group, its languages side by side. Each frame draws the scene at its own
-   window size and shows it at half that, so the small windows stay small. */
-
-.gallery {
-  --frame-scale: 0.5;
-  display: flex;
-  flex-direction: column;
-  gap: 36px;
-  padding: 24px;
-}
-
-.gallery h1 {
-  font-size: var(--size-xl);
-  font-weight: 600;
-}
-
-.gallery-group {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.gallery-group h2 {
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-  font-size: var(--size-l);
-  font-weight: 600;
-}
-
-.gallery-scene {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.gallery-scene-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 12px;
-}
-
-.gallery-scene h3 {
-  font-size: var(--size-m);
-  font-weight: 600;
-}
-
-.gallery-scene code {
-  font-family: var(--font);
-  font-size: var(--size-s);
-  color: var(--text-muted);
-}
-
-.gallery-frames {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 16px 20px;
-}
-
-.gallery-frame {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-}
-
-.gallery-frame a {
-  font-size: var(--size-xs);
-  font-weight: 500;
-  color: var(--accent);
-}
-
-.gallery-viewport {
-  width: calc(var(--frame-width) * var(--frame-scale) + 2px);
-  height: calc(var(--frame-height) * var(--frame-scale) + 2px);
-  overflow: hidden;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-control);
-  background: var(--bg);
-}
-
-.gallery-viewport iframe {
-  display: block;
-  border: 0;
-  transform: scale(var(--frame-scale));
-  transform-origin: 0 0;
+  font-size: var(--size-ui);
 }
 
 /* ---- Narrow windows (the window can shrink to 720 x 480) -------------- */
 
 @media (max-width: 860px) {
   :root {
-    --nav-width: 160px;
+    --gutter: 16px;
   }
 
   .main {
-    padding: 16px 16px 24px;
+    padding-top: 20px;
   }
 
-  .power-state {
-    padding-right: 0;
+  .app-bar-inner {
+    gap: 0 16px;
   }
 
-  .output-state {
-    margin-left: 0;
-    padding-left: 0;
-    border-left: 0;
+  .nav-item {
+    padding: 0 10px;
+  }
+
+  .nav-item[aria-current="page"]::after {
+    right: 10px;
+    left: 10px;
+  }
+
+  .panel {
+    padding: 16px 18px;
+  }
+
+  .settings {
+    padding: 0 18px;
+  }
+
+  .wizard-card {
+    padding: 22px 22px;
   }
 }

@@ -13,6 +13,7 @@
 
 pub mod driver_stats;
 pub mod guard;
+pub mod health;
 pub mod machine;
 pub mod recorder;
 pub mod report;

@@ -51,6 +51,12 @@ import type {
   SceneObject,
   SecureBoot,
   SetupStep,
+  Skin,
+  HealthHistory,
+  HealthIncident,
+  HealthMinute,
+  HealthPart,
+  MinuteState,
   Snapshot,
   SourceFormat,
   SpeakerChannelView,
@@ -182,6 +188,15 @@ function carrying<K extends string, V>(kind: K, inner: Guard<V>): Guard<{ kind: 
 
 // Unit enums: the keys are checked against the bindings' unions.
 export const LANGUAGES: Record<Language, true> = { ko: true, en: true };
+export const SKINS: Record<Skin, true> = { standard: true, panel: true, console: true };
+export const HEALTH_PARTS: Record<HealthPart, true> = { driver: true, engine: true, output: true, plugins: true };
+export const MINUTE_STATES: Record<MinuteState, true> = {
+  no_record: true,
+  idle: true,
+  good: true,
+  degraded: true,
+  down: true,
+};
 export const ARCHES: Record<Arch, true> = { x64: true, arm64: true, other: true };
 export const SECURE_BOOT: Record<SecureBoot, true> = { enabled: true, disabled: true, unsupported: true };
 export const POLICY_STATES: Record<PolicyState, true> = { applied: true, missing: true, unknown: true };
@@ -268,6 +283,7 @@ export const NAMED_CODECS: Record<Exclude<BitstreamCodec, object>, true> = {
 };
 
 const language = oneOf(LANGUAGES);
+const skin = oneOf(SKINS);
 const arch = oneOf(ARCHES);
 const secureBoot = oneOf(SECURE_BOOT);
 const policyState = oneOf(POLICY_STATES);
@@ -480,6 +496,7 @@ const driverState = tagged<DriverState>({
 });
 
 const platform = object<Platform>({
+  computer_name: string,
   os_build: number,
   arch,
   test_signing: boolean,
@@ -573,9 +590,33 @@ const routing = object<Snapshot['routing']>({
   apps: array(routedApp),
 });
 
+const minuteState = oneOf(MINUTE_STATES);
+const healthMinute = object<HealthMinute>({
+  driver: minuteState,
+  engine: minuteState,
+  output: minuteState,
+  plugins: minuteState,
+  underruns: number,
+  output_recoveries: number,
+});
+const healthIncident = object<HealthIncident>({
+  part: oneOf(HEALTH_PARTS),
+  worst: minuteState,
+  first: number,
+  last: number,
+  open: boolean,
+  underruns: number,
+  output_recoveries: number,
+});
+const health = object<HealthHistory>({
+  minutes: array(healthMinute),
+  incidents: array(healthIncident),
+});
+
 const snapshot = object<Snapshot>({
   language,
   language_choice: nullable(language),
+  skin,
   output_path: outputPath,
   phase,
   profile: profileView,
@@ -583,6 +624,7 @@ const snapshot = object<Snapshot>({
   routing,
   asio: asioSettings,
   engine: nullable(engineStatus),
+  health,
   outputs: array(outputChoice),
   chosen_output: nullable(outputChoice),
   driver: nullable(driverState),
@@ -594,6 +636,7 @@ const snapshot = object<Snapshot>({
 
 const intent = tagged<Intent>({
   set_language: carrying('set_language', nullable(language)),
+  set_skin: carrying('set_skin', skin),
   set_output_path: carrying('set_output_path', outputPath),
   set_routing_enabled: carrying('set_routing_enabled', boolean),
   set_app_rule: carrying('set_app_rule', appRule),
