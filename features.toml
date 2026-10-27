@@ -1544,6 +1544,18 @@ tests = [
 note = "ADR 0001: Language Ko/En, SetLanguage(Some) override and None OS fallback; resolved Snapshot.language selects matching Korean/English UI catalogues and document language. Supervisor Message renders user sentences in the selected language. Shell tray labels and guard marker sentences follow that choice; sys-locale supplies the OS default. UI vitest test/i18n.test.ts checks recursive catalogue keys/function signatures, every fixture on status/profile/settings/wizard screens without UI-owned Hangul, live language switches, source-data preservation, picker text and bridge validation, and the settings screen's language select (auto/ko/en sends SetLanguage). The guard's toast and the shell's update errors render in the resolved language too."
 
 [[feature]]
+id = "app.skins"
+kind = "app"
+milestone = "M4"
+status = "partial"
+tests = [
+  "supervisor::skin_changes_in_every_phase_and_is_refused_after_quit",
+  "supervisor::skin_change_keeps_the_current_error",
+  "supervisor::skin_settings_migrate_and_survive_a_supervisor_restart",
+]
+note = "ADR 0041: screen skins are whole renderers of the same contract. Intent::SetSkin and Snapshot.skin (the supervisor saves the choice like the language; every phase but Quit; a kept error survives). The screen loads one skin's chunk and stylesheet per page and reloads when the snapshot names another skin (ui/src/main.ts); every skin draws through the shared controller (ui/src/skins/controller.ts) so sending, the settle wait, error bands and focus behave the same. Skins: standard (the original screen), panel (an AV receiver's front panel with a dark display), console (health line, pipeline map, tables, command palette). The gallery shoots every scene in every skin and posts one review issue per skin. Partial until the panel and console skins reach every capability of the standard skin (vitest test/skin-*.test.ts) and the skin switch is checked in the installed app."
+
+[[feature]]
 id = "app.i18n_catalog"
 kind = "app"
 milestone = "M4"

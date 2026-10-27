@@ -1,10 +1,14 @@
-// The status screen (ready, running, faulted): the power switch, the chosen
-// output, one card per entrance (with its upmixer while one runs), the ASIO
-// input's line while it is on and the engine runs, and, while running, the
-// meter column. The cards, the line and the meters are built once per
-// snapshot and then only their text nodes change, 30 times a second.
+// The status screen (ready, running, faulted), one column read from the top.
+// First the summary line: the power switch, the state word, the output device
+// (with its list while off), the output kind and profile that play, and while
+// running whether the sound has dropped out. Off, one quiet line names the
+// three entrances. Running, one row per entrance (with its upmixer while one
+// runs) and the ASIO input's row while it is on, then the measurements in
+// three groups (stability, delay, output settings) with the internal
+// counters folded under "details". The rows and the measurements are built
+// once per snapshot and then only their text nodes change, 30 times a second.
 
-import type { AsioStatus, EndpointStatus, EndpointUpmixView, EngineStatus } from '../bindings';
+import type { AsioStatus, EndpointStatus, EndpointUpmixView, EngineStatus, Snapshot } from '../bindings';
 import { h, liveText, setAttr } from '../dom';
 import {
   chainErrorEntries,
@@ -30,7 +34,46 @@ import { outputList } from './wizard';
 /** Endpoints the screen shows: 0, 1 and 2. Slot 3 is reserved in the contract. */
 const SHOWN_ENDPOINTS = 3;
 
-function header(ctx: Context): HTMLElement {
+/** A label over its value, one stop of the summary line. */
+function fact(className: string, label: string, ...value: (Node | string | null)[]): HTMLElement {
+  return h(
+    'div',
+    { class: `summary-item ${className}` },
+    h('dt', { class: 'summary-label' }, label),
+    h('dd', { class: 'summary-value' }, ...value),
+  );
+}
+
+/**
+ * The output kind and the profile it plays: "헤드폰 · <BRIR set>",
+ * "스피커 · 7.1", or the correction's title with a tag saying a SECS
+ * correction decides the speakers. A profile.toml says so in its tag.
+ */
+function profileValue(snapshot: Snapshot): (Node | string)[] {
+  const { profile } = snapshot;
+  const tag = profile.from_file
+    ? text.profile.fromFileTag
+    : profile.kind === 'speakers' && profile.speakers.correction !== null
+      ? text.profile.correctionTitle
+      : null;
+  return [
+    h('strong', { class: 'profile-kind' }, text.profile.kindNames[profile.kind]),
+    ' · ',
+    h('span', { class: 'profile-name' }, profile.name),
+    ...(tag === null ? [] : [' ', h('span', { class: 'tag' }, tag)]),
+  ];
+}
+
+interface Summary {
+  element: HTMLElement;
+  update(engine: EngineStatus | null): void;
+}
+
+/**
+ * The head: one line that says whether it is on, where the sound goes, what
+ * it is rendered for and, while running, whether it has dropped out.
+ */
+function summary(ctx: Context): Summary {
   const s = text.status;
   const { snapshot } = ctx;
   const running = snapshot.phase.kind === 'running';
@@ -50,45 +93,70 @@ function header(ctx: Context): HTMLElement {
   if (ctx.pending !== 'enable') toggle.setAttribute('aria-describedby', 'power-state');
 
   const power = powerState(snapshot, ctx.pending);
-  const state = h(
-    'div',
-    { class: 'power-state' },
-    h('span', { class: 'label' }, s.stateLabel),
+  const state = fact(
+    'summary-state',
+    s.stateLabel,
     h(
       'strong',
       { id: 'power-state', class: `state-word tone-${power.tone}` },
       h('span', { class: 'lamp', 'aria-hidden': 'true' }),
       power.label,
     ),
-    running && snapshot.roles_taken ? h('span', { class: 'muted small' }, s.rolesTaken) : null,
   );
 
   const canChange = snapshot.phase.kind === 'ready';
-  const output = h(
-    'div',
-    { class: 'output-state' },
-    h('span', { class: 'label' }, s.output),
+  const output = fact(
+    'summary-output',
+    s.output,
     h(
-      'div',
-      { class: 'output-line' },
-      h(
-        'span',
-        { class: `output-current${snapshot.chosen_output === null ? ' muted' : ''}` },
-        snapshot.chosen_output?.name ?? s.noOutput,
-      ),
-      canChange
-        ? button(
-            ctx.view.outputsOpen ? s.closeOutputs : snapshot.chosen_output === null ? s.choose : s.change,
-            () => ctx.setView({ outputsOpen: !ctx.view.outputsOpen }),
-            { key: 'outputs-toggle', variant: 'quiet' },
-          )
-        : null,
+      'span',
+      { class: `output-current${snapshot.chosen_output === null ? ' is-missing' : ''}` },
+      snapshot.chosen_output?.name ?? s.noOutput,
     ),
+    canChange
+      ? button(
+          ctx.view.outputsOpen ? s.closeOutputs : snapshot.chosen_output === null ? s.choose : s.change,
+          () => ctx.setView({ outputsOpen: !ctx.view.outputsOpen }),
+          { key: 'outputs-toggle', variant: 'quiet', className: 'outputs-toggle' },
+        )
+      : null,
   );
 
-  const head = h('section', { class: 'panel status-head' }, h('div', { class: 'status-head-row' }, toggle, state, output));
-  if (canChange && ctx.view.outputsOpen) head.append(h('div', { class: 'status-outputs' }, outputList(ctx, 'status-output')));
-  return head;
+  const kind = fact('summary-profile', text.profile.outputTitle, ...profileValue(snapshot));
+
+  // Whether the sound has dropped out since the engine started: the count
+  // the stability group lists first, said here in words.
+  const healthWord = liveText('-');
+  const healthLamp = h('span', { class: 'lamp', 'aria-hidden': 'true' });
+  const health = running ? fact('summary-health', s.health, healthLamp, h('span', null, healthWord.node)) : null;
+
+  const element = h(
+    'section',
+    { class: 'panel summary' },
+    h('div', { class: 'summary-line' }, toggle, h('dl', { class: 'summary-facts' }, state, output, kind, health)),
+    running && snapshot.roles_taken ? h('p', { class: 'summary-note' }, s.rolesTaken) : null,
+  );
+  if (canChange && ctx.view.outputsOpen) element.append(h('div', { class: 'status-outputs' }, outputList(ctx, 'status-output')));
+  return {
+    element,
+    update(engine) {
+      if (health === null || engine === null) return;
+      const dropped = engine.underruns > 0;
+      healthWord.set(dropped ? s.asioUnderruns(count(engine.underruns)) : s.healthClean);
+      setAttr(health, 'class', `summary-item summary-health tone-${dropped ? 'warning' : 'clean'}`);
+    },
+  };
+}
+
+/** Off or stopped: the three entrances by name, on one quiet line. */
+function entranceLine(): HTMLElement {
+  const names = text.endpoints.slice(0, SHOWN_ENDPOINTS).map((endpoint) => endpoint.name);
+  const list = h('span', { class: 'entrance-line-names' });
+  names.forEach((name, index) => {
+    if (index > 0) list.append(h('span', { class: 'entrance-line-sep', 'aria-hidden': 'true' }, ' · '));
+    list.append(h('span', { class: 'entrance-line-name' }, name));
+  });
+  return h('p', { class: 'entrance-line' }, h('span', { class: 'entrance-line-label' }, text.status.entrances), ' ', list);
 }
 
 interface Card {
@@ -110,7 +178,7 @@ function upmixLine(upmix: EndpointUpmixView | undefined): HTMLElement | null {
   const tone = fallback ? 'warning' : bypass !== null ? 'off' : 'on';
   return h(
     'p',
-    { class: `card-upmix small tone-${tone}` },
+    { class: `card-upmix tone-${tone}` },
     h('span', { class: 'lamp', 'aria-hidden': 'true' }),
     h(
       'span',
@@ -121,40 +189,65 @@ function upmixLine(upmix: EndpointUpmixView | undefined): HTMLElement | null {
   );
 }
 
+/**
+ * One entrance as a row: its name and purpose on the left, and on the right
+ * the format coming in (the value read first), the carrier of a bitstream,
+ * the upmixer, why a format cannot play, the volume and the processing
+ * errors, which open into their kinds.
+ */
 function endpointCard(index: number, upmix: EndpointUpmixView | undefined): Card {
   const s = text.status;
   const names = text.endpoints[index] ?? { name: `${index}`, purpose: '' };
+  const titleId = `entrance-${index}-title`;
   const format = liveText();
   const carrier = liveText();
   const volume = liveText();
-  const epoch = liveText();
   const unsupported = liveText();
   const errorTotal = liveText();
 
-  const carrierLine = h('p', { class: 'card-carrier muted small', hidden: true }, carrier.node);
+  const carrierLine = h('p', { class: 'card-carrier', hidden: true }, carrier.node);
   const unsupportedLine = h('p', { class: 'card-warning', hidden: true }, unsupported.node);
   const errorList = h('ul', { class: 'error-kinds' });
   const errors = h(
     'details',
     { class: 'card-errors' },
-    h('summary', null, h('span', { class: 'label' }, s.chainErrors), h('span', { class: 'num' }, errorTotal.node)),
+    h(
+      'summary',
+      null,
+      h('span', { class: 'card-meta-label' }, s.chainErrors),
+      h('span', { class: 'card-meta-value num' }, errorTotal.node),
+    ),
     errorList,
   );
   const rows = h(
     'dl',
     { class: 'card-rows' },
-    h('div', { class: 'fact' }, h('dt', null, s.volume), h('dd', { class: 'num' }, volume.node)),
-    h('div', { class: 'fact', title: s.epochHint }, h('dt', null, s.epoch), h('dd', { class: 'num' }, epoch.node)),
+    h(
+      'div',
+      { class: 'fact' },
+      h('dt', { class: 'card-meta-label' }, s.volume),
+      h('dd', { class: 'card-meta-value num' }, volume.node),
+    ),
   );
+  const meta = h('div', { class: 'card-meta' }, rows, errors);
   const element = h(
     'article',
-    { class: 'panel endpoint-card' },
-    h('header', { class: 'card-head' }, h('h3', { class: 'card-title' }, names.name), h('p', { class: 'muted small' }, names.purpose)),
-    h('div', null, h('p', { class: 'card-format' }, format.node), carrierLine),
-    upmixLine(upmix),
-    unsupportedLine,
-    rows,
-    errors,
+    { class: 'endpoint-card', 'aria-labelledby': titleId },
+    h(
+      'header',
+      { class: 'card-head' },
+      h('h3', { id: titleId, class: 'card-title' }, names.name),
+      h('p', { class: 'card-purpose' }, names.purpose),
+    ),
+    h(
+      'div',
+      { class: 'card-body' },
+      h('p', { class: 'card-format' }, format.node),
+      carrierLine,
+      upmixLine(upmix),
+      unsupportedLine,
+      meta,
+    ),
   );
 
   let errorKey = '';
@@ -162,8 +255,7 @@ function endpointCard(index: number, upmix: EndpointUpmixView | undefined): Card
     element,
     update(endpoint) {
       element.classList.toggle('is-off', endpoint === null);
-      rows.hidden = endpoint === null;
-      errors.hidden = endpoint === null;
+      meta.hidden = endpoint === null;
       if (endpoint === null) {
         format.set(s.engineOff);
         carrierLine.hidden = true;
@@ -176,7 +268,6 @@ function endpointCard(index: number, upmix: EndpointUpmixView | undefined): Card
       if (container !== null) carrier.set(container);
       element.classList.toggle('is-idle', endpoint.format === null);
       volume.set(describeVolume(endpoint.volume_db, endpoint.muted));
-      epoch.set(count(endpoint.epoch));
       unsupportedLine.hidden = endpoint.unsupported === null;
       if (endpoint.unsupported !== null) unsupported.set(describeUnsupported(endpoint.unsupported));
 
@@ -205,11 +296,11 @@ interface AsioLine {
 }
 
 /**
- * The ASIO input (ADR 0025) under the entrance cards, its name over one
- * line like the output in the head. A DAW that holds it: its program file,
- * the rate, the buffer and its length, the layout it sends and the times the
- * output found nothing from it, with a warning while a stand-in clock drives
- * the DAW. None: one quiet line. A fault: its reason as the engine gives it.
+ * The ASIO input (ADR 0025) as the last entrance row, its name on the left
+ * like the entrances'. A DAW that holds it: its program file, the rate, the
+ * buffer and its length, the layout it sends and the times the output found
+ * nothing from it, with a warning while a stand-in clock drives the DAW.
+ * None: one quiet line. A fault: its reason as the engine gives it.
  */
 function asioLine(): AsioLine {
   const s = text.status;
@@ -230,11 +321,9 @@ function asioLine(): AsioLine {
   const fault = h('p', { class: 'asio-fault', hidden: true }, reason.node);
   const element = h(
     'article',
-    { class: 'panel asio-line', 'aria-labelledby': 'asio-line-title' },
-    h('h3', { id: 'asio-line-title', class: 'card-title' }, text.asio),
-    state,
-    clockWarning,
-    fault,
+    { class: 'asio-line', 'aria-labelledby': 'asio-line-title' },
+    h('header', { class: 'card-head' }, h('h3', { id: 'asio-line-title', class: 'card-title' }, text.asio)),
+    h('div', { class: 'card-body' }, state, clockWarning, fault),
   );
   return {
     element,
@@ -262,38 +351,105 @@ function asioLine(): AsioLine {
 
 type MeterRow = [label: string, unit: string, read: (engine: EngineStatus) => string];
 
-function meterRows(): MeterRow[] {
+/** The measurements by what they answer: has it dropped out, how late is it, how does it play. */
+function meterGroups(): [title: string, rows: MeterRow[]][] {
+  const s = text.status;
   const m = text.meters;
   return [
-    [m.latencyP50, m.ms, (e) => (e.latency.samples === 0 ? '-' : oneDecimal(e.latency.p50_ms))],
-    [m.latencyP99, m.ms, (e) => (e.latency.samples === 0 ? '-' : oneDecimal(e.latency.p99_ms))],
-    [m.ringLevel, m.ms, (e) => oneDecimal(e.ring_level_ms)],
-    [m.underruns, m.times, (e) => count(e.underruns)],
-    [m.outputRestarts, m.times, (e) => count(e.output_restarts)],
-    [m.outputMode, '', describeOutputMode],
-    [m.output, '', describeOutputFormat],
-    [m.clock, '', describeClock],
-    [m.decodeRefused, m.times, (e) => count(e.decode_refused)],
-    [m.lostBytes, m.bytes, (e) => count(e.lost_bytes)],
+    [
+      s.health,
+      [
+        [m.underruns, m.times, (e) => count(e.underruns)],
+        [m.outputRestarts, m.times, (e) => count(e.output_restarts)],
+        [m.decodeRefused, m.times, (e) => count(e.decode_refused)],
+      ],
+    ],
+    [
+      s.latency,
+      [
+        [m.latencyP50, m.ms, (e) => (e.latency.samples === 0 ? '-' : oneDecimal(e.latency.p50_ms))],
+        [m.latencyP99, m.ms, (e) => (e.latency.samples === 0 ? '-' : oneDecimal(e.latency.p99_ms))],
+        [m.ringLevel, m.ms, (e) => oneDecimal(e.ring_level_ms)],
+      ],
+    ],
+    [
+      s.outputSettings,
+      [
+        [m.outputMode, '', describeOutputMode],
+        [m.output, '', describeOutputFormat],
+        [m.clock, '', describeClock],
+      ],
+    ],
   ];
 }
 
-function meterColumn(): { element: HTMLElement; update(engine: EngineStatus): void } {
+/** One measurement row; returns its setter. */
+function meterRow(list: HTMLElement, [label, unit, read]: MeterRow): (engine: EngineStatus) => void {
+  const value = liveText();
+  list.append(
+    h(
+      'div',
+      { class: 'meter' },
+      h('dt', null, label),
+      h('dd', null, h('span', { class: 'num' }, value.node), unit ? h('span', { class: 'unit' }, unit) : null),
+    ),
+  );
+  return (engine) => value.set(read(engine));
+}
+
+function meterPanel(): { element: HTMLElement; update(engine: EngineStatus): void } {
   const s = text.status;
-  const list = h('dl', { class: 'meters' });
-  const setters = meterRows().map(([label, unit, read]) => {
-    const value = liveText();
-    list.append(
-      h(
-        'div',
-        { class: 'meter' },
-        h('dt', null, label),
-        h('dd', null, h('span', { class: 'num' }, value.node), unit ? h('span', { class: 'unit' }, unit) : null),
-      ),
+  const m = text.meters;
+  const setters: ((engine: EngineStatus) => void)[] = [];
+  const groups = meterGroups().map(([title, rows], index) => {
+    const list = h('dl', { class: 'meter-list' });
+    for (const row of rows) setters.push(meterRow(list, row));
+    return h(
+      'section',
+      { class: 'meter-group', 'aria-labelledby': `meter-group-${index}` },
+      h('h3', { id: `meter-group-${index}`, class: 'meter-group-title' }, title),
+      list,
     );
-    return (engine: EngineStatus) => value.set(read(engine));
   });
-  const element = h('section', { class: 'panel meter-panel' }, h('h2', { class: 'panel-title' }, s.meters), list);
+
+  // Counters for a report rather than for listening: the bytes the driver
+  // lost and how many times each entrance's format changed.
+  const lost = h('dl', { class: 'meter-list' });
+  setters.push(meterRow(lost, [m.lostBytes, m.bytes, (e) => count(e.lost_bytes)]));
+  const epochs = h('dl', { class: 'meter-list', 'aria-labelledby': 'meter-epoch-title', 'aria-describedby': 'meter-epoch-hint' });
+  for (let index = 0; index < SHOWN_ENDPOINTS; index += 1) {
+    const name = text.endpoints[index]?.name ?? String(index);
+    const read = (e: EngineStatus) => {
+      const endpoint = e.endpoints[index];
+      return endpoint === undefined ? '-' : count(endpoint.epoch);
+    };
+    setters.push(meterRow(epochs, [name, '', read]));
+  }
+  const more = h(
+    'details',
+    { class: 'meter-more' },
+    h('summary', null, s.details),
+    h(
+      'div',
+      { class: 'meter-more-body' },
+      lost,
+      h(
+        'section',
+        { class: 'meter-epochs' },
+        h('h4', { id: 'meter-epoch-title', class: 'meter-sub-title' }, s.epoch),
+        h('p', { id: 'meter-epoch-hint', class: 'meter-sub-hint' }, s.epochHint),
+        epochs,
+      ),
+    ),
+  );
+
+  const element = h(
+    'section',
+    { class: 'panel meter-panel', 'aria-labelledby': 'meters-title' },
+    h('h2', { id: 'meters-title', class: 'section-title' }, s.meters),
+    h('div', { class: 'meters' }, ...groups),
+    more,
+  );
   return {
     element,
     update(engine) {
@@ -305,26 +461,37 @@ function meterColumn(): { element: HTMLElement; update(engine: EngineStatus): vo
 export function status(ctx: Context, engineNow: EngineStatus | null): Drawn {
   const s = text.status;
   const running = ctx.snapshot.phase.kind === 'running';
+  const head = summary(ctx);
+
+  if (!running) {
+    // Off or stopped there is nothing live to show: what would play where is
+    // the summary, and the entrances are names.
+    const element = h('div', { class: 'status is-off' }, head.element, entranceLine());
+    return { element };
+  }
+
   const cards = Array.from({ length: SHOWN_ENDPOINTS }, (_, index) =>
     endpointCard(
       index,
       ctx.snapshot.upmix.endpoints.find((endpoint) => endpoint.endpoint === index),
     ),
   );
-  // The ASIO line stands while the input is on and the engine runs.
-  const asio = running && (ctx.snapshot.asio ?? ASIO_DEFAULTS).enabled ? asioLine() : null;
-  const grid = h(
+  // The ASIO row stands while the input is on and the engine runs.
+  const asio = (ctx.snapshot.asio ?? ASIO_DEFAULTS).enabled ? asioLine() : null;
+  const entrances = h(
     'section',
-    { class: 'entrances', 'aria-label': s.entrances },
+    { class: 'panel entrances', 'aria-labelledby': 'entrances-title' },
+    h('h2', { id: 'entrances-title', class: 'section-title' }, s.entrances),
     h('div', { class: 'entrance-cards' }, ...cards.map((card) => card.element)),
     asio?.element ?? null,
   );
-  const meters = running ? meterColumn() : null;
+  const meters = meterPanel();
   const live: Live = {
     update(engine) {
+      head.update(engine);
       cards.forEach((card, index) => card.update(engine.endpoints[index] ?? null));
       asio?.update(engine.asio ?? null);
-      meters?.update(engine);
+      meters.update(engine);
     },
   };
   if (engineNow !== null) live.update(engineNow);
@@ -333,11 +500,6 @@ export function status(ctx: Context, engineNow: EngineStatus | null): Drawn {
     asio?.update(null);
   }
 
-  const element = h(
-    'div',
-    { class: 'status' },
-    header(ctx),
-    h('div', { class: `status-body${meters ? ' with-meters' : ''}` }, grid, meters?.element ?? null),
-  );
+  const element = h('div', { class: 'status is-running' }, head.element, entrances, meters.element);
   return engineNow === null ? { element } : { element, live };
 }

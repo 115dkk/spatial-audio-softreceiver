@@ -1,8 +1,8 @@
 // The upmix screen (ADR 0035, the 2026-10-16 correction): one short
 // paragraph on what upmixing does, with an (i) whose line says what is
-// upmixed, then one card per endpoint (main, music and PASS), each with its
-// upmixer choice, the delay upmixing adds, its VST plugin and what the
-// upmixer is doing now. Every value comes from `Snapshot.upmix`; Rust decides
+// upmixed, then one card per endpoint (main, music and PASS), one under
+// another, each with what the upmixer is doing now, its upmixer choice, the
+// delay upmixing adds and its VST plugin. Every value comes from `Snapshot.upmix`; Rust decides
 // whether a choice, a plugin or an editor is taken, and why the sound playing
 // now goes around a running upmixer. Whether the output kind in use applies
 // upmixing is the profile screen's switch.
@@ -297,18 +297,28 @@ function pluginBlock(ctx: Context, view: EndpointUpmixView): HTMLElement {
 function card(ctx: Context, view: EndpointUpmixView): HTMLElement {
   const names = text.endpoints[view.endpoint] ?? { name: String(view.endpoint), purpose: '' };
   const titleId = `upmix-title-${view.endpoint}`;
+  // The name and what the upmixer is doing on the left, the choice and the
+  // plugin on the right (stacked in a narrow window).
   return h(
     'section',
     { class: 'panel upmix-card', 'aria-labelledby': titleId, 'data-endpoint': view.endpoint },
     h(
-      'header',
-      { class: 'upmix-card-head' },
-      h('h2', { id: titleId, class: 'upmix-card-title' }, names.name),
-      h('p', { class: 'muted small' }, names.purpose),
+      'div',
+      { class: 'upmix-card-side' },
+      h(
+        'header',
+        { class: 'upmix-card-head' },
+        h('h2', { id: titleId, class: 'upmix-card-title' }, names.name),
+        h('p', { class: 'upmix-card-purpose' }, names.purpose),
+      ),
+      state(ctx, view),
     ),
-    state(ctx, view),
-    choices(ctx, view, titleId),
-    view.effective === 'plugin' ? pluginBlock(ctx, view) : null,
+    h(
+      'div',
+      { class: 'upmix-card-main' },
+      choices(ctx, view, titleId),
+      view.effective === 'plugin' ? pluginBlock(ctx, view) : null,
+    ),
   );
 }
 

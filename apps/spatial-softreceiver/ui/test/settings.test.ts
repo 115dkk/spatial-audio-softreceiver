@@ -54,12 +54,63 @@ describe('the settings panels', () => {
     expect(panelTitles()).toEqual([
       ko.settings.startup,
       ko.settings.language,
+      ko.skins.label,
       ko.settings.outputPath,
       ko.settings.routing,
       ko.asio,
       ko.settings.update,
       ko.settings.diagnostics,
     ]);
+  });
+
+  it('put each heading beside its controls, the heading naming a lone select', () => {
+    mounted(fixture('ready'));
+    const groups = $$('.settings .settings-group');
+    // The eight above and the PC and driver facts.
+    expect(groups).toHaveLength(10);
+    for (const group of groups) {
+      expect([...group.children].map((child) => child.className)).toEqual(['panel-title', 'settings-group-body']);
+      expect(group.children[0]?.tagName).toBe('H2');
+    }
+    const lone: [string, string][] = [
+      ['language', ko.settings.language],
+      ['skin', ko.skins.label],
+      ['output-path', ko.settings.outputPath],
+    ];
+    for (const [key, title] of lone) {
+      // Seen once, as the heading; the label stays the select's name.
+      const label = $(`label[for="${key}"]`);
+      expect(label?.textContent, key).toBe(title);
+      expect(label?.classList.contains('visually-hidden'), key).toBe(true);
+      expect($(`[data-key="${key}"]`)?.closest('.settings-group')?.querySelector('h2')?.textContent, key).toBe(title);
+    }
+    // A label that says more than its heading stays in sight.
+    expect($('label[for="asio-layout"]')?.classList.contains('visually-hidden')).toBe(false);
+  });
+});
+
+describe('the skin (ADR 0041)', () => {
+  const select = () => $<HTMLSelectElement>('[data-key="skin"]');
+
+  it.each<Language>(['ko', 'en'])('names every skin and shows the chosen one (%s)', (language) => {
+    const catalog = language === 'ko' ? ko : en;
+    mounted({ ...fixture('ready', language), skin: 'console' });
+    expect(optionLabels(select())).toEqual([catalog.skins.standard, catalog.skins.panel, catalog.skins.console]);
+    expect(chosen(select())).toBe('console');
+  });
+
+  it('reads a snapshot without the field as the standard skin', () => {
+    const { skin: _, ...older } = fixture('ready');
+    mounted(older);
+    expect(chosen(select())).toBe('standard');
+  });
+
+  it('sends the choice in every phase the screen draws', () => {
+    for (const name of ['ready', 'running', 'faulted']) {
+      const { sent } = mounted(fixture(name));
+      choose(select(), 'panel');
+      expect(sent, name).toEqual([{ kind: 'set_skin', value: 'panel' }]);
+    }
   });
 });
 

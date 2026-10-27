@@ -303,7 +303,51 @@ export type HeadphonesView = {
  */
 brir: string | null }
 
-export type Intent = { kind: "set_language"; value: Language | null } | { kind: "set_output_path"; value: OutputPath } | { kind: "set_routing_enabled"; value: boolean } | { kind: "set_app_rule"; value: AppRule } | { kind: "remove_app_rule"; value: string } | { kind: "begin_setup" } | { kind: "install_driver" } |
+export type HealthHistory = {
+/**
+ * One entry per minute, oldest first, at most 90; the last is the minute
+ * in progress. Empty before the first tick.
+ */
+minutes: HealthMinute[];
+/**
+ * Oldest first; only stretches that overlap `minutes`.
+ */
+incidents: HealthIncident[] }
+
+/**
+ * A stretch of consecutive minutes in which one part was Degraded or Down.
+ */
+export type HealthIncident = { part: HealthPart;
+/**
+ * The worst state in the stretch.
+ */
+worst: MinuteState;
+/**
+ * Indexes into `HealthHistory.minutes`, inclusive. An incident that began
+ * before the window starts at 0.
+ */
+first: number; last: number;
+/**
+ * It reaches the minute in progress.
+ */
+open: boolean; underruns: number; output_recoveries: number }
+
+export type HealthMinute = { driver: MinuteState; engine: MinuteState; output: MinuteState; plugins: MinuteState;
+/**
+ * Times the output found the crossing ring empty in this minute.
+ */
+underruns: number;
+/**
+ * Output restarts plus reconnects in this minute.
+ */
+output_recoveries: number }
+
+/**
+ * One part of the chain in the status history (ADR 0041).
+ */
+export type HealthPart = "driver" | "engine" | "output" | "plugins"
+
+export type Intent = { kind: "set_language"; value: Language | null } | { kind: "set_skin"; value: Skin } | { kind: "set_output_path"; value: OutputPath } | { kind: "set_routing_enabled"; value: boolean } | { kind: "set_app_rule"; value: AppRule } | { kind: "remove_app_rule"; value: string } | { kind: "begin_setup" } | { kind: "install_driver" } |
 /**
  * Looks at the PC again after the user did something outside the app
  * (a reboot, test signing, a repair, a device plugged in at the output
@@ -377,6 +421,32 @@ export type LatencyStats = { p50_ms: number; p99_ms: number;
  */
 samples: number }
 
+/**
+ * How one part fared over one minute: the worst state seen in it wins
+ * (Down > Degraded > Good > Idle > NoRecord).
+ */
+export type MinuteState =
+/**
+ * Nobody was watching: before the supervisor started, or a gap (the PC slept).
+ */
+"no_record" |
+/**
+ * Watched, but the part was not in use (engine off, no plugin upmixer).
+ */
+"idle" |
+/**
+ * In use and nothing went wrong.
+ */
+"good" |
+/**
+ * In use, and sound was interrupted or repaired.
+ */
+"degraded" |
+/**
+ * A fault stopped it.
+ */
+"down"
+
 export type NextAction = "retry" | "open_settings" |
 /**
  * Restart Windows, then recheck.
@@ -421,7 +491,11 @@ export type Phase = { kind: "setup"; value: SetupStep } | { kind: "ready" } | { 
 /**
  * What the machine learns about the PC once per run.
  */
-export type Platform = { os_build: number; arch: Arch; test_signing: boolean; secure_boot: SecureBoot }
+export type Platform = {
+/**
+ * The PC's name as Windows shows it (COMPUTERNAME); empty when unknown.
+ */
+computer_name?: string; os_build: number; arch: Arch; test_signing: boolean; secure_boot: SecureBoot }
 
 /**
  * [`Intent::ChoosePlugin`].
@@ -586,6 +660,24 @@ export type SetupStep = "welcome" |
  */
 "driver" | "reboot_required" | "choose_output"
 
+/**
+ * How the screen draws itself (ADR 0041). Only the screen reads it; the
+ * supervisor stores the choice and puts it in every snapshot.
+ */
+export type Skin =
+/**
+ * The original screen: a column of tabs and cards.
+ */
+"standard" |
+/**
+ * A receiver's front panel: a chassis with a dark display.
+ */
+"panel" |
+/**
+ * An operations console: health first, a pipeline map, commands.
+ */
+"console"
+
 export type Snapshot = {
 /**
  * The resolved language. An OS-following setting is resolved before the
@@ -596,7 +688,11 @@ language: Language;
  * The saved choice behind `language`: `None` follows the Windows display
  * language. The settings screen's selector shows this, not the result.
  */
-language_choice: Language | null; output_path: OutputPath; phase: Phase; profile: ProfileView; upmix: UpmixView; routing: RoutingView; asio?: AsioSettings; engine: EngineStatus | null;
+language_choice: Language | null;
+/**
+ * The saved choice of renderer. Older snapshots use the standard screen.
+ */
+skin?: Skin; output_path: OutputPath; phase: Phase; profile: ProfileView; upmix: UpmixView; routing: RoutingView; asio?: AsioSettings; engine: EngineStatus | null; health?: HealthHistory;
 /**
  * Outputs the user may choose: active, and never our own endpoints.
  */

@@ -340,6 +340,7 @@ function output(ctx: Context): HTMLElement {
         {
           role: 'tabpanel',
           id: `profile-panel-${open}`,
+          'data-region': `profile-${open}`,
           class: 'output-panel',
           'aria-labelledby': `profile-tab-${open}`,
           tabindex: 0,
@@ -385,9 +386,9 @@ function gain(ctx: Context): HTMLElement {
       'div',
       { class: 'gain' },
       h('label', { for: 'gain', class: 'visually-hidden' }, text.profile.gainLabel),
-      h('span', { class: 'gain-scale muted small' }, `${GAIN_MIN}`),
+      h('span', { class: 'gain-scale' }, `${GAIN_MIN}`),
       slider,
-      h('span', { class: 'gain-scale muted small' }, `+${GAIN_MAX}`),
+      h('span', { class: 'gain-scale' }, `+${GAIN_MAX}`),
       readout,
     ),
   ]);

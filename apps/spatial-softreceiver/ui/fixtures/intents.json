@@ -12,6 +12,18 @@
     "value": "en"
   },
   {
+    "kind": "set_skin",
+    "value": "standard"
+  },
+  {
+    "kind": "set_skin",
+    "value": "panel"
+  },
+  {
+    "kind": "set_skin",
+    "value": "console"
+  },
+  {
     "kind": "set_output_path",
     "value": "kernel_streaming"
   },

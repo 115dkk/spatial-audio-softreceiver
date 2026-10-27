@@ -1,21 +1,24 @@
-// The screen gallery's pictures: every scene of gallery.json in every
-// language and each of its palettes, one test and one picture apiece, as
-// <name>.<language>.<scheme>.png in $SSR_UI_SHOTS_DIR (else ui/shots/).
+// The screen gallery's pictures: every scene of gallery.json in every skin
+// (ADR 0041), every language and each of its palettes, one test and one
+// picture apiece, as <skin>/<name>.<language>.<scheme>.png in
+// $SSR_UI_SHOTS_DIR (else ui/shots/).
 // tools/ui-gallery-issue.mjs checks the folder against the same table.
 //
 // Each picture is a fresh browser context with the language's locale, the
 // scene's window size and the palette. Before and after the picture the page
-// must have no console error or warning and no page error, IBM Plex Sans KR in
+// must have no console error or warning and no page error, the skin's fonts in
 // place, the scene's language on <html>, no horizontal overflow, and Hangul
 // only on the Korean pages.
 
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
+import { SKINS } from '../src/skins/names';
 
 type Language = 'ko' | 'en';
 type Scheme = 'light' | 'dark';
 type Tab = 'status' | 'profile' | 'upmix' | 'settings';
+type Skin = (typeof SKINS)[number];
 
 interface SceneEntry {
   name: string;
@@ -24,9 +27,12 @@ interface SceneEntry {
   tab: Tab | null;
   size?: [number, number];
   schemes?: Scheme[];
+  skinSteps?: Partial<Record<string, unknown[]>>;
 }
 
 interface Table {
+  skins: Skin[];
+  skinNames: Record<string, string>;
   languages: Language[];
   defaults: { size: [number, number]; schemes: Scheme[] };
   groups: { id: string }[];
@@ -50,10 +56,26 @@ const scenes = table.scenarios.map((scene) => ({
 const LOCALES: Record<Language, string> = { ko: 'ko-KR', en: 'en-US' };
 const HANGUL = /[가-힣ᄀ-ᇿ㄰-㆏]/u;
 const READY = 'html[data-gallery-ready="true"]';
+/** The faces each skin must have in place before its picture (ADR 0041). */
+const FONTS: Record<Skin, string[]> = {
+  standard: ['400 14px "IBM Plex Sans KR"'],
+  panel: ['400 15px "Galmuri14"', '400 14px "IBM Plex Sans KR"'],
+  console: ['500 14px "Pretendard"'],
+};
 
 test.describe.configure({ mode: 'parallel' });
 
 test('the scene table covers every fixture, both languages and every main tab', () => {
+  // The gallery shows every skin the screen can load, each once.
+  expect(table.skins, 'the gallery skins').toEqual([...SKINS]);
+  expect(Object.keys(table.skinNames).sort(), 'skinNames').toEqual([...SKINS].sort());
+  const strange = scenes.flatMap((scene) =>
+    Object.keys(scene.skinSteps ?? {})
+      .filter((skin) => !SKINS.includes(skin as Skin))
+      .map((skin) => `${scene.name}: ${skin}`),
+  );
+  expect(strange, 'skinSteps for a skin that does not exist').toEqual([]);
+
   const names = scenes.map((scene) => scene.name);
   expect(names.filter((name, index) => names.indexOf(name) !== index), 'scene names listed twice').toEqual([]);
 
@@ -88,10 +110,12 @@ test('the scene table covers every fixture, both languages and every main tab', 
 });
 
 /** The checks every picture must pass, before and after it is taken. */
-async function check(page: Page, language: Language, problems: string[]) {
+async function check(page: Page, language: Language, skin: Skin, problems: string[]) {
   expect(problems, 'console errors, warnings and page errors').toEqual([]);
-  const fontLoaded = await page.evaluate(() => document.fonts.check('400 14px "IBM Plex Sans KR"', '공간'));
-  expect(fontLoaded, 'IBM Plex Sans KR is loaded').toBe(true);
+  for (const font of FONTS[skin]) {
+    const loaded = await page.evaluate((face) => document.fonts.check(face, '공간'), font);
+    expect(loaded, `${font} is loaded`).toBe(true);
+  }
   const facts = await page.evaluate(() => ({
     lang: document.documentElement.lang,
     scrollWidth: document.documentElement.scrollWidth,
@@ -108,40 +132,42 @@ async function check(page: Page, language: Language, problems: string[]) {
   }
 }
 
-for (const scene of scenes) {
-  for (const language of table.languages) {
-    for (const scheme of scene.schemes) {
-      const file = `${scene.name}.${language}.${scheme}.png`;
-      test.describe(file, () => {
-        const [width, height] = scene.size;
-        test.use({ locale: LOCALES[language], viewport: { width, height }, colorScheme: scheme, deviceScaleFactor: 1 });
+for (const skin of table.skins) {
+  for (const scene of scenes) {
+    for (const language of table.languages) {
+      for (const scheme of scene.schemes) {
+        const file = `${scene.name}.${language}.${scheme}.png`;
+        test.describe(`${skin}/${file}`, () => {
+          const [width, height] = scene.size;
+          test.use({ locale: LOCALES[language], viewport: { width, height }, colorScheme: scheme, deviceScaleFactor: 1 });
 
-        test('draws and is photographed', async ({ page }, info) => {
-          const problems: string[] = [];
-          page.on('console', (message) => {
-            if (message.type() === 'error' || message.type() === 'warning') {
-              problems.push(`console ${message.type()}: ${message.text()}`);
-            }
-          });
-          page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
-          // A scene that cannot be drawn throws; fail on that at once.
-          const broken = new Promise<never>((_, reject) => {
-            page.on('pageerror', (error) => reject(error));
-          });
-          await page.emulateMedia({ colorScheme: scheme });
-          await page.goto(`/?gallery=1&scene=${encodeURIComponent(scene.name)}&lang=${language}`);
-          await Promise.race([page.locator(READY).waitFor({ state: 'attached' }), broken]);
+          test('draws and is photographed', async ({ page }, info) => {
+            const problems: string[] = [];
+            page.on('console', (message) => {
+              if (message.type() === 'error' || message.type() === 'warning') {
+                problems.push(`console ${message.type()}: ${message.text()}`);
+              }
+            });
+            page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
+            // A scene that cannot be drawn throws; fail on that at once.
+            const broken = new Promise<never>((_, reject) => {
+              page.on('pageerror', (error) => reject(error));
+            });
+            await page.emulateMedia({ colorScheme: scheme });
+            await page.goto(`/?gallery=1&scene=${encodeURIComponent(scene.name)}&lang=${language}&skin=${skin}`);
+            await Promise.race([page.locator(READY).waitFor({ state: 'attached' }), broken]);
 
-          await check(page, language, problems);
-          const dir = String(info.config.metadata.shotsDir);
-          mkdirSync(dir, { recursive: true });
-          // A turning spinner would make every picture of its scene differ;
-          // 'disabled' cancels an infinite animation to its first frame for
-          // the shot (and finishes finite ones) so it is the same each run.
-          await page.screenshot({ path: join(dir, file), fullPage: true, animations: 'disabled' });
-          await check(page, language, problems);
+            await check(page, language, skin, problems);
+            const dir = join(String(info.config.metadata.shotsDir), skin);
+            mkdirSync(dir, { recursive: true });
+            // A turning spinner would make every picture of its scene differ;
+            // 'disabled' cancels an infinite animation to its first frame for
+            // the shot (and finishes finite ones) so it is the same each run.
+            await page.screenshot({ path: join(dir, file), fullPage: true, animations: 'disabled' });
+            await check(page, language, skin, problems);
+          });
         });
-      });
+      }
     }
   }
 }

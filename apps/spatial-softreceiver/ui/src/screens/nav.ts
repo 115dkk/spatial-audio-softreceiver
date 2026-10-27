@@ -1,5 +1,7 @@
-// The narrow column on the left: the mark, the four screens and a one-word
-// power state so it is visible from every screen.
+// The bar across the top: the mark, the four screens as tabs and, away from
+// the status screen, the power state in one small word with its lamp. The
+// status screen says the state in its own head, so the bar leaves it out
+// there and the state is never said twice on one page.
 
 import type { Intent, Snapshot } from '../bindings';
 import { h } from '../dom';
@@ -34,7 +36,7 @@ export function brand(): HTMLElement {
   return h(
     'div',
     { class: 'brand' },
-    h('img', { class: 'brand-mark', src: '/mark.svg', alt: '', width: 28, height: 28 }),
+    h('img', { class: 'brand-mark', src: '/mark.svg', alt: '', width: 24, height: 24 }),
     h('span', { class: 'brand-name' }, text.product),
   );
 }
@@ -42,7 +44,6 @@ export function brand(): HTMLElement {
 export function nav(ctx: Context): HTMLElement {
   const list = h('ul', { class: 'nav-list' });
   for (const tab of TABS) {
-    const label = text.nav[tab];
     const current = ctx.view.tab === tab;
     list.append(
       h(
@@ -57,28 +58,28 @@ export function nav(ctx: Context): HTMLElement {
             'aria-current': current ? 'page' : null,
             onClick: () => ctx.setView({ tab }),
           },
-          label,
+          text.nav[tab],
         ),
       ),
     );
   }
   const power = powerState(ctx.snapshot, ctx.pending);
-  // The rail paints the column the whole page down; the nav inside it stays
-  // in view while the page scrolls.
   return h(
-    'aside',
-    { class: 'nav-rail' },
+    'header',
+    { class: 'app-bar' },
     h(
-      'nav',
-      { class: 'nav', 'aria-label': text.nav.label },
+      'div',
+      { class: 'app-bar-inner' },
       brand(),
-      list,
-      h(
-        'p',
-        { class: `nav-power tone-${power.tone}` },
-        h('span', { class: 'lamp', 'aria-hidden': 'true' }),
-        power.label,
-      ),
+      h('nav', { class: 'nav', 'aria-label': text.nav.label }, list),
+      ctx.view.tab === 'status'
+        ? null
+        : h(
+            'p',
+            { class: `nav-power tone-${power.tone}` },
+            h('span', { class: 'lamp', 'aria-hidden': 'true' }),
+            power.label,
+          ),
     ),
   );
 }

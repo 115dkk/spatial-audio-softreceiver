@@ -20,6 +20,21 @@ pub enum Language {
     En,
 }
 
+/// How the screen draws itself (ADR 0041). Only the screen reads it; the
+/// supervisor stores the choice and puts it in every snapshot.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum Skin {
+    /// The original screen: a column of tabs and cards.
+    #[default]
+    Standard,
+    /// A receiver's front panel: a chassis with a dark display.
+    Panel,
+    /// An operations console: health first, a pipeline map, commands.
+    Console,
+}
+
 /// One of the driver's portable application entrances (ADR 0028).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
@@ -153,6 +168,7 @@ pub struct Heartbeat {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum Intent {
     SetLanguage(Option<Language>),
+    SetSkin(Skin),
     SetOutputPath(OutputPath),
     SetRoutingEnabled(bool),
     SetAppRule(AppRule),
@@ -614,6 +630,75 @@ pub struct OutputChoice {
     pub name: String,
 }
 
+/// One part of the chain in the status history (ADR 0041).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum HealthPart {
+    Driver,
+    Engine,
+    Output,
+    Plugins,
+}
+
+/// How one part fared over one minute: the worst state seen in it wins
+/// (Down > Degraded > Good > Idle > NoRecord).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MinuteState {
+    /// Nobody was watching: before the supervisor started, or a gap (the PC slept).
+    NoRecord,
+    /// Watched, but the part was not in use (engine off, no plugin upmixer).
+    Idle,
+    /// In use and nothing went wrong.
+    Good,
+    /// In use, and sound was interrupted or repaired.
+    Degraded,
+    /// A fault stopped it.
+    Down,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct HealthMinute {
+    pub driver: MinuteState,
+    pub engine: MinuteState,
+    pub output: MinuteState,
+    pub plugins: MinuteState,
+    /// Times the output found the crossing ring empty in this minute.
+    pub underruns: u32,
+    /// Output restarts plus reconnects in this minute.
+    pub output_recoveries: u32,
+}
+
+/// A stretch of consecutive minutes in which one part was Degraded or Down.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct HealthIncident {
+    pub part: HealthPart,
+    /// The worst state in the stretch.
+    pub worst: MinuteState,
+    /// Indexes into `HealthHistory.minutes`, inclusive. An incident that began
+    /// before the window starts at 0.
+    pub first: u32,
+    pub last: u32,
+    /// It reaches the minute in progress.
+    pub open: bool,
+    pub underruns: u32,
+    pub output_recoveries: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct HealthHistory {
+    /// One entry per minute, oldest first, at most 90; the last is the minute
+    /// in progress. Empty before the first tick.
+    pub minutes: Vec<HealthMinute>,
+    /// Oldest first; only stretches that overlap `minutes`.
+    pub incidents: Vec<HealthIncident>,
+}
+
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(specta::Type))]
 pub struct Snapshot {
@@ -623,6 +708,9 @@ pub struct Snapshot {
     /// The saved choice behind `language`: `None` follows the Windows display
     /// language. The settings screen's selector shows this, not the result.
     pub language_choice: Option<Language>,
+    /// The saved choice of renderer. Older snapshots use the standard screen.
+    #[serde(default)]
+    pub skin: Skin,
     pub output_path: OutputPath,
     pub phase: Phase,
     pub profile: ProfileView,
@@ -631,6 +719,8 @@ pub struct Snapshot {
     #[serde(default)]
     pub asio: AsioSettings,
     pub engine: Option<EngineStatus>,
+    #[serde(default)]
+    pub health: HealthHistory,
     /// Outputs the user may choose: active, and never our own endpoints.
     pub outputs: Vec<OutputChoice>,
     pub chosen_output: Option<OutputChoice>,

@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 use engine::adapters::NullOpener;
 use engine::{LiveChange, MatrixUpmixer, OutputProfile, UpmixMonitor, UpmixStatus, Upmixer};
 use ssr_types::app::{
-    AppRule, AsioLayout, AsioSettings, Entrance, Intent, Language, NextAction, OutputChoice,
-    OutputPath, Phase, SetupStep, UserError,
+    AppRule, AsioLayout, AsioSettings, Entrance, HealthPart, Intent, Language, MinuteState,
+    NextAction, OutputChoice, OutputPath, Phase, SetupStep, Skin, UserError,
 };
 use ssr_types::ports::PolicyState;
 use ssr_types::{
@@ -69,6 +69,7 @@ struct World {
     engine_directions: Vec<DirectionView>,
     /// The recoverable fault the running engine reports in its status.
     engine_fault: Option<EngineFault>,
+    engine_underruns: u64,
     ks_fallback: bool,
     /// The status readers of the upmix stages the running engine took.
     stages: [Option<UpmixMonitor>; 3],
@@ -310,6 +311,7 @@ impl EngineHandle for FakeEngine {
             asio: world.engine_asio.clone(),
             directions: world.engine_directions.clone(),
             output_ks_fallback: world.ks_fallback,
+            underruns: world.engine_underruns,
             fault: world.engine_fault.clone(),
             ..EngineStatus::default()
         }
@@ -601,6 +603,7 @@ fn taken_roles() -> DefaultRoles {
 fn ready_pc() -> World {
     World {
         platform: Platform {
+            computer_name: "TEST-PC".to_owned(),
             os_build: 19_045,
             arch: Arch::X64,
             test_signing: true,
@@ -636,6 +639,7 @@ fn ready_pc() -> World {
         visibility_error: None,
         engine_directions: Vec::new(),
         engine_fault: None,
+        engine_underruns: 0,
         ks_fallback: false,
         stages: Default::default(),
         upmix_status: Default::default(),
@@ -709,6 +713,7 @@ fn dac_choice() -> OutputChoice {
 fn dac_settings() -> Settings {
     Settings {
         language: None,
+        skin: Skin::Standard,
         output: Some(dac_choice()),
         profile: Default::default(),
         output_path: Default::default(),
@@ -901,6 +906,32 @@ fn running(world: World) -> (Shared, Machine) {
     assert_eq!(supervisor.snapshot().phase, Phase::Running);
     shared.take_calls();
     (shared, supervisor)
+}
+
+#[test]
+fn running_history_closes_an_underrun_incident_after_the_next_minute() {
+    let (shared, mut supervisor) = running(ready_pc());
+    let now = Instant::now();
+    supervisor.tick(now);
+    assert!(supervisor.take_tick_changes().snapshot);
+    shared.get().engine_underruns = 1;
+    supervisor.tick(now + Duration::from_secs(30));
+    assert!(supervisor.take_tick_changes().snapshot);
+    supervisor.tick(now + Duration::from_secs(60));
+    assert!(supervisor.take_tick_changes().snapshot);
+
+    let health = supervisor.snapshot().health;
+    assert_eq!(health.minutes.len(), 2);
+    assert_eq!(health.minutes[0].engine, MinuteState::Degraded);
+    assert_eq!(health.minutes[0].underruns, 1);
+    assert_eq!(health.minutes[1].engine, MinuteState::Good);
+    assert_eq!(health.incidents.len(), 1);
+    assert_eq!(health.incidents[0].part, HealthPart::Engine);
+    assert_eq!(
+        (health.incidents[0].first, health.incidents[0].last),
+        (0, 0)
+    );
+    assert!(!health.incidents[0].open);
 }
 
 fn audio_app(pid: u32, exe: &str, device: &str, active: bool) -> AudioApp {
@@ -1265,6 +1296,7 @@ fn enable_rechecks_missing_policy_before_roles_or_launch() {
 fn the_wizard_walks_every_step_on_a_fresh_pc() {
     let mut world = ready_pc();
     world.platform = Platform {
+        computer_name: "TEST-PC".to_owned(),
         os_build: 18_363,
         arch: Arch::X64,
         test_signing: false,
@@ -1833,6 +1865,7 @@ fn a_changed_device_id_is_found_by_name_and_remembered() {
         ready_pc(),
         Settings {
             language: None,
+            skin: Skin::Standard,
             output: Some(OutputChoice {
                 id: id("{dac-before-reboot}"),
                 name: DAC_NAME.into(),
@@ -2540,6 +2573,7 @@ fn new_starts_ready_when_the_driver_and_the_output_are_present() {
 fn new_starts_at_welcome_otherwise() {
     let gone = Settings {
         language: None,
+        skin: Skin::Standard,
         output: Some(OutputChoice {
             id: id("{old-dac}"),
             name: "Old DAC".into(),
@@ -3853,6 +3887,66 @@ fn language_defaults_overrides_resets_and_rerenders_errors_in_every_phase() {
 }
 
 #[test]
+fn skin_changes_in_every_phase_and_is_refused_after_quit() {
+    let setup = start(ready_pc(), Settings::default()).1;
+    let ready = start(ready_pc(), dac_settings()).1;
+    let running_machine = running(ready_pc()).1;
+
+    let mut faulted_world = ready_pc();
+    faulted_world
+        .engine_polls
+        .push_back(Err(SessionError::Rejected));
+    let mut faulted = running(faulted_world).1;
+    faulted.tick(Instant::now());
+
+    for mut supervisor in [setup, ready, running_machine, faulted] {
+        let phase = supervisor.snapshot().phase;
+        supervisor.handle(Intent::SetSkin(Skin::Panel)).unwrap();
+        let snapshot = supervisor.snapshot();
+        assert_eq!(snapshot.phase, phase);
+        assert_eq!(snapshot.skin, Skin::Panel, "{phase:?}");
+    }
+
+    let mut quit = start(ready_pc(), dac_settings()).1;
+    quit.handle(Intent::Quit).unwrap();
+    assert_eq!(
+        quit.handle(Intent::SetSkin(Skin::Console)),
+        Err(not_allowed())
+    );
+    assert_eq!(quit.snapshot().skin, Skin::Standard);
+}
+
+#[test]
+fn skin_change_keeps_the_current_error() {
+    let mut world = ready_pc();
+    world.platform.os_build = 18_363;
+    let (_, mut supervisor) = start(world, Settings::default());
+    supervisor.handle(Intent::BeginSetup).unwrap_err();
+    let kept = supervisor.snapshot().error.unwrap();
+
+    supervisor.handle(Intent::SetSkin(Skin::Console)).unwrap();
+    let snapshot = supervisor.snapshot();
+    assert_eq!(snapshot.skin, Skin::Console);
+    assert_eq!(snapshot.error, Some(kept));
+}
+
+#[test]
+fn skin_settings_migrate_and_survive_a_supervisor_restart() {
+    let mut old_json = serde_json::to_value(dac_settings()).unwrap();
+    old_json.as_object_mut().unwrap().remove("skin");
+    let old_settings: Settings = serde_json::from_value(old_json).unwrap();
+    assert_eq!(old_settings.skin, Skin::Standard);
+
+    let (_, mut supervisor) = start(ready_pc(), old_settings);
+    supervisor.handle(Intent::SetSkin(Skin::Panel)).unwrap();
+    let saved = serde_json::to_string(supervisor.settings()).unwrap();
+    let settings: Settings = serde_json::from_str(&saved).unwrap();
+    let (_, restarted) = start(ready_pc(), settings);
+    assert_eq!(restarted.settings().skin, Skin::Panel);
+    assert_eq!(restarted.snapshot().skin, Skin::Panel);
+}
+
+#[test]
 fn default_language_and_failed_profile_errors_follow_language_changes() {
     let mut config = this_build();
     config.default_language = Language::En;
@@ -4666,7 +4760,13 @@ fn a_slow_host_is_starting_until_it_reports_running() {
     supervisor.take_tick_changes();
 
     supervisor.tick(Instant::now());
-    assert_eq!(supervisor.take_tick_changes(), Default::default());
+    assert_eq!(
+        supervisor.take_tick_changes(),
+        supervisor::upmix::TickChanges {
+            snapshot: true,
+            settings: false,
+        }
+    );
     shared.get().plugins.events[1].push_back(PluginEvent::Running);
     supervisor.tick(Instant::now());
     assert_eq!(take_applied(&shared), [stage(1, 48_000)]);

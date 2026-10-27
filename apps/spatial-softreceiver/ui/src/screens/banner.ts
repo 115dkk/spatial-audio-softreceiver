@@ -103,7 +103,7 @@ function band(ctx: Context, { error, kept }: Band, input: BannerInput, index: nu
   const severity = error.next === 'none' && ctx.snapshot.phase.kind === 'running' ? 'warning' : 'error';
   return h(
     'div',
-    { class: `banner ${severity}`, role: 'alert' },
+    { class: `banner ${severity}`, role: 'alert', 'data-region': 'error-band' },
     h('span', { class: 'banner-mark', 'aria-hidden': 'true' }),
     message,
     control === null ? null : h('div', { class: 'banner-action' }, control),

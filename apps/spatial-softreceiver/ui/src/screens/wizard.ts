@@ -135,7 +135,7 @@ export function outputList(ctx: Context, keyPrefix: string): HTMLElement {
       h('div', { class: 'actions' }, intentButton(ctx, text.banner.recheck, { kind: 'recheck' }, { key: `${keyPrefix}-recheck` })),
     );
   }
-  const list = h('ul', { class: 'output-list', 'aria-label': text.wizard.outputsLabel });
+  const list = h('ul', { class: 'output-list', 'data-region': 'output-list', 'aria-label': text.wizard.outputsLabel });
   outputs.forEach((output, index) => {
     const current = chosen_output?.id === output.id;
     list.append(

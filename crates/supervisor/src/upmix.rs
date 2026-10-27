@@ -39,6 +39,7 @@ use ssr_types::app::{
 };
 use ssr_types::{SourceFormat, Speaker};
 
+use crate::health::PluginHealth;
 use crate::machine::EngineHandle;
 use crate::session::SessionError;
 use crate::text::Message;
@@ -780,6 +781,39 @@ impl Upmixers {
             std::thread::sleep(Duration::from_millis(10));
         }
         self.retiring.clear();
+    }
+
+    /// Each plugin upmixer's state for the minute health log, without building
+    /// the screen view or allocating on every supervisor tick.
+    pub(crate) fn health(
+        &self,
+        settings: &UpmixSettings,
+        engine: Option<&dyn EngineHandle>,
+    ) -> [PluginHealth; UPMIX_ENDPOINTS] {
+        std::array::from_fn(|endpoint| {
+            let slot = &self.slots[endpoint];
+            if settings.effective(endpoint) != UpmixerChoice::Plugin {
+                return PluginHealth::Idle;
+            }
+            if slot.failed.is_some() {
+                return PluginHealth::Failed;
+            }
+            let (Some(host), Some(engine)) = (&slot.host, engine) else {
+                return PluginHealth::Idle;
+            };
+            if !host.up {
+                return PluginHealth::Starting;
+            }
+            let missing = engine
+                .upmix_status(endpoint as u16)
+                .filter(|status| status.installed)
+                .is_some_and(|status| status.upmixing && status.mode == UpmixMode::Fallback);
+            if host.fallback || missing {
+                PluginHealth::Fallback
+            } else {
+                PluginHealth::Running
+            }
+        })
     }
 
     /// The screen's view: the settings, each host's state and, while a stage

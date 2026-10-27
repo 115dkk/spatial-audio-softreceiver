@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use ssr_types::app::{Language, NextAction, Snapshot, UpmixState};
+use ssr_types::app::{Language, NextAction, Skin, Snapshot, UpmixState};
 use ssr_types::{OutputError, SecureBoot};
 use supervisor::machine::Config;
 use supervisor::text::Message;
@@ -239,6 +239,7 @@ fn every_fixture_sentence_is_the_supervisors() {
             .unwrap_or_else(|error| panic!("parse {name} fixture: {error}"));
             assert_eq!(snapshot.language, language, "{name}");
             assert_eq!(snapshot.language_choice, None, "{name}");
+            assert_eq!(snapshot.skin, Skin::Standard, "{name}");
 
             let output_name = snapshot
                 .chosen_output

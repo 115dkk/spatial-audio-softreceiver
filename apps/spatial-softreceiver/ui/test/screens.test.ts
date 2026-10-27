@@ -97,13 +97,36 @@ describe('what each state says', () => {
     expect(buttons()).toContain('다시 확인');
   });
 
-  it('ready is off, with 켜기 and the cards dimmed', () => {
+  it('ready is off: one 켜기, the output and profile it will play, and the entrances by name', () => {
     draw('ready');
+    expect(root.querySelectorAll('[data-key="power"]')).toHaveLength(1);
     expect(root.querySelector('[data-intent="enable"]')?.textContent).toBe('켜기');
+    expect(root.querySelector('[data-intent="enable"]')?.classList.contains('primary')).toBe(true);
     expect(root.querySelector('#power-state')?.textContent).toContain('꺼짐');
-    expect(root.querySelectorAll('.endpoint-card.is-off')).toHaveLength(3);
+    // Off is said once: no card repeats it and the bar leaves it to the head.
+    expect(root.querySelectorAll('.endpoint-card')).toHaveLength(0);
+    expect(root.querySelector('.nav-power')).toBeNull();
+    expect(textOf().split('꺼짐')).toHaveLength(2);
     expect(root.querySelector('.meters')).toBeNull();
-    expect(textOf()).toContain('DENON AVR (NVIDIA High Definition Audio)');
+    expect(root.querySelector('.summary-output')?.textContent).toContain('DENON AVR (NVIDIA High Definition Audio)');
+    expect(root.querySelector('.summary-profile')?.textContent).toBe(`${ko.profile.outputTitle}스피커 · 2.0`);
+    // No engine, so nothing to say about dropouts.
+    expect(root.querySelector('.summary-health')).toBeNull();
+    expect([...root.querySelectorAll('.entrance-line-name')].map((name) => name.textContent)).toEqual([
+      '공간 소프트리시버',
+      '공간 소프트리시버 음악',
+      '공간 소프트리시버 PASS',
+    ]);
+  });
+
+  it('faulted keeps the same summary, with the entrances by name and no meters', () => {
+    draw('faulted');
+    expect(root.querySelector('#power-state')?.className).toContain('tone-error');
+    expect(root.querySelector('.summary-profile')?.textContent).toContain('스피커 · 2.0');
+    // The output is chosen while ready only.
+    expect(root.querySelector('[data-key="outputs-toggle"]')).toBeNull();
+    expect(root.querySelectorAll('.entrance-line-name')).toHaveLength(3);
+    expect(root.querySelector('.meters')).toBeNull();
   });
 
   it('running names the entrances, their formats and the latency', () => {
@@ -124,6 +147,62 @@ describe('what each state says', () => {
     expect(text).toContain('독점');
     // The fixture's note is the supervisor's Message::Reconnected.
     expect(text).toContain('다시 연결했습니다.');
+  });
+
+  it('running sums up on one line: the profile kind and name, and whether it dropped out', () => {
+    const app = draw('running');
+    expect(root.querySelector('.summary .summary-profile')?.textContent).toBe(
+      `${ko.profile.outputTitle}헤드폰 · ${fixture('running').profile.name}`,
+    );
+    const health = () => root.querySelector('.summary-health');
+    // The fixture's engine found the ring empty once.
+    expect(health()?.textContent).toBe(`${ko.status.health}${ko.status.asioUnderruns('1')}`);
+    expect(health()?.className).toContain('tone-warning');
+    const engine = fixture('running').engine;
+    if (engine === null) throw new Error('running has an engine');
+    engine.underruns = 0;
+    app.updateMeters(engine);
+    expect(health()?.textContent).toBe(`${ko.status.health}${ko.status.healthClean}`);
+    expect(health()?.className).toContain('tone-clean');
+    engine.underruns = 1204;
+    app.updateMeters(engine);
+    expect(health()?.textContent).toContain('끊김 1,204회');
+    // The power state is said once, in the head; the bar leaves it out here.
+    expect(root.querySelectorAll('#power-state')).toHaveLength(1);
+    expect(root.querySelector('.nav-power')).toBeNull();
+  });
+
+  it('names speakers with their correction, and a profile.toml, in the summary', () => {
+    draw('running-speakers');
+    const profile = () => root.querySelector('.summary-profile');
+    expect(profile()?.querySelector('.profile-kind')?.textContent).toBe('스피커');
+    expect(profile()?.querySelector('.profile-name')?.textContent).toBe('SECS 2 mixed (8.0 ms)');
+    expect(profile()?.querySelector('.tag')?.textContent).toBe(ko.profile.correctionTitle);
+    draw('ready-profile-file');
+    expect(profile()?.querySelector('.profile-kind')?.textContent).toBe('헤드폰');
+    expect(profile()?.querySelector('.profile-name')?.textContent).toBe(fixture('ready-profile-file').profile.name);
+    expect(profile()?.querySelector('.tag')?.textContent).toBe('profile.toml');
+    draw('ready');
+    expect(profile()?.querySelector('.tag')).toBeNull();
+  });
+
+  it('shows the power state in the bar on every other tab, as the head would say it', () => {
+    const app = draw('running', 'profile');
+    const lamp = () => root.querySelector('.app-bar .nav-power');
+    expect(lamp()?.textContent).toBe(ko.status.on);
+    expect(lamp()?.className).toContain('tone-on');
+    expect(root.querySelector('#power-state')).toBeNull();
+    for (const tab of ['upmix', 'settings'] as const) {
+      root.querySelector<HTMLButtonElement>(`[data-key="nav-${tab}"]`)?.click();
+      expect(lamp()?.textContent, tab).toBe(ko.status.on);
+    }
+    root.querySelector<HTMLButtonElement>('[data-key="nav-status"]')?.click();
+    expect(lamp()).toBeNull();
+    expect(root.querySelector('#power-state')?.textContent).toBe(ko.status.on);
+    app.draw(fixture('faulted'));
+    root.querySelector<HTMLButtonElement>('[data-key="nav-settings"]')?.click();
+    expect(lamp()?.textContent).toBe(ko.status.stopped);
+    expect(lamp()?.className).toContain('tone-error');
   });
 
   it('running while reconnecting says so in the head, and only there', () => {
@@ -209,6 +288,50 @@ describe('meters', () => {
     expect([...root.querySelectorAll('.endpoint-card')]).toEqual(cards);
     expect(root.querySelector('.meters')?.textContent).toContain('7.3');
     expect(cards[0]?.textContent).toContain('-12.0\u00a0dB');
+  });
+
+  it('stand in three groups, with the counters for a report folded under details', () => {
+    const app = draw('running');
+    const m = ko.meters;
+    const groups = [...root.querySelectorAll('.meters .meter-group')].map((group) => [
+      group.querySelector('h3')?.textContent,
+      [...group.querySelectorAll('dt')].map((label) => label.textContent),
+    ]);
+    expect(groups).toEqual([
+      [ko.status.health, [m.underruns, m.outputRestarts, m.decodeRefused]],
+      [ko.status.latency, [m.latencyP50, m.latencyP99, m.ringLevel]],
+      [ko.status.outputSettings, [m.outputMode, m.output, m.clock]],
+    ]);
+    for (const group of root.querySelectorAll('.meter-group')) {
+      expect(root.querySelector(`#${group.getAttribute('aria-labelledby')}`)?.tagName).toBe('H3');
+    }
+    expect(root.querySelector('.meter-group:first-child .meter dd')?.textContent).toBe(`1${m.times}`);
+
+    // Lost bytes and the format change numbers are there, folded, not headline facts.
+    const more = root.querySelector<HTMLDetailsElement>('details.meter-more');
+    expect(more?.open).toBe(false);
+    expect(more?.querySelector('summary')?.textContent).toBe(ko.status.details);
+    expect(root.querySelector('.meters')?.textContent).not.toContain(m.lostBytes);
+    expect(more?.textContent).toContain(m.lostBytes);
+    for (const card of root.querySelectorAll('.endpoint-card')) expect(card.textContent).not.toContain(ko.status.epoch);
+    const engine = fixture('running').engine;
+    if (engine === null) throw new Error('running has an engine');
+    const epochs = () =>
+      [...(more?.querySelectorAll('.meter-epochs .meter') ?? [])].map((row) => [
+        row.querySelector('dt')?.textContent,
+        row.querySelector('dd')?.textContent,
+      ]);
+    expect(epochs()).toEqual([0, 1, 2].map((index) => [ko.endpoints[index]?.name, String(engine.endpoints[index]?.epoch)]));
+    expect(more?.querySelector('.meter-epochs h4')?.textContent).toBe(ko.status.epoch);
+    expect(more?.querySelector('.meter-epochs p')?.textContent).toBe(ko.status.epochHint);
+
+    // They follow the meters in place like the rest.
+    engine.endpoints[1].epoch = 9;
+    engine.lost_bytes = 4096;
+    app.updateMeters(engine);
+    expect(root.querySelector('details.meter-more')).toBe(more);
+    expect(epochs()[1]).toEqual([ko.endpoints[1]?.name, '9']);
+    expect(more?.textContent).toContain('4,096');
   });
 
   it('are ignored outside running', () => {
@@ -389,6 +512,7 @@ describe('sending intents', () => {
 
     const power = () => root.querySelector<HTMLButtonElement>('[data-key="power"]');
     const head = () => root.querySelector('#power-state');
+    /** The bar's power word; the status screen leaves it to its head. */
     const rail = () => root.querySelector('.nav-power');
 
     /** The text a sighted user sees in `element`, by the stylesheet. */
@@ -420,12 +544,17 @@ describe('sending intents', () => {
       return element === null ? '' : (element.getAttribute('aria-label') ?? spoken(element).trim());
     }
 
-    /** The state word in the status head and in the rail, with its tone. */
-    const states = () =>
-      [head(), rail()].map((state) => [
+    /**
+     * The state word in the status head, with its tone. The bar above says
+     * it only on the other tabs, so on this one there is the head alone.
+     */
+    const states = () => {
+      expect(rail()).toBeNull();
+      return [head()].map((state) => [
         state?.textContent,
         [...(state?.classList ?? [])].find((name) => name.startsWith('tone-')),
       ]);
+    };
 
     describe.each(['ko', 'en'] as const)('in %s', (language) => {
       const t = language === 'ko' ? ko : en;
@@ -450,10 +579,7 @@ describe('sending intents', () => {
         expect(button?.hasAttribute('aria-describedby')).toBe(false);
         // The hidden label still holds the button's width.
         expect(button?.querySelector('.button-label')?.textContent).toBe(t.status.powerOn);
-        expect(states()).toEqual([
-          [t.status.powerTurningOn, 'tone-warning'],
-          [t.status.powerTurningOn, 'tone-warning'],
-        ]);
+        expect(states()).toEqual([[t.status.powerTurningOn, 'tone-warning']]);
 
         // The reply is in; the switch still waits for the snapshot after it.
         held.release();
@@ -467,10 +593,7 @@ describe('sending intents', () => {
         expect(seenText(power())).toBe(t.status.powerOff);
         expect(spokenName(power())).toBe(t.status.powerOff);
         expect(power()?.getAttribute('aria-describedby')).toBe('power-state');
-        expect(states()).toEqual([
-          [t.status.on, 'tone-on'],
-          [t.status.on, 'tone-on'],
-        ]);
+        expect(states()).toEqual([[t.status.on, 'tone-on']]);
       });
 
       it('turning off spins too, says turning off, and leaves the state on', async () => {
@@ -486,10 +609,7 @@ describe('sending intents', () => {
         expect(seenText(power())).toBe('');
         expect(spokenName(power())).toBe(t.status.powerTurningOff);
         expect(power()?.querySelector('.button-label')?.textContent).toBe(t.status.powerOff);
-        expect(states()).toEqual([
-          [t.status.on, 'tone-on'],
-          [t.status.on, 'tone-on'],
-        ]);
+        expect(states()).toEqual([[t.status.on, 'tone-on']]);
 
         held.release();
         await tick();
@@ -498,10 +618,29 @@ describe('sending intents', () => {
         expect(power()?.getAttribute('aria-busy')).toBeNull();
         expect(power()?.querySelector('.spinner')).toBeNull();
         expect(seenText(power())).toBe(t.status.powerOn);
-        expect(states()).toEqual([
-          [t.status.off, 'tone-off'],
-          [t.status.off, 'tone-off'],
-        ]);
+        expect(states()).toEqual([[t.status.off, 'tone-off']]);
+      });
+
+      it('the bar on another tab says turning on while the enable is in flight', async () => {
+        const start = fixture('ready', language);
+        const held = heldApi(start, 'resolve');
+        const app = mountApp(root, held.api, { tab: 'settings' });
+        app.draw(start);
+        expect(head()).toBeNull();
+        expect(rail()?.textContent).toBe(t.status.off);
+        expect(rail()?.className).toContain('tone-off');
+
+        void app.send({ kind: 'enable' });
+        expect(held.sent).toEqual([{ kind: 'enable' }]);
+        expect(rail()?.textContent).toBe(t.status.powerTurningOn);
+        expect(rail()?.className).toContain('tone-warning');
+
+        held.release();
+        await tick();
+        app.draw(fixture('running', language));
+        await tick();
+        expect(rail()?.textContent).toBe(t.status.on);
+        expect(rail()?.className).toContain('tone-on');
       });
 
       it('a refused enable brings the label and the off state back', async () => {
@@ -520,10 +659,7 @@ describe('sending intents', () => {
         expect(power()?.querySelector('.spinner')).toBeNull();
         expect(power()?.disabled).toBe(false);
         expect(seenText(power())).toBe(t.status.powerOn);
-        expect(states()).toEqual([
-          [t.status.off, 'tone-off'],
-          [t.status.off, 'tone-off'],
-        ]);
+        expect(states()).toEqual([[t.status.off, 'tone-off']]);
       });
     });
 

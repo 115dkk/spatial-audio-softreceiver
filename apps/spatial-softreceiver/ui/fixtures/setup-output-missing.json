@@ -1,6 +1,7 @@
 {
   "language": "ko",
   "language_choice": null,
+  "skin": "standard",
   "output_path": "wasapi",
   "phase": {
     "kind": "setup",
@@ -139,6 +140,10 @@
     "system_attenuation_db": 0.0
   },
   "engine": null,
+  "health": {
+    "minutes": [],
+    "incidents": []
+  },
   "outputs": [
     {
       "id": "{0.0.0.00000000}.{3f2504e0-4f89-11d3-9a0c-0305e82c3301}",
@@ -162,6 +167,7 @@
     }
   },
   "platform": {
+    "computer_name": "STUDIO-PC",
     "os_build": 26100,
     "arch": "x64",
     "test_signing": true,

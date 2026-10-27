@@ -112,6 +112,21 @@ describe('i18n catalog contract', () => {
       'settings.routingHint': [['Spatial SoftReceiver PASS', 'Spatial SoftReceiver']],
       'settings.routingBuiltInWas': [['Spatial SoftReceiver PASS']],
       'settings.asioHint': [['Spatial SoftReceiver']],
+      'console.goTo': [['Profile']],
+      'console.healthPlan': [['Headphones (BRIR living-room)', 'DENON AVR']],
+      'console.healthPlaying': [['Speakers 7.1', 'DENON AVR']],
+      'console.issueUnsupported': [['Spatial SoftReceiver PASS']],
+      'console.moreIssues': [[1], [3]],
+      'console.show': [['Upmix']],
+      'console.directions': [[0], [11]],
+      'console.outputsFound': [[3]],
+      'console.partState': [['Output device', 'Down']],
+      'console.rowLabel': [['Engine', 'Operational', '99.4%', 1, 0], ['Plugin host', 'Idle', '-', 0, 0]],
+      'console.minutesAgo': [[1], [90]],
+      'console.readoutState': [['14:32 (3 min ago)', 'Engine', 'Degraded']],
+      'console.readoutCounts': [['1', '0']],
+      'console.durationMinutes': [[1], [12]],
+      'console.recoveries': [['2']],
     } satisfies Record<FunctionPaths<typeof ko>, unknown[][]>;
     const functions = leaves(ko).filter(([, value]) => typeof value === 'function');
     expect(functions.map(([path]) => path).sort()).toEqual(Object.keys(cases).sort());

@@ -27,7 +27,7 @@ use speakers::SpeakerProfile;
 use ssr_types::app::{
     AsioSettings, CorrectionView, HeadphonesView, Intent, Language, NextAction, OutputChoice,
     OutputPath, Phase, PluginChoice, PluginFormat, ProfileKind, ProfileView, RoutingSettings,
-    SetupStep, Snapshot, SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply,
+    SetupStep, Skin, Snapshot, SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply,
     UpmixerChoice, UpmixerSetting, UserError,
 };
 use ssr_types::ports::PolicyState;
@@ -37,6 +37,7 @@ use ssr_types::{
     SetupTask,
 };
 
+use crate::health::{HealthLog, Observation};
 use crate::restore_point::{self, RestorePoint};
 use crate::routing::Routing;
 use crate::session::{Session, SessionError, SessionNotice};
@@ -284,6 +285,9 @@ pub struct Settings {
     /// `None` follows the language resolved by the shell from the OS.
     #[serde(default)]
     pub language: Option<Language>,
+    /// How the screen draws snapshots. Older settings use the standard screen.
+    #[serde(default)]
+    pub skin: Skin,
     /// The chosen output, remembered by id and name: the id can change across
     /// reboots, the name is the fallback.
     pub output: Option<OutputChoice>,
@@ -386,6 +390,8 @@ pub struct Supervisor<H: Host, L: Launcher> {
     /// The upmixers' plugin hosts and their stages in the engine (ADR 0035).
     upmix: Upmixers,
     routing: Routing,
+    health: HealthLog,
+    health_changed: bool,
 }
 
 impl<H: Host, L: Launcher> fmt::Debug for Supervisor<H, L> {
@@ -433,6 +439,8 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             profile: default_profile_view_for(language),
             upmix: Upmixers::new(plugins),
             routing: Routing::new(),
+            health: HealthLog::default(),
+            health_changed: false,
         };
         supervisor.refresh_profile();
         let driver = supervisor.host.get_mut().driver();
@@ -450,11 +458,11 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     /// Applies one intent. A failure's `Err` is also kept in the snapshot
     /// until an intent succeeds; a refusal's is only returned.
     pub fn handle(&mut self, intent: Intent) -> Result<(), UserError> {
-        let language_change = matches!(&intent, Intent::SetLanguage(_));
+        let keeps_error = matches!(&intent, Intent::SetLanguage(_) | Intent::SetSkin(_));
         let previous_message = self.error_message.clone();
         match self.dispatch(intent) {
             Outcome::Done => {
-                if language_change {
+                if keeps_error {
                     self.error = self
                         .error_message
                         .as_ref()
@@ -500,6 +508,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     pub fn tick(&mut self, now: Instant) -> Vec<SessionNotice> {
         self.upmix.poll_retiring();
         let Some(running) = self.engine.as_mut() else {
+            self.observe_health(now);
             return Vec::new();
         };
         let fault = running
@@ -525,6 +534,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                     NextAction::Retry,
                 );
                 self.fault(error);
+                self.observe_health(now);
                 return Vec::new();
             }
         };
@@ -595,14 +605,34 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             }
             self.upmix.poll(engine, &mut self.settings.upmix, now);
         }
+        self.observe_health(now);
         notices
+    }
+
+    fn observe_health(&mut self, now: Instant) {
+        let status = self.engine_status();
+        let plugins = self.upmix.health(
+            &self.settings.upmix,
+            self.engine.as_ref().map(|running| running.handle.as_ref()),
+        );
+        self.health_changed |= self.health.observe(
+            now,
+            Observation {
+                phase: &self.phase,
+                driver: self.driver.as_ref(),
+                engine: status.as_ref(),
+                plugins: &plugins,
+            },
+        );
     }
 
     /// What the ticks changed on their own since the last call: an upmixer's
     /// state (the shell then sends a snapshot) and the settings (a plugin's
     /// buses learned; the shell then saves them).
     pub fn take_tick_changes(&mut self) -> TickChanges {
-        self.upmix.take_changes()
+        let mut changes = self.upmix.take_changes();
+        changes.snapshot |= std::mem::take(&mut self.health_changed);
+        changes
     }
 
     /// The running engine asked for its output to be prepared again and has
@@ -708,6 +738,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         Snapshot {
             language,
             language_choice: self.settings.language,
+            skin: self.settings.skin,
             output_path: self.settings.output_path,
             phase: self.phase.clone(),
             profile: self.profile.clone(),
@@ -720,6 +751,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             routing: self.routing.view(&self.settings.routing),
             asio: self.settings.asio,
             engine: self.engine_status(),
+            health: self.health.history(),
             outputs,
             chosen_output: self.settings.output.clone(),
             driver: self.driver.clone(),
@@ -781,6 +813,10 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         let result = match intent {
             Intent::SetLanguage(language) => {
                 self.settings.language = language;
+                Ok(())
+            }
+            Intent::SetSkin(skin) => {
+                self.settings.skin = skin;
                 Ok(())
             }
             Intent::SetOutputPath(path) => match self.phase {

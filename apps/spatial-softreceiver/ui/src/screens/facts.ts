@@ -7,6 +7,7 @@ import { text } from '../text';
 export function platformRows(platform: Platform): [string, Child][] {
   const f = text.facts;
   return [
+    [f.computerName, platform.computer_name || f.computerNameUnknown],
     [f.osBuild, String(platform.os_build)],
     [f.arch, f.archNames[platform.arch]],
     [f.testSigning, platform.test_signing ? f.on : f.off],
