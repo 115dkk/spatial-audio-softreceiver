@@ -52,15 +52,15 @@
   --pn-px11: "Galmuri11", "IBM Plex Sans KR", "Malgun Gothic", sans-serif;
 
   /* The room and the chassis: bead-blasted aluminium, neutral greys. */
-  --pn-room: #e4e4e4;
-  --pn-body-hi: #dadada;
-  --pn-body-lo: #c4c4c4;
+  --pn-room: #ececec;
+  --pn-body-hi: #e4e4e4;
+  --pn-body-lo: #d0d0d0;
   --pn-body-edge: #a3a3a3;
   --pn-chamfer: rgba(255, 255, 255, 0.92);
   --pn-chamfer-low: rgba(0, 0, 0, 0.16);
   --pn-grain: 0.07;
   --pn-shadow: 8px 20px 44px rgba(0, 0, 0, 0.18), 2px 4px 12px rgba(0, 0, 0, 0.12);
-  /* Printed names: 7.2:1 and 4.7:1 on the darkest of the chassis. */
+  /* Printed names: 8.2:1 and 5.3:1 on the darkest of the chassis. */
   --pn-print: #333333;
   --pn-print-2: #4f4f4f;
   --pn-key-hi: #efefef;
@@ -94,46 +94,48 @@
   --pn-focus: #000000;
 
   /*
-   * The display in a lit room: a positive-mode reflective dot-matrix LCD, as
-   * on a Revox B215. Its polarisers absorb more than half the light, so its
-   * "white" is a cool mid grey well below the silver beside it (relative
-   * luminance 0.41 against the chassis' 0.55 to 0.70). Pixels are near-black
-   * and emit nothing: no glow, no ghost on the glyphs. Every line a person
-   * reads is at least 7:1 at the glass sheen's brightest point (ink 8.0:1,
-   * the quieter ink 7.3:1); lines rank by size, place and weight, not by
-   * fading.
+   * The display in a lit room: a modern reflective dot-matrix LCD (the
+   * reflectance of a memory-in-pixel panel, not a 1980s FSTN) under a soft,
+   * even front light. A cool green-grey a step below the silver (relative
+   * luminance 0.64 against the chassis' 0.64 to 0.78); the graphite mask
+   * carries the window. Pixels are near-black and emit nothing. At the
+   * sheen's brightest point the ink is 12.5:1 and the quieter ink 11.3:1.
    */
-  --pn-d-bg: #a4ada8;
+  --pn-d-bg: #ccd4cf;
   --pn-d-hi: #0b0e10;
   --pn-d-text: #0b0e10;
   --pn-d-text-2: #14181b;
   --pn-d-text-3: #14181b;
-  --pn-d-line: #8a938e;
-  --pn-d-line-2: #7b847f;
-  --pn-d-hover: #9aa39e;
-  --pn-d-off: #8c958f;
-  --pn-d-axis: #949d98;
-  --pn-d-scroll: #7b847f;
-  --pn-d-strip: #9aa39e;
+  --pn-d-line: #a8b0ab;
+  --pn-d-line-2: #98a09b;
+  --pn-d-hover: #c0c8c3;
+  --pn-d-off: #aab2ad;
+  --pn-d-axis: #b4bcb7;
+  --pn-d-scroll: #98a09b;
+  --pn-d-strip: #c0c8c3;
   /* The LCD highlights by inversion: dark pixels with the reflector showing through. */
   --pn-d-ink: #0b0e10;
-  --pn-d-ink-text: #b9c1bc;
-  --pn-d-ink-text-2: #b9c1bc;
+  --pn-d-ink-text: #ccd4cf;
+  --pn-d-ink-text-2: #ccd4cf;
   --pn-d-osd: #0b0e10;
-  --pn-d-osd-text: #c9d0cc;
+  --pn-d-osd-text: #dfe5e1;
   /* Light leaves nothing to glow: 0 turns every halo off. */
   --pn-glow: 0;
   --pn-d-shadow: none;
   --pn-d-num-shadow: none;
-  /* States on the LCD: "on" is a dark segment; a dark orange and a dark red. */
+  /* States on the LCD: "on" is a dark segment; a dark orange and a red (3.5 and 4.2:1). */
   --pn-d-on: #0b0e10;
-  --pn-d-wait: #6e3a00;
-  --pn-d-fault: #8a1810;
-  /* Entrances on the LCD: dark and muted, each at least 3:1 on the reflector. */
-  --pn-d-lane-0: #2a4aa0;
-  --pn-d-lane-1: #7a2257;
-  --pn-d-lane-2: #4d520a;
-  --pn-d-lane-3: #1f1d33;
+  --pn-d-wait: #a5540a;
+  --pn-d-fault: #b8231a;
+  /*
+   * Entrances on the LCD, muted, each at least 3.3:1 on the reflector. The
+   * map's lanes (game, music, PASS) stay at least 13.6 apart in OKLab under
+   * protanopia and deuteranopia; with ASIO, 10.7.
+   */
+  --pn-d-lane-0: #3f66c8;
+  --pn-d-lane-1: #902d68;
+  --pn-d-lane-2: #6e7216;
+  --pn-d-lane-3: #2c2a44;
   /*
    * The window: a cover glass whose back is printed with a graphite mask,
    * over the LCD set a little behind it. The mask casts a soft shadow onto
@@ -144,8 +146,8 @@
   --pn-mask-width: 16px;
   --pn-lcd-gap: inset 4px 5px 7px -3px rgba(0, 0, 0, 0.55);
   --pn-glass-veil: 0;
-  --pn-glass-glow: 0.04;
-  --pn-glass-glow-2: 0.012;
+  --pn-glass-glow: 0.02;
+  --pn-glass-glow-2: 0.006;
   --pn-glass-edge: transparent;
 
   /* Lamp states. */
