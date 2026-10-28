@@ -7,23 +7,25 @@
 import type { DirectionView, EngineStatus, SceneObject } from '../../bindings';
 import { h, liveText, setAttr, svg } from '../../dom';
 import { text } from '../../text';
+import { type MapGeometry, type PlacedDirection, heightClass, heightOf, placeDirections } from '../../screens/maplabels';
 import { LANE_COUNT, entrance, laneMark, shapeOf } from './kit';
 
 /** Every lane the scene can name times the objects one carries (`ssr_types::MAX_OBJECTS`). */
 const OBJECTS_PER_LANE = 64;
 const POOL = LANE_COUNT * OBJECTS_PER_LANE;
 
-const SIZE = 300;
+/**
+ * viewBox units: a square, the horizon ring inside it. The names are 12
+ * units at every size (console.css), so they are placed for that.
+ */
+export const MAP_GEOMETRY: MapGeometry = { size: 300, radius: 112, gap: 18, listenerClear: 28, em: 12, pointRadius: 8 };
+const SIZE = MAP_GEOMETRY.size;
 const CENTER = SIZE / 2;
-const RADIUS = 112;
-const LABEL_GAP = 18;
-const LISTENER_CLEAR = 28;
+const RADIUS = MAP_GEOMETRY.radius;
 const FLOOR_DB = -60;
 const MARK_MIN = 3.5;
 const MARK_MAX = 11;
 const OPACITY_MIN = 0.4;
-/** About 15° up counts as above the listening place. */
-const UP_Z = 0.25;
 
 const round1 = (value: number) => (Math.round(value * 10) / 10).toString();
 
@@ -31,13 +33,6 @@ function toPlane(x: number, y: number): [number, number] {
   const length = Math.hypot(x, y);
   const scale = length > 1 ? 1 / length : 1;
   return [CENTER + x * scale * RADIUS, CENTER - y * scale * RADIUS];
-}
-
-/** Azimuth 0° is ahead and grows to the left. */
-function vector(direction: DirectionView): [number, number, number] {
-  const azimuth = (direction.azimuth_deg * Math.PI) / 180;
-  const elevation = (direction.elevation_deg * Math.PI) / 180;
-  return [-Math.sin(azimuth) * Math.cos(elevation), Math.cos(azimuth) * Math.cos(elevation), Math.sin(elevation)];
 }
 
 function same(a: readonly DirectionView[], b: readonly DirectionView[]): boolean {
@@ -51,27 +46,25 @@ function same(a: readonly DirectionView[], b: readonly DirectionView[]): boolean
   );
 }
 
-function directionMark(direction: DirectionView): { point: SVGElement; name: SVGElement } {
-  const [x, y, z] = vector(direction);
-  const [cx, cy] = toPlane(x, y);
-  const up = z >= UP_Z;
-  const length = Math.hypot(x, y);
-  const inward = up && length * RADIUS - LABEL_GAP > LISTENER_CLEAR;
-  const sign = inward ? -1 : 1;
-  const [ux, uy] = length < 0.05 ? [0, -1] : [(sign * x) / length, (sign * y) / length];
+/** A point on the ear plane is filled, one above a ring, one below a broken ring. */
+function directionMark(mark: PlacedDirection): { point: SVGElement; name: SVGElement } {
+  const { direction, cx, cy, x, y } = mark;
+  const height = heightClass(mark.height);
   return {
     point: svg(
       'g',
-      { class: `cn-map-direction${up ? ' is-up' : ''}` },
+      { class: `cn-map-direction${height}` },
       svg('title', null, `${direction.name} · ${text.profile.angles(direction.azimuth_deg, direction.elevation_deg)}`),
-      svg('circle', { cx: round1(cx), cy: round1(cy), r: 3 }),
+      mark.height === 'down'
+        ? svg('circle', { cx: round1(cx), cy: round1(cy), r: 4, pathLength: 24 })
+        : svg('circle', { cx: round1(cx), cy: round1(cy), r: 3 }),
     ),
     name: svg(
       'text',
       {
-        class: `cn-map-name${up ? ' is-up' : ''}`,
-        x: round1(cx + ux * LABEL_GAP),
-        y: round1(cy - uy * LABEL_GAP),
+        class: `cn-map-name${height}`,
+        x: round1(x),
+        y: round1(y),
         'text-anchor': 'middle',
         'dominant-baseline': 'central',
         'aria-hidden': 'true',
@@ -94,13 +87,27 @@ export function sceneMap(directions: readonly DirectionView[], running: boolean,
   const p = text.profile;
   const points = svg('g', { class: 'cn-map-directions' });
   const names = svg('g', { class: 'cn-map-names' });
+  const legendItem = (mark: Element, label: string) => h('li', null, mark, h('span', null, label));
+  // Below-ear directions drawn, and whether an object has been below the
+  // ears since the map was built (then its legend line stays).
+  const below = legendItem(h('span', { class: 'cn-map-key is-down', 'aria-hidden': 'true' }), p.legendDown);
+  below.hidden = true;
+  let directionsBelow = false;
+  let objectsBelow = false;
+  const showBelow = () => {
+    const hidden = !(directionsBelow || objectsBelow);
+    if (below.hidden !== hidden) below.hidden = hidden;
+  };
   let drawn: readonly DirectionView[] = [];
   const drawDirections = (next: readonly DirectionView[]) => {
     if (same(next, drawn)) return;
     drawn = next;
-    const marks = next.map(directionMark);
+    const placed = placeDirections(next, MAP_GEOMETRY);
+    const marks = placed.map(directionMark);
     points.replaceChildren(...marks.map((mark) => mark.point));
     names.replaceChildren(...marks.map((mark) => mark.name));
+    directionsBelow = placed.some((mark) => mark.height === 'down');
+    showBelow();
   };
   drawDirections(directions);
 
@@ -128,7 +135,6 @@ export function sceneMap(directions: readonly DirectionView[], running: boolean,
   );
 
   const status = liveText(running ? p.mapObjectsNone : p.mapOff);
-  const legendItem = (mark: Element, label: string) => h('li', null, mark, h('span', null, label));
   const element = h(
     'div',
     { class: 'cn-map' },
@@ -143,6 +149,7 @@ export function sceneMap(directions: readonly DirectionView[], running: boolean,
         null,
         legendItem(h('span', { class: 'cn-map-key is-flat', 'aria-hidden': 'true' }), p.legendFlat),
         legendItem(h('span', { class: 'cn-map-key is-up', 'aria-hidden': 'true' }), p.legendUp),
+        below,
       ),
     ),
     h('p', { class: 'cn-hint' }, p.mapBody),
@@ -160,9 +167,12 @@ export function sceneMap(directions: readonly DirectionView[], running: boolean,
       setAttr(mark, 'd', shapeOf(lane));
       setAttr(mark, 'transform', `translate(${round1(cx)} ${round1(cy)}) scale(${round1(size)})`);
       setAttr(mark, 'opacity', (OPACITY_MIN + strength * (1 - OPACITY_MIN)).toFixed(2));
-      setAttr(mark, 'class', `cn-map-object cn-lane-${lane} ${object.z >= UP_Z ? 'is-up' : 'is-flat'}`);
+      const height = heightOf(object.z);
+      if (height === 'down') objectsBelow = true;
+      setAttr(mark, 'class', `cn-map-object cn-lane-${lane} is-${height}`);
       if (slot >= shown) mark.removeAttribute('display');
     }
+    showBelow();
     for (let slot = count; slot < shown; slot += 1) pool[slot]?.setAttribute('display', 'none');
     shown = count;
     status.set(count === 0 ? p.mapObjectsNone : count === 1 ? p.mapObjectsOne : p.mapObjectsMany(count));

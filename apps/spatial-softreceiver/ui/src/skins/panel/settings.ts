@@ -13,10 +13,12 @@ import { type Context, type Drawn, described } from '../../screens/common';
 import { driverRows, platformRows } from '../../screens/facts';
 import { SKINS, skinOf } from '../names';
 import type { Scope } from './scope';
-import { type Choice, choices, facts, hint, intentRow, level, line, row, section, toggle } from './ui';
+import { type Choice, choices, facts, hint, intentRow, layoutFamilies, level, line, row, section, toggle } from './ui';
 
 const ENTRANCES: readonly Entrance[] = ['main', 'music', 'pass'];
 const ASIO_LAYOUT_LIST = Object.keys(ASIO_LAYOUTS) as AsioLayout[];
+/** The eleven ASIO layouts one family a line (ui.ts layoutFamilies). */
+const ASIO_LAYOUT_LINES = layoutFamilies(ASIO_LAYOUT_LIST);
 
 /** An entrance by its endpoint's name, as Windows shows it. */
 const windowsName = (entrance: Entrance) => text.endpoints[ENTRANCES.indexOf(entrance)]!.name;
@@ -274,6 +276,7 @@ function asio(ctx: Context): Child[] {
       busy: sending?.kind === 'set_asio_layout',
       intent: 'set_asio_layout',
       inline: true,
+      lines: ASIO_LAYOUT_LINES,
       choose: (value) => ctx.send({ kind: 'set_asio_layout', value }),
     }),
     hint(t.asioLayoutHint, 'asio-layout-hint'),

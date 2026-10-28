@@ -58,7 +58,7 @@ describe('fixtures match bindings.ts', () => {
 
 describe('ASIO contract wiring', () => {
   /** The fixtures of the ASIO input's own states; every other one keeps the defaults and no client. */
-  const asioFixtures = ['running-asio', 'running-asio-clock-fault', 'running-asio-fault', 'ready-asio-off'];
+  const asioFixtures = ['running-asio', 'running-asio-clock-fault', 'running-asio-fault', 'ready-asio-off', 'ready-asio-24-1-10'];
 
   it('keeps ASIO settings in every snapshot without inventing a client', () => {
     expect(asioFixtures.filter((name) => !fixtureNames.includes(name)), 'ASIO fixtures Rust no longer writes').toEqual([]);
@@ -80,10 +80,15 @@ describe('ASIO contract wiring', () => {
     expect(failed.engine?.asio).toMatchObject({ client_exe: '', fault_reason: 'ASIO transport failed: owner_exists' });
     expect(failed.notes).toHaveLength(1);
     expect(fixture('ready-asio-off', language).asio?.enabled).toBe(false);
+    // A layout of more than 32 channels (ADR 0042), with no DAW attached.
+    const high = fixture('ready-asio-24-1-10', language);
+    expect(high.asio).toEqual({ enabled: true, layout: '24.1.10', system_attenuation_db: 0 });
+    expect(high.engine).toBeNull();
   });
 
-  it('accepts the five layouts and the complete client status', () => {
-    expect(Object.keys(ASIO_LAYOUTS)).toEqual(['2.0', '5.1', '7.1', '7.1.4', '9.1.6']);
+  it('accepts the eleven layouts in the contract order and the complete client status', () => {
+    // The five older layouts first; ADR 0042 appended the rest after them.
+    expect(Object.keys(ASIO_LAYOUTS)).toEqual(['2.0', '5.1', '7.1', '7.1.4', '9.1', '9.1.4', '9.1.6', '13.1', '22.2', '24.1.10', '30.2']);
     for (const layout of Object.keys(ASIO_LAYOUTS)) {
       expect(assertIntent({ kind: 'set_asio_layout', value: layout })).toEqual({ kind: 'set_asio_layout', value: layout });
       const value = structuredClone(rawFixture('running')) as { engine: Record<string, unknown> };

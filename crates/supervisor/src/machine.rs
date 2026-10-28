@@ -2160,12 +2160,17 @@ fn profile_channels(profile: &SpeakerProfile) -> Vec<SpeakerChannelView> {
             channel: u16::try_from(speaker.channel).unwrap_or(u16::MAX),
             subwoofer: false,
         })
+        // The first subwoofer is LFE and the second LFE2, as in 22.2 and 30.2.
         .chain(
             profile
                 .subwoofers
                 .iter()
-                .map(|subwoofer| SpeakerChannelView {
-                    name: "LFE".into(),
+                .enumerate()
+                .map(|(index, subwoofer)| SpeakerChannelView {
+                    name: match index {
+                        0 => "LFE".into(),
+                        _ => format!("LFE{}", index + 1),
+                    },
                     channel: u16::try_from(subwoofer.channel).unwrap_or(u16::MAX),
                     subwoofer: true,
                 }),

@@ -1761,6 +1761,15 @@ select:disabled {
   stroke-width: 1.5;
 }
 
+/* Below the ears a broken ring: what a plan draws dashed lies under it. The
+   circle's pathLength is 24, so the ring always breaks into six. */
+.map-direction.is-down circle {
+  fill: var(--surface-sunk);
+  stroke: var(--text-muted);
+  stroke-width: 2;
+  stroke-dasharray: 2.4 1.6;
+}
+
 /* Names wear a halo of the ground they sit on, clear of the rings and axes.
    The drawing is 300 units wide and scales with the panel, so the names
    grow in units as it narrows and stay at 14 px or more on screen. */
@@ -1775,7 +1784,7 @@ select:disabled {
   font-weight: 500;
 }
 
-.map-label.is-up {
+.map-label.is-inside {
   stroke: var(--surface-sunk);
 }
 
@@ -1826,6 +1835,14 @@ select:disabled {
   stroke-width: 2.5;
 }
 
+/* The pool's circles have pathLength 32: eight dashes at any size. */
+.map-object.is-down {
+  fill: color-mix(in srgb, var(--lane) 20%, var(--surface-sunk));
+  stroke: var(--lane);
+  stroke-width: 2.5;
+  stroke-dasharray: 2.4 1.6;
+}
+
 .map-status {
   margin-top: 10px;
   font-size: var(--size-ui);
@@ -1861,6 +1878,11 @@ select:disabled {
   gap: 6px;
 }
 
+/* The below-ear line waits hidden until the map draws something below. */
+.map-legend li[hidden] {
+  display: none;
+}
+
 .map-swatch {
   flex: none;
   width: 10px;
@@ -1876,6 +1898,12 @@ select:disabled {
 .map-swatch.is-up {
   border: 2px solid var(--text-muted);
   background: transparent;
+}
+
+/* The broken ring in six: a ring of the ink, cut into dashes by angle. */
+.map-swatch.is-down {
+  background: repeating-conic-gradient(var(--text-muted) 0deg 40deg, transparent 40deg 60deg);
+  mask: radial-gradient(circle closest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
 }
 
 /* ---- Upmix ----------------------------------------------------------- */

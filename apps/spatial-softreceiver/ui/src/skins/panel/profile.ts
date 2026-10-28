@@ -11,12 +11,14 @@ import { SPEAKER_LAYOUTS } from '../../guard';
 import { text } from '../../text';
 import { type Context, type Drawn, described } from '../../screens/common';
 import { GAIN_MAX, GAIN_MIN } from '../../screens/profile';
-import { soundMap } from './map';
+import { DENSE_DIRECTIONS, soundMap } from './map';
 import { type Scope, signed } from './scope';
-import { choices, dot, facts, given, hint, intentRow, line, pickRow, section, toggle } from './ui';
+import { choices, dot, facts, given, hint, intentRow, layoutFamilies, line, pickRow, section, toggle } from './ui';
 
 const KINDS: readonly ProfileKind[] = ['headphones', 'speakers'];
 const LAYOUTS = Object.keys(SPEAKER_LAYOUTS) as SpeakerLayout[];
+/** The sixteen layouts one family a line (ui.ts layoutFamilies). */
+const LAYOUT_LINES = layoutFamilies(LAYOUTS);
 const FILE_HINT = 'profile-file-hint';
 const RUNNING_HINT = 'profile-running-hint';
 
@@ -183,6 +185,7 @@ function layout(ctx: Context): HTMLElement {
         busy: changing,
         intent: 'set_speaker_layout',
         inline: true,
+        lines: LAYOUT_LINES,
         choose: (value) => ctx.send({ kind: 'set_speaker_layout', value }),
       }),
     );
@@ -268,27 +271,39 @@ function gain(scope: Scope): HTMLElement {
   ]);
 }
 
-/** A test signal per direction of the layout in use; only while running. */
+/**
+ * A test signal per direction of the layout in use; only while running. A
+ * layout of many directions (22.2, 24.1.10, 30.2) lists them in narrower
+ * columns with the angles as bare numbers, so the list stays a screen or two
+ * long; each row still says its angles in words to a screen reader.
+ */
 function tests(ctx: Context): HTMLElement {
   const { profile, phase } = ctx.snapshot;
   const running = phase.kind === 'running';
   const empty = profile.directions.length === 0;
+  const dense = profile.directions.length > DENSE_DIRECTIONS;
   const list = h(
     'div',
-    { class: 'pn-tests', role: 'group', 'aria-label': text.profile.testLabel },
-    ...profile.directions.map((direction) =>
-      intentRow(
+    { class: `pn-tests${dense ? ' is-dense' : ''}`, role: 'group', 'aria-label': text.profile.testLabel },
+    ...profile.directions.map((direction) => {
+      const angles = text.profile.angles(direction.azimuth_deg, direction.elevation_deg);
+      const row = intentRow(
         ctx,
         direction.name,
         { kind: 'test_direction', value: direction.id },
         {
           key: `direction-${direction.id}`,
-          detail: text.profile.angles(direction.azimuth_deg, direction.elevation_deg),
+          detail: dense ? h('span', { class: 'num' }, `${Math.round(direction.azimuth_deg)}° / ${Math.round(direction.elevation_deg)}°`) : angles,
           disabled: !running,
           describedBy: running ? null : 'test-hint',
         },
-      ),
-    ),
+      );
+      if (dense) {
+        row.setAttribute('aria-label', `${direction.name}, ${angles}`);
+        row.title = angles;
+      }
+      return row;
+    }),
   );
   return section('pn-tests', text.profile.testTitle, [
     hint(text.profile.testBody),

@@ -3071,6 +3071,29 @@ fn speaker_layout_applies_live_only_to_the_kind_in_use() {
 }
 
 #[test]
+fn a_layout_with_two_subwoofers_names_them_lfe_and_lfe2() {
+    use ssr_types::app::{ProfileKind, SpeakerLayout};
+
+    let (_shared, mut supervisor) = running(ready_pc());
+    supervisor
+        .handle(Intent::SetSpeakerLayout(SpeakerLayout::Surround222))
+        .unwrap();
+    supervisor
+        .handle(Intent::SetProfileKind(ProfileKind::Speakers))
+        .unwrap();
+    let subwoofers: Vec<_> = supervisor
+        .snapshot()
+        .profile
+        .speakers
+        .channels
+        .into_iter()
+        .filter(|channel| channel.subwoofer)
+        .map(|channel| (channel.name, channel.channel))
+        .collect();
+    assert_eq!(subwoofers, [("LFE".to_owned(), 3), ("LFE2".to_owned(), 9)]);
+}
+
+#[test]
 fn import_correction_while_headphones_play_only_stores_it() {
     use ssr_types::app::ProfileKind;
 

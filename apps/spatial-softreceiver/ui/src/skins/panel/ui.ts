@@ -154,7 +154,39 @@ export interface ChoicesOptions<T> {
   intent?: Intent['kind'] | undefined;
   /** Short options side by side instead of one per line. */
   inline?: boolean | undefined;
+  /**
+   * With `inline`, the options in lines of these many each, parted by
+   * hairlines, as a receiver's menu lists one family of layouts per line.
+   * The lines are only looks: the arrow keys still walk every option.
+   */
+  lines?: readonly number[] | undefined;
   choose(value: T): void;
+}
+
+/**
+ * Layout names (`7.1.4`, `24.1.10`) in lines of one family each: ear level
+ * only, with heights, the wide 9.1 family, then the layouts of 13 channels
+ * and more. A family of one joins the line before it. The names keep their
+ * order; the sizes are for `ChoicesOptions.lines`.
+ */
+export function layoutFamilies(names: readonly string[]): number[] {
+  const family = (name: string) => {
+    const parts = name.split('.');
+    const bed = Number(parts[0]);
+    return bed >= 13 ? 3 : bed >= 9 ? 2 : parts.length > 2 ? 1 : 0;
+  };
+  const lines: { family: number; size: number }[] = [];
+  for (const name of names) {
+    const last = lines.at(-1);
+    if (last !== undefined && last.family === family(name)) last.size += 1;
+    else lines.push({ family: family(name), size: 1 });
+  }
+  const merged: number[] = [];
+  for (const line of lines) {
+    if (line.size === 1 && merged.length > 0) merged[merged.length - 1]! += 1;
+    else merged.push(line.size);
+  }
+  return merged;
 }
 
 /**
@@ -162,9 +194,10 @@ export interface ChoicesOptions<T> {
  * focus along the list and Space or Enter chooses, so moving does not send.
  */
 export function choices<T>(options: ChoicesOptions<T>): HTMLElement {
+  const lined = options.inline === true && options.lines !== undefined;
   const group = h('div', {
     role: 'radiogroup',
-    class: `pn-choices${options.inline ? ' is-inline' : ''}`,
+    class: `pn-choices${options.inline ? ' is-inline' : ''}${lined ? ' is-lined' : ''}`,
     'aria-label': options.label ?? null,
     'aria-labelledby': options.labelledBy ?? null,
     'aria-describedby': options.describedBy ?? null,
@@ -204,7 +237,17 @@ export function choices<T>(options: ChoicesOptions<T>): HTMLElement {
       ),
     );
   });
-  group.append(...buttons);
+  if (lined) {
+    let start = 0;
+    for (const size of options.lines ?? []) {
+      group.append(h('div', { class: 'pn-choice-line' }, ...buttons.slice(start, start + size)));
+      start += size;
+    }
+    // Options the sizes do not reach go on a last line of their own.
+    if (start < buttons.length) group.append(h('div', { class: 'pn-choice-line' }, ...buttons.slice(start)));
+  } else {
+    group.append(...buttons);
+  }
   group.addEventListener('keydown', (event) => {
     const key = event.key;
     const enabled = buttons.filter((button) => !button.disabled);

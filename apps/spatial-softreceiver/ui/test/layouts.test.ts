@@ -48,16 +48,23 @@ const speakerName = new Map(
   ),
 );
 
-/** `SpeakerLayout::speakers()`: serialized layout name → speaker names in channel order. */
+/**
+ * `SpeakerLayout::speakers()`: serialized layout name → speaker names in
+ * channel order. A long list spans lines and ends in a comma (rustfmt).
+ */
 const contractSpeakers = new Map(
   [...section(app, 'pub const fn speakers(self)', 'pub const fn').matchAll(/Self::(\w+) => &\[([^\]]*)\],/g)].map(
     ([, variant, list]) => [
       serialized.get(variant!),
-      list!.split(',').map((speaker) => {
-        const name = speakerName.get(speaker.trim());
-        if (name === undefined) throw new Error(`Speaker::${speaker.trim()} has no name`);
-        return name;
-      }),
+      list!
+        .split(',')
+        .map((speaker) => speaker.trim())
+        .filter((speaker) => speaker !== '')
+        .map((speaker) => {
+          const name = speakerName.get(speaker);
+          if (name === undefined) throw new Error(`Speaker::${speaker} has no name`);
+          return name;
+        }),
     ],
   ),
 );
@@ -70,9 +77,28 @@ const contractAngles = new Map(
 );
 
 describe("the mock's speaker layouts", () => {
-  it('reads nine layouts from the contract', () => {
-    expect(order).toEqual(['2.0', '2.1', '4.0', '5.1', '7.1', '5.1.2', '5.1.4', '7.1.2', '7.1.4']);
+  it('reads sixteen layouts from the contract (ADR 0034, ADR 0042)', () => {
+    expect(order).toEqual([
+      '2.0', '2.1', '4.0', '5.1', '7.1', '5.1.2', '5.1.4', '7.1.2', '7.1.4',
+      '9.1', '9.1.4', '9.1.6', '13.1', '22.2', '24.1.10', '30.2',
+    ]);
     expect([...contractSpeakers.keys()].sort()).toEqual([...order].sort());
+  });
+
+  it('counts the channels of every layout, both subwoofers of 22.2 and 30.2 among them', () => {
+    const channels = Object.fromEntries(order.map((layout) => [layout, speakerChannels(layout as SpeakerLayout)]));
+    expect(Object.fromEntries(Object.entries(channels).map(([layout, list]) => [layout, list.length]))).toEqual({
+      '2.0': 2, '2.1': 3, '4.0': 4, '5.1': 6, '7.1': 8, '5.1.2': 8, '5.1.4': 10, '7.1.2': 10, '7.1.4': 12,
+      '9.1': 10, '9.1.4': 14, '9.1.6': 16, '13.1': 14, '22.2': 24, '24.1.10': 35, '30.2': 32,
+    });
+    const subwoofers = (layout: SpeakerLayout) => speakerChannels(layout).filter((channel) => channel.subwoofer).map((channel) => channel.name);
+    expect(subwoofers('22.2')).toEqual(['LFE', 'LFE2']);
+    expect(subwoofers('30.2')).toEqual(['LFE', 'LFE2']);
+    expect(subwoofers('24.1.10')).toEqual(['LFE']);
+    // A direction for every speaker but the subwoofers; 22.2 and 30.2 have three below the ears.
+    expect(speakerDirections('24.1.10')).toHaveLength(34);
+    expect(speakerDirections('22.2').filter((direction) => direction.elevation_deg < 0).map((direction) => direction.name)).toEqual(['Bfc', 'Bfl', 'Bfr']);
+    expect(speakerDirections('30.2').filter((direction) => direction.elevation_deg < 0).map((direction) => direction.name)).toEqual(['Bfc', 'Bfl', 'Bfr']);
   });
 
   it('lists the layouts in the order of SpeakerLayout::ALL, in the guard and the mock', () => {
@@ -86,9 +112,13 @@ describe("the mock's speaker layouts", () => {
 
   it('places every speaker but the subwoofer at its nominal angles', () => {
     const named = new Set(Object.values(LAYOUT_SPEAKERS).flat().filter((name) => name !== 'LFE'));
-    expect(Object.keys(SPEAKER_ANGLES).sort()).toEqual([...named].sort());
-    for (const name of named) expect(SPEAKER_ANGLES[name], name).toEqual(contractAngles.get(name));
+    expect(Object.keys(SPEAKER_ANGLES).sort()).toEqual([...named].filter((name) => name !== 'LFE2').sort());
+    for (const name of named) {
+      if (name === 'LFE2') continue;
+      expect(SPEAKER_ANGLES[name], name).toEqual(contractAngles.get(name));
+    }
     expect(contractAngles.has('LFE')).toBe(false);
+    expect(contractAngles.has('LFE2')).toBe(false);
   });
 
   it('draws what the supervisor wrote into the fixtures for a layout without correction', () => {
@@ -96,6 +126,7 @@ describe("the mock's speaker layouts", () => {
       ['2.0', 'ready'],
       ['7.1', 'ready-headphones'],
       ['7.1.4', 'ready-layout-unsupported'],
+      ['30.2', 'ready-speakers-30-2'],
     ];
     for (const [layout, name] of cases) {
       const { speakers, kind, directions } = fixture(name).profile;
