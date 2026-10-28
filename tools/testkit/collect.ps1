@@ -59,7 +59,7 @@ $parameterPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\SpatialSoftReceiver\Pa
 if (Test-Path $parameterPath) {
     $key = Get-Item $parameterPath
     $values = [ordered]@{}
-    foreach ($property in 'EndpointMask', 'CodecMask0', 'PcmRateMask0', 'PcmShapeMask0', 'PcmMaxMaskedChannels0', 'PcmDirectChannels0', 'CodecMask1', 'PcmRateMask1', 'PcmShapeMask1', 'PcmMaxMaskedChannels1', 'PcmDirectChannels1', 'CodecMask2', 'PcmRateMask2', 'PcmShapeMask2', 'PcmMaxMaskedChannels2', 'PcmDirectChannels2', 'CodecMask3', 'PcmRateMask3', 'PcmShapeMask3', 'PcmMaxMaskedChannels3', 'PcmDirectChannels3', 'WritePacket') {
+    foreach ($property in 'EndpointMask', 'CodecMask0', 'PcmRateMask0', 'PcmShapeMask0', 'PcmMaxMaskedChannels0', 'PcmDirectChannels0', 'PcmDirectChannelsHigh0', 'CodecMask1', 'PcmRateMask1', 'PcmShapeMask1', 'PcmMaxMaskedChannels1', 'PcmDirectChannels1', 'PcmDirectChannelsHigh1', 'CodecMask2', 'PcmRateMask2', 'PcmShapeMask2', 'PcmMaxMaskedChannels2', 'PcmDirectChannels2', 'PcmDirectChannelsHigh2', 'CodecMask3', 'PcmRateMask3', 'PcmShapeMask3', 'PcmMaxMaskedChannels3', 'PcmDirectChannels3', 'PcmDirectChannelsHigh3', 'WritePacket') {
         $values[$property] = [ordered]@{ value = $key.GetValue($property); kind = [string]$key.GetValueKind($property) }
     }
     $values | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 (Join-Path $work 'service-parameters.json')

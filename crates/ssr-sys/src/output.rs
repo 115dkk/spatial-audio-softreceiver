@@ -179,9 +179,9 @@ impl OutputOpener for WasapiOpener {
     type Sink = WasapiSink;
 
     fn open(&mut self, layout: OutputLayout) -> Result<WasapiSink, OutputError> {
-        if layout.channels == 0 || layout.channels > 32 {
+        if layout.channels == 0 || layout.channels > 64 {
             return Err(OutputError::FormatRejected(format!(
-                "output channel count {} is outside 1..=32",
+                "output channel count {} is outside 1..=64",
                 layout.channels
             )));
         }

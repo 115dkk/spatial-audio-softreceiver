@@ -72,6 +72,12 @@ fn layouts() -> Vec<Layout> {
                 + offset_of!(PcmFormats, max_masked_channels),
         ),
         (
+            "compiled.pcm.reserved",
+            offset_of!(AbiInfo, compiled)
+                + offset_of!(EndpointFormats, pcm)
+                + offset_of!(PcmFormats, reserved),
+        ),
+        (
             "compiled.pcm.direct_channels",
             offset_of!(AbiInfo, compiled)
                 + offset_of!(EndpointFormats, pcm)
@@ -97,6 +103,10 @@ fn layouts() -> Vec<Layout> {
             (
                 "pcm.max_masked_channels",
                 offset_of!(EndpointFormats, pcm) + offset_of!(PcmFormats, max_masked_channels),
+            ),
+            (
+                "pcm.reserved",
+                offset_of!(EndpointFormats, pcm) + offset_of!(PcmFormats, reserved),
             ),
             (
                 "pcm.direct_channels",
@@ -181,31 +191,33 @@ fn layouts() -> Vec<Layout> {
         },
         Layout {
             python: "PCM_FORMATS",
-            format: "<IIII",
+            format: "<IIIIQ",
             size: size_of::<PcmFormats>(),
             fields: fields!(
                 PcmFormats,
                 rates,
                 shapes,
                 max_masked_channels,
+                reserved,
                 direct_channels
             ),
         },
         Layout {
             python: "ENDPOINT_FORMATS",
-            format: "<QIIII",
+            format: "<QIIIIQ",
             size: size_of::<EndpointFormats>(),
             fields: vec![
                 ("codecs", 0),
                 ("pcm.rates", 8),
                 ("pcm.shapes", 12),
                 ("pcm.max_masked_channels", 16),
-                ("pcm.direct_channels", 20),
+                ("pcm.reserved", 20),
+                ("pcm.direct_channels", 24),
             ],
         },
         Layout {
             python: "ABI_INFO",
-            format: "<IIIIQIIIIQQIIQIIIIQIIIIQIIIIQIIII",
+            format: "<IIIIQIIIIQQQIIQIIIIQQIIIIQQIIIIQQIIIIQ",
             size: size_of::<AbiInfo>(),
             fields: abi,
         },

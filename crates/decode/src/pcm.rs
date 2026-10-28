@@ -7,7 +7,7 @@ use ssr_types::{
 
 use crate::{DecodeConfig, DecodeError, SceneBuffers};
 
-pub const MAX_PCM_CHANNELS: usize = 32;
+pub const MAX_PCM_CHANNELS: usize = 64;
 
 /// Position of one `dwChannelMask` speaker bit (`SPEAKER_FRONT_LEFT` = 0x1 ...),
 /// or `None` for LFE (0x8) and bits with no standard position.
@@ -70,7 +70,7 @@ impl PcmDecoder {
         }
     }
 
-    /// Accepts the epoch's format: 1 to 32 channels, 16/24/32-bit integer or
+    /// Accepts the epoch's format: 1 to 64 channels, 16/24/32-bit integer or
     /// 32-bit float, any rate whose nonempty 10 ms block fits `max_frames`.
     /// Integer valid bits must be in `1..=bits_per_sample` and are left aligned
     /// as in WAVEFORMATEXTENSIBLE; floats require 32 valid bits.
@@ -95,11 +95,12 @@ impl PcmDecoder {
                 && (format.bits_per_sample != 32 || format.valid_bits != 32))
         {
             return Err(invalid(
-                "channels, rate or sample width outside 1-32 ch, 16/24/32-bit int or 32-bit float",
+                "channels, rate or sample width outside 1-64 ch, 16/24/32-bit int or 32-bit float",
             ));
         }
         let mut objects = 0;
         let mut has_lfe = false;
+        let mut has_lfe2 = false;
         if format.channel_mask == 0 {
             let layout = self
                 .direct
@@ -107,10 +108,15 @@ impl PcmDecoder {
                 .ok_or(DecodeError::NoDirectLayout(format.channels))?;
             for (channel, &speaker) in layout.speakers().iter().enumerate() {
                 self.channels[channel] = if matches!(speaker, Speaker::Lfe | Speaker::Lfe2) {
-                    if has_lfe {
-                        return Err(invalid("direct layout has more than one LFE channel"));
+                    let seen = match speaker {
+                        Speaker::Lfe => &mut has_lfe,
+                        Speaker::Lfe2 => &mut has_lfe2,
+                        _ => unreachable!(),
+                    };
+                    if *seen {
+                        return Err(invalid("direct layout repeats an LFE channel"));
                     }
-                    has_lfe = true;
+                    *seen = true;
                     None
                 } else {
                     let position = speaker
@@ -146,9 +152,10 @@ impl PcmDecoder {
                 };
             }
         }
-        self.buffers.set_layout(objects, has_lfe);
+        let has_any_lfe = has_lfe || has_lfe2;
+        self.buffers.set_layout(objects, has_any_lfe);
         self.layout.source = SceneSource::Pcm;
-        self.layout.lfe = has_lfe;
+        self.layout.lfe = has_any_lfe;
         self.layout.objects = objects as u8;
         self.format = Some(format);
         Ok(())
@@ -190,12 +197,15 @@ impl PcmDecoder {
             if self.frames == 0 {
                 self.source_qpc = self.frame_qpc;
             }
+            if self.layout.lfe {
+                self.buffers.lfe_mut(block)[self.frames] = 0.0;
+            }
             for channel in 0..usize::from(format.channels) {
                 let start = channel * width;
                 let value = sample(&self.frame[start..start + width], format);
                 match self.channels[channel] {
                     Some(object) => self.buffers.signal_mut(object, block)[self.frames] = value,
-                    None => self.buffers.lfe_mut(block)[self.frames] = value,
+                    None => self.buffers.lfe_mut(block)[self.frames] += value,
                 }
             }
             self.pending = 0;

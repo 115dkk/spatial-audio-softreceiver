@@ -55,8 +55,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if !seconds.is_finite() || seconds <= 0.0 {
             return Err("--seconds must be finite and positive".into());
         }
-        if channels == 0 || channels > 32 {
-            return Err("--channels must be in 1..=32".into());
+        if channels == 0 || channels > 64 {
+            return Err("--channels must be in 1..=64".into());
         }
         let mask = mask.unwrap_or(if channels == 2 { 3 } else { 0 });
         if mask != 0 && mask.count_ones() != u32::from(channels) {

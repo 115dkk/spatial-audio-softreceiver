@@ -194,8 +194,9 @@ fn ddp_format_record() -> Vec<u8> {
 }
 
 fn speaker_prepared(channels: usize, channel_mask: u32) -> Box<Prepared> {
+    let azimuth_step = if channels > 36 { 5.0 } else { 10.0 };
     let directions = (0..channels)
-        .map(|channel| Direction::new(format!("ch{channel}"), channel as f32 * 10.0, 0.0))
+        .map(|channel| Direction::new(format!("ch{channel}"), channel as f32 * azimuth_step, 0.0))
         .collect();
     let speakers = (0..channels)
         .map(|channel| PreparedSpeaker {
@@ -3580,7 +3581,7 @@ fn a_stopped_source_lets_the_brir_tail_play_and_counts_no_underrun() {
 }
 
 #[test]
-fn ended_input_drains_a_thirty_two_channel_ring_below_the_priming_threshold() {
+fn ended_input_drains_a_sixty_four_channel_ring_below_the_priming_threshold() {
     let lockstep = Arc::new(Lockstep::default());
     let state = SinkState::lockstep(0, Arc::clone(&lockstep));
     let capture = RecordsCapture {
@@ -3603,14 +3604,14 @@ fn ended_input_drains_a_thirty_two_channel_ring_below_the_priming_threshold() {
         opener(Arc::clone(&state), RATE),
         StartOptions {
             qpc_frequency: QPC_FREQUENCY,
-            prepared: Some(speaker_prepared(32, 0)),
+            prepared: Some(speaker_prepared(64, 0)),
         },
     )
     .unwrap();
 
     lockstep.step_read(2);
     // A third entry acknowledges the data read and reports EOF. Finishing must
-    // fit its blocks by MIX_FRAMES at the active 32-channel layout, not by the
+    // fit its blocks by MIX_FRAMES at the active 64-channel layout, not by the
     // decoder's larger max_block, and EOF must release output priming.
     lockstep.start_read(1);
     lockstep.wait_capture_finished();
@@ -3624,7 +3625,7 @@ fn ended_input_drains_a_thirty_two_channel_ring_below_the_priming_threshold() {
     });
     let samples = state.samples.lock().unwrap();
     let audible_frames = samples
-        .as_chunks::<32>()
+        .as_chunks::<64>()
         .0
         .iter()
         .filter(|frame| frame.iter().any(|sample| *sample != 0.0))
@@ -3641,7 +3642,7 @@ fn ended_input_drains_a_thirty_two_channel_ring_below_the_priming_threshold() {
     lockstep.release();
     let report = engine.stop();
     assert!(report.blocks > 0);
-    assert_eq!(report.output_channels, 32);
+    assert_eq!(report.output_channels, 64);
 }
 
 #[test]

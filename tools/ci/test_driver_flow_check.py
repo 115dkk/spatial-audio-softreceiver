@@ -112,7 +112,7 @@ class DriverFlowTest(unittest.TestCase):
             self.assertGreater(summary["tone_db"], -10)
 
     def test_new_layout(self):
-        self.assertEqual(ABI_INFO.size, 160)
+        self.assertEqual(ABI_INFO.size, 200)
         values = [0] * len(ssr_abi.ABI_INFO_FIELDS)
         indexes = {name: index for index, name in enumerate(ssr_abi.ABI_INFO_FIELDS)}
         for name, value in {
@@ -124,7 +124,7 @@ class DriverFlowTest(unittest.TestCase):
             "compiled.pcm.rates": 0x3f,
             "compiled.pcm.shapes": 0x1f,
             "compiled.pcm.max_masked_channels": 18,
-            "compiled.pcm.direct_channels": 0xffffffff,
+            "compiled.pcm.direct_channels": 0xffffffffffffffff,
             "features": 3,
             "qpc_frequency": QPC,
             "endpoint_mask": 7,
@@ -136,7 +136,7 @@ class DriverFlowTest(unittest.TestCase):
                 "pcm.rates": 0x3f,
                 "pcm.shapes": 0x1f,
                 "pcm.max_masked_channels": 18,
-                "pcm.direct_channels": 0xffffffff,
+                "pcm.direct_channels": 0xffffffffffffffff,
             }.items():
                 values[indexes[f"endpoints[{endpoint}].{name}"]] = value
         raw = ABI_INFO.pack(*values)
@@ -145,7 +145,7 @@ class DriverFlowTest(unittest.TestCase):
         self.assertEqual(info["endpoint_mask"], 7)
         self.assertEqual(info["compiled"]["codecs"], 0x1fe)
         self.assertEqual(info["endpoints"][2]["codecs"], 0x7c)
-        self.assertEqual(info["endpoints"][2]["pcm"]["direct_channels"], 0xffffffff)
+        self.assertEqual(info["endpoints"][2]["pcm"]["direct_channels"], 0xffffffffffffffff)
         self.assertEqual(info["endpoints"][3]["pcm"]["rates"], 0)
         with self.assertRaises(ValueError): parse_abi_info(raw[:-1])
 

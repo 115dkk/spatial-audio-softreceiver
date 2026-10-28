@@ -308,9 +308,9 @@ impl AsioSettings {
     }
 }
 
-/// The speaker layouts the app offers: standard layouts with a Windows
-/// channel mask (ADR 0034). Any other layout takes a `profile.toml`
-/// (ADR 0030). The serialized form is the layout's name.
+/// The speaker layouts the app offers (ADR 0034 and ADR 0042). Layouts that
+/// Windows can name use their channel mask; the others use mask-zero direct
+/// output in the listed speaker order. The serialized form is the layout's name.
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -335,11 +335,25 @@ pub enum SpeakerLayout {
     Surround712,
     #[serde(rename = "7.1.4")]
     Surround714,
+    #[serde(rename = "9.1")]
+    Surround91,
+    #[serde(rename = "9.1.4")]
+    Surround914,
+    #[serde(rename = "9.1.6")]
+    Surround916,
+    #[serde(rename = "13.1")]
+    Surround131,
+    #[serde(rename = "22.2")]
+    Surround222,
+    #[serde(rename = "24.1.10")]
+    Surround24110,
+    #[serde(rename = "30.2")]
+    Surround302,
 }
 
 impl SpeakerLayout {
     /// In the order the screen lists them.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 16] = [
         Self::Stereo,
         Self::Stereo21,
         Self::Quad,
@@ -349,6 +363,13 @@ impl SpeakerLayout {
         Self::Surround514,
         Self::Surround712,
         Self::Surround714,
+        Self::Surround91,
+        Self::Surround914,
+        Self::Surround916,
+        Self::Surround131,
+        Self::Surround222,
+        Self::Surround24110,
+        Self::Surround302,
     ];
 
     /// The layout's name, which is also its serialized form.
@@ -363,6 +384,13 @@ impl SpeakerLayout {
             Self::Surround514 => "5.1.4",
             Self::Surround712 => "7.1.2",
             Self::Surround714 => "7.1.4",
+            Self::Surround91 => "9.1",
+            Self::Surround914 => "9.1.4",
+            Self::Surround916 => "9.1.6",
+            Self::Surround131 => "13.1",
+            Self::Surround222 => "22.2",
+            Self::Surround24110 => "24.1.10",
+            Self::Surround302 => "30.2",
         }
     }
 
@@ -385,11 +413,31 @@ impl SpeakerLayout {
             Self::Surround514 => &[L, R, C, Lfe, Ls, Rs, Tfl, Tfr, Trl, Trr],
             Self::Surround712 => &[L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Tfl, Tfr],
             Self::Surround714 => &[L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Tfl, Tfr, Trl, Trr],
+            Self::Surround91 => &[L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Lw, Rw],
+            Self::Surround914 => &[L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Lw, Rw, Tfl, Tfr, Trl, Trr],
+            Self::Surround916 => &[
+                L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Lw, Rw, Tfl, Tfr, Tsl, Tsr, Trl, Trr,
+            ],
+            Self::Surround131 => &[
+                L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Tc, Tfl, Tfc, Tfr, Trl, Trr,
+            ],
+            Self::Surround222 => &[
+                Lw, Rw, C, Lfe, Lbs, Rbs, L, R, Cs, Lfe2, Lss, Rss, Tfl, Tfr, Tfc, Tc, Trl, Trr,
+                Tsl, Tsr, Trc, Bfc, Bfl, Bfr,
+            ],
+            Self::Surround24110 => &[
+                L, R, C, Lfe, Lss, Rss, Lbs, Rbs, Lw, Rw, Tfl, Tfr, Tsl, Tsr, Trl, Trr, Lc, Rc,
+                Lsc, Rsc, Ls1, Rs1, Ls, Rs, Lrs1, Rrs1, Lrs, Rrs, Lcs, Rcs, Cs, Hfl, Hfr, Hrl, Hrr,
+            ],
+            Self::Surround302 => &[
+                C, L, R, Ls, Rs, Lfe, Cs, Lrs, Rrs, Lss, Rss, Lc, Rc, Hfl, Tfc, Hfr, Lfe2, Lw, Rw,
+                Tc, Tsl, Tsr, Trc, Hrl, Hrr, Bfc, Bfl, Bfr, Tfl, Tfr, Trl, Trr,
+            ],
         }
     }
 
-    /// The device format the layout opens: one channel per speaker, with the
-    /// standard Windows channel mask.
+    /// The device format the layout opens: one channel per speaker. Layouts
+    /// without a Windows channel mask use mask-zero direct output.
     pub const fn output_layout(self) -> OutputLayout {
         let channel_mask = match self {
             Self::Stereo => 0x3,
@@ -401,6 +449,13 @@ impl SpeakerLayout {
             Self::Surround514 => 0x2d03f,
             Self::Surround712 => 0x563f,
             Self::Surround714 => 0x2d63f,
+            Self::Surround131 => 0x2fe3f,
+            Self::Surround91
+            | Self::Surround914
+            | Self::Surround916
+            | Self::Surround222
+            | Self::Surround24110
+            | Self::Surround302 => 0,
         };
         OutputLayout {
             channels: self.speakers().len() as u16,
@@ -781,16 +836,19 @@ mod tests {
                 "{}",
                 layout.name()
             );
-            assert_eq!(output.channel_mask.count_ones() as usize, speakers.len());
-            // Channel n is the mask's n-th set bit (WAVEFORMATEXTENSIBLE).
-            let mut bits = (0..32)
-                .map(|shift| 1_u32 << shift)
-                .filter(|bit| output.channel_mask & bit != 0);
-            for &speaker in speakers {
-                let bit = bits.next().expect("one bit per speaker");
-                assert_eq!(Speaker::from_wave_bit(bit), Some(windows_speaker(speaker)));
+            if output.channel_mask != 0 {
+                assert_eq!(output.channel_mask.count_ones() as usize, speakers.len());
+                // Channel n is the mask's n-th set bit (WAVEFORMATEXTENSIBLE).
+                let mut bits = (0..32)
+                    .map(|shift| 1_u32 << shift)
+                    .filter(|bit| output.channel_mask & bit != 0);
+                for &speaker in speakers {
+                    let bit = bits.next().expect("one bit per speaker");
+                    assert_eq!(Speaker::from_wave_bit(bit), Some(windows_speaker(speaker)));
+                }
             }
             assert!(speakers.iter().filter(|&&s| s == Speaker::Lfe).count() <= 1);
+            assert!(speakers.iter().filter(|&&s| s == Speaker::Lfe2).count() <= 1);
         }
     }
 
@@ -807,7 +865,13 @@ mod tests {
                 let ours: Vec<_> = layout
                     .speakers()
                     .iter()
-                    .map(|&s| windows_speaker(s))
+                    .map(|&speaker| {
+                        if layout.output_layout().channel_mask == 0 {
+                            speaker
+                        } else {
+                            windows_speaker(speaker)
+                        }
+                    })
                     .collect();
                 assert_eq!(ours, preset, "{}", layout.name());
             }

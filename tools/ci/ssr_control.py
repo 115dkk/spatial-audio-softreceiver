@@ -11,9 +11,10 @@ from ssr_abi import (
 
 
 def _formats(raw, offset):
-    codecs, rates, shapes, maximum, direct = ENDPOINT_FORMATS.unpack_from(raw, offset)
+    codecs, rates, shapes, maximum, reserved, direct = ENDPOINT_FORMATS.unpack_from(raw, offset)
     return {"codecs": codecs, "pcm": {"rates": rates, "shapes": shapes,
-            "max_masked_channels": maximum, "direct_channels": direct}}
+            "max_masked_channels": maximum, "reserved": reserved,
+            "direct_channels": direct}}
 
 
 def parse_abi_info(raw):
@@ -27,7 +28,7 @@ def parse_abi_info(raw):
         "compiled": _formats(raw, 16), "features": result["features"],
         "qpc_frequency": result["qpc_frequency"], "endpoint_mask": result["endpoint_mask"],
         "reserved": result["reserved"],
-        "endpoints": [_formats(raw, 64 + index * ENDPOINT_FORMATS.size)
+        "endpoints": [_formats(raw, 72 + index * ENDPOINT_FORMATS.size)
                       for index in range(MAX_ENDPOINTS)],
     }
 

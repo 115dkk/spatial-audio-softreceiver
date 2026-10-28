@@ -50,6 +50,7 @@ foreach ($ep in 0..3) {
     $expected["PcmShapeMask$ep"] = 0x1f
     $expected["PcmMaxMaskedChannels$ep"] = 18
     $expected["PcmDirectChannels$ep"] = 0xFFFFFFFFL
+    $expected["PcmDirectChannelsHigh$ep"] = 0xFFFFFFFFL
 }
 # A REG_DWORD reads back as Int32 or UInt32 depending on the PowerShell host
 # (0xffffffff came back as 4294967295 on the runners), so compare the stored

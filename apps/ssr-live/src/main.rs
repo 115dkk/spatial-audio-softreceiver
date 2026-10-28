@@ -2091,13 +2091,14 @@ mod platform {
                             .collect::<Vec<_>>();
                         let mut direct = Vec::new();
                         let mut channel = 1_u32;
-                        while channel <= 32 {
-                            if formats.pcm.direct_channels & (1 << (channel - 1)) == 0 {
+                        while channel <= 64 {
+                            if formats.pcm.direct_channels & (1_u64 << (channel - 1)) == 0 {
                                 channel += 1;
                                 continue;
                             }
                             let first = channel;
-                            while channel < 32 && formats.pcm.direct_channels & (1 << channel) != 0
+                            while channel < 64
+                                && formats.pcm.direct_channels & (1_u64 << channel) != 0
                             {
                                 channel += 1;
                             }

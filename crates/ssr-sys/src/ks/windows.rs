@@ -153,7 +153,7 @@ impl KsOpener {
     pub(super) fn open_detailed(&mut self, layout: OutputLayout) -> Result<KsSink, OpenFailure> {
         use ssr_types::ports::KsFallbackReason as Reason;
         if layout.channels == 0
-            || layout.channels > 32
+            || layout.channels > 64
             || (layout.channel_mask != 0
                 && layout.channel_mask.count_ones() != u32::from(layout.channels))
             || self.rate == 0

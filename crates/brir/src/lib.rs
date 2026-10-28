@@ -256,6 +256,10 @@ pub fn canonical_name(name: &str) -> Option<&'static str> {
             Speaker::Rw => Some("WR"),
             Speaker::Tfl => Some("TFL"),
             Speaker::Tfr => Some("TFR"),
+            Speaker::Hfl => Some("HFL"),
+            Speaker::Hfr => Some("HFR"),
+            Speaker::Hrl => Some("HBL"),
+            Speaker::Hrr => Some("HBR"),
             Speaker::Tsl => Some("TSL"),
             Speaker::Tsr => Some("TSR"),
             Speaker::Trl => Some("TBL"),
@@ -266,6 +270,19 @@ pub fn canonical_name(name: &str) -> Option<&'static str> {
             | Speaker::Rc
             | Speaker::Tfc
             | Speaker::Trc
+            | Speaker::Lsc
+            | Speaker::Rsc
+            | Speaker::Ls1
+            | Speaker::Rs1
+            | Speaker::Lrs1
+            | Speaker::Rrs1
+            | Speaker::Lbs
+            | Speaker::Rbs
+            | Speaker::Lcs
+            | Speaker::Rcs
+            | Speaker::Bfl
+            | Speaker::Bfr
+            | Speaker::Bfc
             | Speaker::Lfe
             | Speaker::Lfe2 => None,
         };

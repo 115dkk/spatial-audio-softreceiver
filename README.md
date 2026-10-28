@@ -4,12 +4,14 @@
 
 AV 리시버가 하던 일을 PC 안에서 소프트웨어로 하는 Windows 앱입니다. 가상 HDMI 장치로 게임, 음악, 영화의 소리를 받아 디코드하고 공간에 배치한 뒤, 둘 가운데 하나로 내보냅니다.
 
-- **실제 스피커:** 다채널 DAC나 오디오 인터페이스와 앰프에 연결한 스피커(2.0부터 7.1.4까지)로 내보냅니다. 스피커 위치에 맞춘 패닝, 저음 관리(크로스오버, 서브우퍼, LFE), 거리에 맞춘 지연과 레벨 정렬, 채널별 룸 보정 FIR을 리시버 대신 합니다.
-- **헤드폰:** 개인 측정 BRIR로 스피커가 있는 방을 헤드폰 안에 재현합니다.
+- **실제 스피커:** 다채널 DAC나 오디오 인터페이스와 앰프에 연결한 스피커로 내보냅니다. 배치는 2.0부터 9.1.x, 13.1, 22.2, 24.1.10, 30.2까지 고를 수 있고 채널은 64개까지입니다. 스피커 위치에 맞춘 패닝, 저음 관리(크로스오버, 서브우퍼, LFE), 거리에 맞춘 지연과 레벨 정렬, 채널별 룸 보정 FIR을 리시버 대신 합니다.
+- **헤드폰:** 개인 측정 BRIR로 스피커가 있는 방을 헤드폰 안에 재현합니다. Impulcifer 3.x가 배치마다 쓰는 BRIR 파일(13.1, 22.2, 24.1.10, 30.2)도 그대로 가져와, 같은 배치의 소스를 채널마다 제 방향으로 렌더합니다(ADR 0042).
 
 Dolby Atmos 콘텐츠(DD+ JOC, Windows 공간음향의 MAT)도 받아 객체 위치 그대로 렌더합니다. 모노와 스테레오는 사용자가 가진 VST 2·VST 3 업믹서 플러그인으로 여러 채널로 넓힐 수 있고, 업믹서는 입력마다 고릅니다(ADR 0035). 플러그인은 앱과 분리된 프로세스에서 돌아, 멈추거나 죽어도 소리가 끊기지 않습니다(ADR 0021).
 
-Dolby, Dolby Atmos는 Dolby Laboratories의 상표입니다. 이 프로젝트는 Dolby Laboratories와 관계가 없고 보증받지 않았습니다. VST와 ASIO는 Steinberg Media Technologies GmbH의 상표입니다. 이 프로젝트는 Steinberg와 관계가 없고 보증받지 않았습니다.
+배치 13.1, 22.2, 24.1.10, 30.2는 각각 Auro-3D 13.1, NHK 22.2(SMPTE ST 2036-2), Dolby Atmos 24.1.10, DTS:X Pro 30.2와 같은 채널 구성입니다. 이 프로젝트는 그 형식의 비트스트림을 디코드하지 않고, 디코드된 PCM을 같은 채널 순서로 받습니다.
+
+Dolby, Dolby Atmos는 Dolby Laboratories의 상표입니다. 이 프로젝트는 Dolby Laboratories와 관계가 없고 보증받지 않았습니다. VST와 ASIO는 Steinberg Media Technologies GmbH의 상표입니다. 이 프로젝트는 Steinberg와 관계가 없고 보증받지 않았습니다. Auro-3D는 Auro Technologies NV의 상표이고, DTS와 DTS:X는 DTS, Inc.의 상표이며, NHK는 일본방송협회(Japan Broadcasting Corporation)의 상표입니다. 이 프로젝트는 이들과 관계가 없고 보증받지 않았습니다.
 
 설계는 [`docs/Spatial SoftReceiver 아키텍처.html`](docs/Spatial%20SoftReceiver%20아키텍처.html)에, 드라이버 동결 전의 확장(업믹스, 플러그인 호스트, 시스템 소리)은 [`docs/Spatial SoftReceiver 확장 설계.html`](docs/Spatial%20SoftReceiver%20확장%20설계.html)에, 용어는 [`CONTEXT.md`](CONTEXT.md)에, 결정은 [`docs/adr/`](docs/adr)에 있습니다.
 

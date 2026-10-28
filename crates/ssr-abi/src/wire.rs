@@ -211,7 +211,7 @@ pub const PCM_SHAPES_INTEGER: u32 = 0x0f;
 
 /// The 18 ksmedia.h speaker positions, FRONT_LEFT through TOP_BACK_RIGHT.
 pub const PCM_SPEAKER_BITS: u32 = 0x0003_ffff;
-pub const MAX_PCM_CHANNELS: u16 = 32;
+pub const MAX_PCM_CHANNELS: u16 = 64;
 
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, KnownLayout, Immutable,
@@ -225,8 +225,11 @@ pub struct PcmFormats {
     /// Nonzero masks use only PCM_SPEAKER_BITS, have nChannels set bits,
     /// and no more than this many channels (zero disables masked PCM).
     pub max_masked_channels: u32,
-    /// Bit c-1 permits c channels with mask zero (direct out, no speaker meaning).
-    pub direct_channels: u32,
+    /// Writers set this reserved field to zero; readers ignore it.
+    pub reserved: u32,
+    /// Bit c-1 permits c channels (1..=64) with mask zero (direct out, no
+    /// speaker meaning).
+    pub direct_channels: u64,
 }
 
 #[derive(
@@ -242,12 +245,14 @@ pub const DEFAULT_PCM: PcmFormats = PcmFormats {
     rates: 0x3f,
     shapes: 0x1f,
     max_masked_channels: 18,
-    direct_channels: 0xffff_ffff,
+    reserved: 0,
+    direct_channels: u64::MAX,
 };
 pub const COMPILED_PCM: PcmFormats = DEFAULT_PCM;
-/// Bits c-1 for decoder-default direct layouts: 1-6, 8, 10, 12, 14, and 16
-/// channels. The driver prefers these when intersecting direct PCM formats.
-pub const DIRECT_DEFAULT_CHANNELS: u32 = 0xaabf;
+/// Bits c-1 for decoder-default direct layouts: 1-6, 8, 10, 12, 14, 16, 24,
+/// 32, and 35 channels. The driver prefers these when intersecting direct PCM
+/// formats.
+pub const DIRECT_DEFAULT_CHANNELS: u64 = 0x4_8080_aabf;
 
 /// Codec mask: bits 1..8 retain their values; bit 0 and bits 9..63 are reserved.
 pub const FORMAT_AC3: u64 = 1 << 1;
@@ -375,12 +380,12 @@ const _: () = {
     assert!(size_of::<OverrunPayload>() == 8);
     assert!(size_of::<ReadRequest>() == 8);
     assert!(size_of::<RateTrim>() == 8);
-    assert!(size_of::<AbiInfo>() == 160);
+    assert!(size_of::<AbiInfo>() == 200);
     assert!(offset_of!(AbiInfo, compiled) == 16);
-    assert!(offset_of!(AbiInfo, features) == 40);
-    assert!(offset_of!(AbiInfo, qpc_frequency) == 48);
-    assert!(offset_of!(AbiInfo, endpoint_mask) == 56);
-    assert!(offset_of!(AbiInfo, endpoints) == 64);
+    assert!(offset_of!(AbiInfo, features) == 48);
+    assert!(offset_of!(AbiInfo, qpc_frequency) == 56);
+    assert!(offset_of!(AbiInfo, endpoint_mask) == 64);
+    assert!(offset_of!(AbiInfo, endpoints) == 72);
     assert!(size_of::<EndpointStats>() == 32);
     assert!(offset_of!(EndpointStats, epoch) == 24);
     assert!(offset_of!(EndpointStats, state) == 28);
@@ -403,8 +408,10 @@ const _: () = {
             == PCM_SHAPES_INTEGER
     );
     assert!(PCM_RATE_COUNT as usize == PCM_RATES.len());
-    assert!(size_of::<PcmFormats>() == 16);
-    assert!(size_of::<EndpointFormats>() == 24);
+    assert!(size_of::<PcmFormats>() == 24);
+    assert!(offset_of!(PcmFormats, reserved) == 12);
+    assert!(offset_of!(PcmFormats, direct_channels) == 16);
+    assert!(size_of::<EndpointFormats>() == 32);
     assert!(offset_of!(EndpointFormats, pcm) == 8);
     assert!(core::mem::align_of::<AbiInfo>() == 8);
     assert!(COMPILED_CODECS == 0x1fe);
@@ -553,10 +560,11 @@ mod tests {
             endpoints: [formats, formats, formats, EndpointFormats::default()],
         };
         assert_eq!(AbiInfo::read_from_bytes(info.as_bytes()), Ok(info));
-        assert_eq!(offset_of!(AbiInfo, reserved), 60);
+        assert_eq!(offset_of!(AbiInfo, reserved), 68);
         assert_eq!(offset_of!(PcmFormats, rates), 0);
         assert_eq!(offset_of!(PcmFormats, shapes), 4);
         assert_eq!(offset_of!(PcmFormats, max_masked_channels), 8);
-        assert_eq!(offset_of!(PcmFormats, direct_channels), 12);
+        assert_eq!(offset_of!(PcmFormats, reserved), 12);
+        assert_eq!(offset_of!(PcmFormats, direct_channels), 16);
     }
 }

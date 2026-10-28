@@ -62,7 +62,7 @@ use crate::mixer::SceneMixer;
 /// Endpoints with an upmix stage: main (0), music (1) and PASS (2).
 pub const UPMIX_ENDPOINTS: usize = 3;
 /// Most input or output speakers an upmixer may have.
-pub const MAX_UPMIX_CHANNELS: usize = 32;
+pub const MAX_UPMIX_CHANNELS: usize = 64;
 /// The longest upmixer latency accepted, in seconds (ADR 0021).
 pub const MAX_UPMIX_LATENCY_SECONDS: usize = 2;
 /// Shared-memory slots provisioned for every plugin upmixer.
@@ -74,7 +74,7 @@ const STEREO_OBJECTS: usize = 2;
 /// The longest scene the stage emits at once; a longer incoming scene (only
 /// from a chain built with a larger `max_block`) leaves in pieces.
 const EMIT_FRAMES: usize = decode::MAX_SCENE_FRAMES;
-const _: () = assert!(MAX_UPMIX_CHANNELS < MAX_OBJECTS);
+const _: () = assert!(MAX_UPMIX_CHANNELS <= MAX_OBJECTS);
 const _: () = assert!(UPMIX_ENDPOINTS <= ssr_abi::MAX_ENDPOINTS);
 const _: () = assert!(UPMIX_RING_SLOTS <= vst_audio_ring::MAX_SLOTS);
 const _: () = assert!(UPMIX_RING_SLOTS as usize > UPMIX_MAX_DEPTH);
@@ -117,10 +117,10 @@ pub trait Upmixer: Send {
     fn rate(&self) -> u32;
     /// `rate / 100` (10 ms).
     fn block_frames(&self) -> usize;
-    /// Input speakers in plane order: what the plugin's input bus is (1..=32,
+    /// Input speakers in plane order: what the plugin's input bus is (1..=64,
     /// distinct, at most one LFE).
     fn inputs(&self) -> &[Speaker];
-    /// Output speakers in plane order (1..=32, distinct, at most one LFE).
+    /// Output speakers in plane order (1..=64, distinct, at most one LFE).
     fn outputs(&self) -> &[Speaker];
     /// Plugin latency in frames at `rate()` (≤ 2 s).
     fn latency_frames(&self) -> usize;

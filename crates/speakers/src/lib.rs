@@ -120,7 +120,7 @@ pub struct PreparedSpeakers {
 
 /// The most device channels a speaker output may have (the engine's crossing
 /// ring holds this many).
-pub const MAX_DEVICE_CHANNELS: usize = 32;
+pub const MAX_DEVICE_CHANNELS: usize = 64;
 /// Alignment and level bounds. A value outside is a typo, not a room: 50 m is
 /// a large hall, 500 ms is far beyond any acoustic path, and the FIR cap keeps
 /// a misplaced file from taking the machine's memory.
@@ -461,7 +461,7 @@ pub fn layout_profile(layout: SpeakerLayout, gain_db: f32) -> SpeakerProfile {
     let mut subwoofers = Vec::new();
     for (channel, &speaker) in layout.speakers().iter().enumerate() {
         let name = speaker.name();
-        if speaker == Speaker::Lfe {
+        if matches!(speaker, Speaker::Lfe | Speaker::Lfe2) {
             subwoofers.push(SubwooferConfig {
                 channel,
                 distance_m: None,
@@ -856,10 +856,21 @@ fn nominal_speaker(name: &str) -> Option<Speaker> {
 fn parse_channel_mask(value: &str) -> Result<u32, String> {
     let mask = match value {
         "direct" => 0,
-        preset if let Some(speakers) = ssr_types::channel_layout_preset(preset) => speakers
-            .iter()
-            .filter_map(|speaker| speaker.wave_bit())
-            .fold(0, |mask, bit| mask | bit),
+        preset if let Some(speakers) = ssr_types::channel_layout_preset(preset) => {
+            let mut mask = 0;
+            let mut previous = 0;
+            for speaker in speakers {
+                let Some(bit) = speaker.wave_bit() else {
+                    return Ok(0);
+                };
+                if bit <= previous {
+                    return Ok(0);
+                }
+                mask |= bit;
+                previous = bit;
+            }
+            mask
+        }
         number => match number
             .strip_prefix("0x")
             .or_else(|| number.strip_prefix("0X"))
@@ -1209,6 +1220,9 @@ mod tests {
     #[test]
     fn channel_masks_accept_names_numbers_and_hex() {
         assert_eq!(parse_channel_mask("7.1.4"), Ok(0x2d63f));
+        assert_eq!(parse_channel_mask("13.1"), Ok(0x2fe3f));
+        assert_eq!(parse_channel_mask("9.1.6"), Ok(0));
+        assert_eq!(parse_channel_mask("22.2"), Ok(0));
         assert_eq!(parse_channel_mask("direct"), Ok(0));
         assert_eq!(parse_channel_mask("0x2D63F"), Ok(0x2d63f));
         assert_eq!(parse_channel_mask("63"), Ok(0x3f));
@@ -1218,6 +1232,18 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(parsed.channel_mask, MaskToml::Number(0x3f)));
+    }
+
+    #[test]
+    fn twenty_two_two_layout_profile_has_two_subwoofers() {
+        let profile = layout_profile(SpeakerLayout::Surround222, 0.0);
+        assert_eq!(profile.device_channels, 24);
+        assert_eq!(profile.channel_mask, 0);
+        assert_eq!(profile.subwoofers.len(), 2);
+        assert_eq!(profile.subwoofers[0].channel, 3);
+        assert_eq!(profile.subwoofers[1].channel, 9);
+        let prepared = prepare(&profile, 48_000, 480).unwrap();
+        assert_eq!(prepared.subwoofers.len(), 2);
     }
 
     #[test]

@@ -188,18 +188,39 @@ fn ffmpeg_native_direct_defaults_and_presets_have_the_documented_order() {
         (12, &[L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Tfl, Tfr, Trl, Trr]),
         (
             14,
-            &[L, R, C, Lfe, Lrs, Rrs, Lc, Rc, Lss, Rss, Tfl, Tfr, Trl, Trr],
+            &[L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Lw, Rw, Tfl, Tfr, Trl, Trr],
         ),
         (
             16,
             &[
-                L, R, C, Lfe, Lrs, Rrs, Lc, Rc, Lss, Rss, Tfl, Tfr, Trl, Trr, Tsl, Tsr,
+                L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Lw, Rw, Tfl, Tfr, Tsl, Tsr, Trl, Trr,
+            ],
+        ),
+        (
+            24,
+            &[
+                Lw, Rw, C, Lfe, Lbs, Rbs, L, R, Cs, Lfe2, Lss, Rss, Tfl, Tfr, Tfc, Tc, Trl, Trr,
+                Tsl, Tsr, Trc, Bfc, Bfl, Bfr,
+            ],
+        ),
+        (
+            32,
+            &[
+                C, L, R, Ls, Rs, Lfe, Cs, Lrs, Rrs, Lss, Rss, Lc, Rc, Hfl, Tfc, Hfr, Lfe2, Lw, Rw,
+                Tc, Tsl, Tsr, Trc, Hrl, Hrr, Bfc, Bfl, Bfr, Tfl, Tfr, Trl, Trr,
+            ],
+        ),
+        (
+            35,
+            &[
+                L, R, C, Lfe, Lss, Rss, Lbs, Rbs, Lw, Rw, Tfl, Tfr, Tsl, Tsr, Trl, Trr, Lc, Rc,
+                Lsc, Rsc, Ls1, Rs1, Ls, Rs, Lrs1, Rrs1, Lrs, Rrs, Lcs, Rcs, Cs, Hfl, Hfr, Hrl, Hrr,
             ],
         ),
     ] {
         assert_eq!(defaults.get(channels).unwrap().speakers(), expected);
     }
-    for channels in [7, 9, 11, 13, 15, 17, 32] {
+    for channels in [7, 9, 11, 13, 15, 17, 23, 25, 31, 33, 64] {
         assert_eq!(defaults.get(channels), None);
     }
     // Where Windows assumes a mask for mask zero, the direct default is that
@@ -233,16 +254,17 @@ fn direct_layout_argument_validates_count_names_and_duplicates() {
     );
     for bad in [
         "0=mono",
-        "33=stereo",
+        "65=stereo",
         "3=stereo",
         "2=L,L",
         "2=L,nope",
         "2",
         "2=FL,l",
-        "2=LFE,LFE2",
+        "2=LFE,LFE",
     ] {
         assert!(bad.parse::<DirectLayoutOverride>().is_err(), "{bad}");
     }
+    assert!("2=LFE,LFE2".parse::<DirectLayoutOverride>().is_ok());
     // FFmpeg's channel names, as Impulcifer users write them, for a 9.1.6
     // whose extra front pair is the wides rather than FFmpeg's FLC/FRC.
     use Speaker::*;
@@ -494,6 +516,34 @@ fn direct_pcm_routes_sixteen_channels_and_lfe_in_ffmpeg_native_order() {
 }
 
 #[test]
+fn twenty_two_two_direct_pcm_sums_both_lfe_channels() {
+    let mut decoder = PcmDecoder::new(DecodeConfig::default());
+    decoder
+        .configure(format(32, 32, SampleType::Float, 24))
+        .unwrap();
+    let mut input = Vec::with_capacity(480 * 24 * 4);
+    for _ in 0..480 {
+        for channel in 0..24 {
+            let sample = match channel {
+                3 => 0.125_f32,
+                9 => 0.25_f32,
+                _ => 0.0,
+            };
+            input.extend_from_slice(&sample.to_le_bytes());
+        }
+    }
+    let mut seen = 0;
+    decoder
+        .push(&input, 3, 9, &mut |scene| {
+            seen += 1;
+            assert_eq!(scene.objects.len(), 22);
+            assert_eq!(scene.lfe.unwrap(), &[0.375; 480]);
+        })
+        .unwrap();
+    assert_eq!(seen, 1);
+}
+
+#[test]
 fn custom_direct_layout_enables_eleven_and_thirty_two_channels() {
     let mut speakers = Vec::new();
     let all = [
@@ -646,7 +696,7 @@ fn configure_rejects_invalid_shapes_and_deselects_old_format() {
             ..good
         },
         PcmFormat {
-            channels: 33,
+            channels: 65,
             ..good
         },
         PcmFormat {

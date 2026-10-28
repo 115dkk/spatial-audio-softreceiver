@@ -181,13 +181,14 @@
  */
 #define SSR_PCM_SPEAKER_BITS 262143
 
-#define SSR_MAX_PCM_CHANNELS 32
+#define SSR_MAX_PCM_CHANNELS 64
 
 /**
- * Bits c-1 for decoder-default direct layouts: 1-6, 8, 10, 12, 14, and 16
- * channels. The driver prefers these when intersecting direct PCM formats.
+ * Bits c-1 for decoder-default direct layouts: 1-6, 8, 10, 12, 14, 16, 24,
+ * 32, and 35 channels. The driver prefers these when intersecting direct PCM
+ * formats.
  */
-#define SSR_DIRECT_DEFAULT_CHANNELS 43711
+#define SSR_DIRECT_DEFAULT_CHANNELS 19335785151
 
 /**
  * Codec mask: bits 1..8 retain their values; bit 0 and bits 9..63 are reserved.
@@ -248,9 +249,14 @@ typedef struct SSR_PCM_FORMATS {
    */
   uint32_t max_masked_channels;
   /**
-   * Bit c-1 permits c channels with mask zero (direct out, no speaker meaning).
+   * Writers set this reserved field to zero; readers ignore it.
    */
-  uint32_t direct_channels;
+  uint32_t reserved;
+  /**
+   * Bit c-1 permits c channels (1..=64) with mask zero (direct out, no
+   * speaker meaning).
+   */
+  uint64_t direct_channels;
 } SSR_PCM_FORMATS;
 
 typedef struct SSR_ENDPOINT_FORMATS {
@@ -411,11 +417,11 @@ typedef struct SSR_DUMP_HEADER {
  */
 static const uint32_t SSR_PCM_RATES[SSR_PCM_RATE_COUNT] = { 44100, 48000, 88200, 96000, 176400, 192000, };
 
-#define SSR_DEFAULT_PCM_INIT { 63, 31, 18, 4294967295U }
+#define SSR_DEFAULT_PCM_INIT { 63, 31, 18, 0, UINT64_C(18446744073709551615) }
 
 static const SSR_PCM_FORMATS SSR_DEFAULT_PCM = SSR_DEFAULT_PCM_INIT;
 
-#define SSR_COMPILED_PCM_INIT { 63, 31, 18, 4294967295U }
+#define SSR_COMPILED_PCM_INIT { 63, 31, 18, 0, UINT64_C(18446744073709551615) }
 
 static const SSR_PCM_FORMATS SSR_COMPILED_PCM = SSR_COMPILED_PCM_INIT;
 
@@ -456,25 +462,26 @@ SSR_STATIC_ASSERT(offsetof(SSR_READ_REQUEST, timeout_ms) == 4, "SSR_READ_REQUEST
 SSR_STATIC_ASSERT(sizeof(SSR_RATE_TRIM) == 8, "SSR_RATE_TRIM size");
 SSR_STATIC_ASSERT(offsetof(SSR_RATE_TRIM, ppm_q16) == 0, "SSR_RATE_TRIM.ppm_q16 offset");
 SSR_STATIC_ASSERT(offsetof(SSR_RATE_TRIM, reserved) == 4, "SSR_RATE_TRIM.reserved offset");
-SSR_STATIC_ASSERT(sizeof(SSR_PCM_FORMATS) == 16, "SSR_PCM_FORMATS size");
+SSR_STATIC_ASSERT(sizeof(SSR_PCM_FORMATS) == 24, "SSR_PCM_FORMATS size");
 SSR_STATIC_ASSERT(offsetof(SSR_PCM_FORMATS, rates) == 0, "SSR_PCM_FORMATS.rates offset");
 SSR_STATIC_ASSERT(offsetof(SSR_PCM_FORMATS, shapes) == 4, "SSR_PCM_FORMATS.shapes offset");
 SSR_STATIC_ASSERT(offsetof(SSR_PCM_FORMATS, max_masked_channels) == 8, "SSR_PCM_FORMATS.max_masked_channels offset");
-SSR_STATIC_ASSERT(offsetof(SSR_PCM_FORMATS, direct_channels) == 12, "SSR_PCM_FORMATS.direct_channels offset");
-SSR_STATIC_ASSERT(sizeof(SSR_ENDPOINT_FORMATS) == 24, "SSR_ENDPOINT_FORMATS size");
+SSR_STATIC_ASSERT(offsetof(SSR_PCM_FORMATS, reserved) == 12, "SSR_PCM_FORMATS.reserved offset");
+SSR_STATIC_ASSERT(offsetof(SSR_PCM_FORMATS, direct_channels) == 16, "SSR_PCM_FORMATS.direct_channels offset");
+SSR_STATIC_ASSERT(sizeof(SSR_ENDPOINT_FORMATS) == 32, "SSR_ENDPOINT_FORMATS size");
 SSR_STATIC_ASSERT(offsetof(SSR_ENDPOINT_FORMATS, codecs) == 0, "SSR_ENDPOINT_FORMATS.codecs offset");
 SSR_STATIC_ASSERT(offsetof(SSR_ENDPOINT_FORMATS, pcm) == 8, "SSR_ENDPOINT_FORMATS.pcm offset");
-SSR_STATIC_ASSERT(sizeof(SSR_ABI_INFO) == 160, "SSR_ABI_INFO size");
+SSR_STATIC_ASSERT(sizeof(SSR_ABI_INFO) == 200, "SSR_ABI_INFO size");
 SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, abi_version) == 0, "SSR_ABI_INFO.abi_version offset");
 SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, struct_size) == 4, "SSR_ABI_INFO.struct_size offset");
 SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, driver_version) == 8, "SSR_ABI_INFO.driver_version offset");
 SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, ring_bytes) == 12, "SSR_ABI_INFO.ring_bytes offset");
 SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, compiled) == 16, "SSR_ABI_INFO.compiled offset");
-SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, features) == 40, "SSR_ABI_INFO.features offset");
-SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, qpc_frequency) == 48, "SSR_ABI_INFO.qpc_frequency offset");
-SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, endpoint_mask) == 56, "SSR_ABI_INFO.endpoint_mask offset");
-SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, reserved) == 60, "SSR_ABI_INFO.reserved offset");
-SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, endpoints) == 64, "SSR_ABI_INFO.endpoints offset");
+SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, features) == 48, "SSR_ABI_INFO.features offset");
+SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, qpc_frequency) == 56, "SSR_ABI_INFO.qpc_frequency offset");
+SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, endpoint_mask) == 64, "SSR_ABI_INFO.endpoint_mask offset");
+SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, reserved) == 68, "SSR_ABI_INFO.reserved offset");
+SSR_STATIC_ASSERT(offsetof(SSR_ABI_INFO, endpoints) == 72, "SSR_ABI_INFO.endpoints offset");
 SSR_STATIC_ASSERT(sizeof(SSR_ENDPOINT_STATS) == 32, "SSR_ENDPOINT_STATS size");
 SSR_STATIC_ASSERT(offsetof(SSR_ENDPOINT_STATS, total_bytes) == 0, "SSR_ENDPOINT_STATS.total_bytes offset");
 SSR_STATIC_ASSERT(offsetof(SSR_ENDPOINT_STATS, overruns) == 8, "SSR_ENDPOINT_STATS.overruns offset");

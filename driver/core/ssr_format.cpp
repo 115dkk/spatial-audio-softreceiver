@@ -41,10 +41,10 @@ constexpr Shape kShapes[] = {
     {24, 24, false, SSR_PCM_SHAPE_INT24},
     {16, 16, false, SSR_PCM_SHAPE_INT16},
 };
-constexpr uint16_t kDirect[] = {2, 8, 6, 12, 16, 10, 14, 1, 3, 4, 5};
-constexpr uint32_t DirectSet() {
-    uint32_t mask = 0;
-    for (uint16_t channels : kDirect) mask |= UINT32_C(1) << (channels - 1U);
+constexpr uint16_t kDirect[] = {2, 8, 6, 12, 16, 10, 14, 1, 3, 4, 5, 24, 32, 35};
+constexpr uint64_t DirectSet() {
+    uint64_t mask = 0;
+    for (uint16_t channels : kDirect) mask |= UINT64_C(1) << (channels - 1U);
     return mask;
 }
 static_assert(DirectSet() == SSR_DIRECT_DEFAULT_CHANNELS, "direct intersection layouts match engine defaults");
@@ -116,7 +116,7 @@ bool PcmCandidateAllowed(const SSR_PCM_FORMATS& enabled, const PcmCandidate& can
         if (candidate.rate == SSR_PCM_RATES[i] && (enabled.rates & (1U << i))) rateAllowed = true;
     if (!rateAllowed) return false;
     uint32_t mask = candidate.channel_mask;
-    if (!mask) return (enabled.direct_channels & (UINT32_C(1) << (candidate.channels - 1U))) != 0;
+    if (!mask) return (enabled.direct_channels & (UINT64_C(1) << (candidate.channels - 1U))) != 0;
     if ((mask & ~static_cast<uint32_t>(SSR_PCM_SPEAKER_BITS)) ||
         candidate.channels > enabled.max_masked_channels) return false;
     uint32_t count = 0;
@@ -138,7 +138,7 @@ bool PcmRange(const SSR_PCM_FORMATS& enabled, bool floating, PcmRangeBounds* out
     PcmRangeBounds bounds{enabled.max_masked_channels < speakerCount ?
         enabled.max_masked_channels : speakerCount, UINT32_MAX, 0, UINT32_MAX, 0};
     for (uint32_t c = 1; c <= SSR_MAX_PCM_CHANNELS; ++c)
-        if ((enabled.direct_channels & (UINT32_C(1) << (c - 1U))) && c > bounds.max_channels)
+        if ((enabled.direct_channels & (UINT64_C(1) << (c - 1U))) && c > bounds.max_channels)
             bounds.max_channels = c;
     for (uint32_t r = 0; r < SSR_PCM_RATE_COUNT; ++r) if (enabled.rates & (1U << r)) {
         if (SSR_PCM_RATES[r] < bounds.min_rate) bounds.min_rate = SSR_PCM_RATES[r];
@@ -240,7 +240,7 @@ bool ChoosePcmIntersection(const SSR_PCM_FORMATS& pcm, const PcmCandidate& oem,
                                shape.bits, shape.valid, shape.floating})) return true;
     }
     for (uint16_t channels : kDirect) {
-        if (!(pcm.direct_channels & (UINT32_C(1) << (channels - 1U)))) continue;
+        if (!(pcm.direct_channels & (UINT64_C(1) << (channels - 1U)))) continue;
         for (uint32_t rate : rates) for (const auto& shape : kShapes)
             if (try_candidate({channels, rate, 0, shape.bits, shape.valid, shape.floating})) return true;
     }
