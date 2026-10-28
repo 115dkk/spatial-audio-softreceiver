@@ -26,7 +26,7 @@ pub mod test_tone;
 pub mod upmix;
 
 /// The most output channels the crossing ring carries (ADR 0030).
-pub const MAX_OUTPUT_CHANNELS: usize = 32;
+pub const MAX_OUTPUT_CHANNELS: usize = 64;
 // A speaker profile the speakers crate accepts must fit the ring.
 const _: () = assert!(speakers::MAX_DEVICE_CHANNELS == MAX_OUTPUT_CHANNELS);
 

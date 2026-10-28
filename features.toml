@@ -234,7 +234,7 @@ tests = [
   "decode::direct_pcm_routes_sixteen_channels_and_lfe_in_ffmpeg_native_order",
   "decode::custom_direct_layout_enables_eleven_and_thirty_two_channels",
   "decode::every_wave_speaker_bit_and_common_masks_route_in_bit_order",
-  "decode::thirty_two_channel_direct_configure_push_and_reset_do_not_allocate",
+  "decode::sixty_four_channel_direct_configure_push_and_reset_do_not_allocate",
   "decode::configure_rejects_invalid_shapes_and_deselects_old_format",
   "decode::partial_first_frame_keeps_its_first_byte_qpc",
   "decode::reset_reconfigure_and_epoch_change_discard_remainders",
@@ -247,6 +247,43 @@ tests = [
   "engine::default_chain_decodes_all_six_pcm_rates_through_record_stream",
   "engine::plain_stereo_ignores_direct_override_but_zero_mask_extensible_uses_it",
 ]
+
+[[feature]]
+id = "audio.channels_64"
+kind = "pipeline"
+milestone = "M4"
+status = "implemented"
+tests = [
+  "decode::sixty_four_channel_direct_configure_push_and_reset_do_not_allocate",
+  "engine::ended_input_drains_a_sixty_four_channel_ring_below_the_priming_threshold",
+]
+note = "ADR 0042: mask-zero PCM, engine output, speaker profiles and upmixers accept up to 64 channels; the Windows speaker mask remains 18 bits."
+
+[[feature]]
+id = "types.extended_speaker_layouts"
+kind = "types"
+milestone = "M4"
+status = "implemented"
+tests = [
+  "ssr-types::positioned_speakers_have_distinct_positions",
+  "ssr-types::speaker_names_are_unique_and_round_trip",
+  "ssr-types::every_layout_opens_its_speakers_in_mask_order",
+  "ssr-types::layouts_match_the_shared_presets_and_serialize_as_their_names",
+  "decode::ffmpeg_native_direct_defaults_and_presets_have_the_documented_order",
+  "speakers::channel_masks_accept_names_numbers_and_hex",
+]
+note = "ADR 0042: the nominal speaker table and named presets include 9.1 through 30.2; layouts without an ordered Windows mask use mask-zero direct output."
+
+[[feature]]
+id = "decode.pcm_two_lfe"
+kind = "pipeline"
+milestone = "M4"
+status = "implemented"
+tests = [
+  "decode::twenty_two_two_direct_pcm_sums_both_lfe_channels",
+  "speakers::twenty_two_two_layout_profile_has_two_subwoofers",
+]
+note = "ADR 0042: one LFE and one LFE2 may coexist; PCM sums both at unity into the scene LFE, and speaker layouts feed that LFE to both subwoofers."
 
 [[feature]]
 id = "decode.mat"
@@ -390,6 +427,35 @@ tests = [
   "convolver::steady_state_process_does_not_allocate",
 ]
 note = "uniform partitions only: 22 inputs x 24,000-tap IRs x 480-frame blocks measured about 0.5 ms per block in release; 6.5 s sets need truncation or non-uniform partitions"
+
+[[feature]]
+id = "brir.ordered_3x_tracks"
+kind = "pipeline"
+milestone = "M4"
+status = "implemented"
+tests = [
+  "brir::hesuvi_layout_equals_prepare_for_every_track_count",
+  "brir::hrir_layout_equals_prepare_and_skips_lfe",
+  "brir::ordered_three_x_files_accept_full_track_counts",
+  "brir::first_extended_pair_selects_three_x_angles_and_overrides_still_win",
+  "brir::three_x_slots_have_unique_positions",
+]
+note = "hrir.wav accepts 16 through 82 even tracks and hesuvi.wav accepts 14 through 80 even tracks; files longer than the 2.x prefix use the complete 3.x nominal slot table"
+
+[[feature]]
+id = "brir.layout_files"
+kind = "pipeline"
+milestone = "M4"
+status = "implemented"
+tests = [
+  "brir::every_layout_file_uses_ssr_direction_names_and_angles",
+  "brir::unmatched_layout_labels_still_allow_a_csv_sidecar",
+  "brir::truncated_layout_chunk_is_rejected_without_panicking",
+  "brir::layout_file_label_tables_match_ssr_presets",
+  "brir::extensible_pcm32_with_zero_mask_and_fact_is_read",
+  "supervisor::importing_a_layout_wav_builds_a_headphone_profile",
+]
+note = "ICHL labels identify the numbered 13.1, 22.2, 24.1.10 and 30.2 layouts; LFE tracks are skipped and all directions use the matching SSR preset's names and nominal angles"
 
 [[feature]]
 id = "brir.prepare"
@@ -573,7 +639,7 @@ tests = [
   "engine::output_failure_discards_mixed_layout_crossing_audio_and_recovers",
   "engine::retry_observes_a_return_to_the_current_layout",
   "engine::partially_consumed_marker_is_discarded_from_its_remaining_frame",
-  "engine::ended_input_drains_a_thirty_two_channel_ring_below_the_priming_threshold",
+  "engine::ended_input_drains_a_sixty_four_channel_ring_below_the_priming_threshold",
   "engine::zero_budget_finish_completes_an_already_quiet_chain",
 ]
 note = "capture/DSP and output threads joined by an output-width rtrb ring; lock-free control queues; retired BRIR sets are freed on the control thread. The output primes with exact-zero frames only and never discards a nonzero sample, and waits for target + the largest recent capture delivery (a whole DD+ sync frame arrives as several mixer blocks in one step) + one period; startup can install the first Prepared before capture begins. Full idle-silent blocks are omitted, while any other crossing overflow is counted exactly and reported as events: a burst's first block at once, then at most one event a second, then the rest when a block fits again, so a stalled output cannot flood the event queue. Lockstep tests use a virtual QPC rather than wall time. After warmup, allocation guards wrap each complete capture iteration (changes, trim, read, record processing, idle and EOF draining) and output iteration (fill, device period, period accounting, cadence and latency); reconnect waits, device opens, layout/format recovery and ASRC reconfiguration are structurally outside those scopes. Status carries four endpoint-local format/epoch/unsupported slots; each parsed format atomically publishes its support result independently of duplicate diagnostic suppression"
@@ -1389,6 +1455,23 @@ tests = [
 note = "ADR 0021 control framing, deterministic deadlines, fallback and restart policy, and two-generation state history, in vst-audio-protocol (ADR 0039)"
 
 [[feature]]
+id = "asio.high_channel_layouts"
+kind = "pipeline"
+milestone = "M4"
+status = "implemented"
+tests = [
+  "asio-proto::all_layout_orders_and_names_are_fixed",
+  "asio-proto::legacy_wire_values_zero_through_four_do_not_change",
+  "ssr-asio::channel_validation_accepts_thirty_five_and_sixty_four_but_not_more",
+  "engine::every_layout_maps_to_the_shared_preset_in_protocol_order",
+  "engine::asio_ring_fits_sixty_four_channels_largest_buffer_and_highest_rate",
+  "engine::queue_supports_sixty_four_output_channels",
+  "engine::two_lfe_channels_sum_into_the_single_scene_lfe",
+  "engine::layout_24_1_10_streams_thirty_five_channels_through_the_engine",
+]
+note = "ASIO layouts 9.1, 9.1.4, 13.1, 22.2, 24.1.10 and 30.2 use ADR 0042 channel order; active-channel sets and stream rings accept up to 64 channels, while the two LFE inputs in 22.2 and 30.2 sum into the scene LFE"
+
+[[feature]]
 id = "asio.entrance"
 kind = "app"
 milestone = "M4"
@@ -1468,7 +1551,7 @@ tests = [
   "ssr-replay::speaker_render_writes_extensible_channels_mask_and_report",
   "ssr-replay::direct_speaker_render_writes_zero_channel_mask",
 ]
-note = "ADR 0030: the source-clock-domain mixer pans into the listener's real speaker layout and routes an N-channel planar block with LR4 bass management (f64 state), LFE at a profile gain (+10 dB default), per-loudspeaker delay/trim alignment and optional one-output mono room FIR (subwoofers included, without a discarded second-ear FFT), global gain and one linked limiter; a channel mask must agree with the speaker names' Windows channel order. The crossing ring carries each block's layout (up to 32 channels), the output thread opens the installed profile's layout and reopens the device when it changes, and WASAPI opens that exact WAVEFORMATEXTENSIBLE layout (mask or direct out). ssr-live and ssr-replay take speaker profiles. CI plays a speaker profile through VB-CABLE and checks every channel comes back on its own channel (tools/ci/multichannel_loopback_check.py)."
+note = "ADR 0030: the source-clock-domain mixer pans into the listener's real speaker layout and routes an N-channel planar block with LR4 bass management (f64 state), LFE at a profile gain (+10 dB default), per-loudspeaker delay/trim alignment and optional one-output mono room FIR (subwoofers included, without a discarded second-ear FFT), global gain and one linked limiter; a channel mask must agree with the speaker names' Windows channel order. The crossing ring carries each block's layout (up to 64 channels), the output thread opens the installed profile's layout and reopens the device when it changes, and WASAPI opens that exact WAVEFORMATEXTENSIBLE layout (mask or direct out). ssr-live and ssr-replay take speaker profiles. CI plays a speaker profile through VB-CABLE and checks every channel comes back on its own channel (tools/ci/multichannel_loopback_check.py)."
 
 [[feature]]
 id = "output.secs_correction"

@@ -15,7 +15,7 @@ export type Arch = "x64" | "arm64" | "other"
 /**
  * The input layouts a DAW may send (ADR 0025), independent of the output.
  */
-export type AsioLayout = "2.0" | "5.1" | "7.1" | "7.1.4" | "9.1.6"
+export type AsioLayout = "2.0" | "5.1" | "7.1" | "7.1.4" | "9.1" | "9.1.4" | "9.1.6" | "13.1" | "22.2" | "24.1.10" | "30.2"
 
 /**
  * Saved ASIO entrance settings. Missing fields keep the original defaults.
@@ -725,11 +725,11 @@ name: string;
 channel: number; subwoofer: boolean }
 
 /**
- * The speaker layouts the app offers: standard layouts with a Windows
- * channel mask (ADR 0034). Any other layout takes a `profile.toml`
- * (ADR 0030). The serialized form is the layout's name.
+ * The speaker layouts the app offers (ADR 0034 and ADR 0042). Layouts that
+ * Windows can name use their channel mask; the others use mask-zero direct
+ * output in the listed speaker order. The serialized form is the layout's name.
  */
-export type SpeakerLayout = "2.0" | "2.1" | "4.0" | "5.1" | "7.1" | "5.1.2" | "5.1.4" | "7.1.2" | "7.1.4"
+export type SpeakerLayout = "2.0" | "2.1" | "4.0" | "5.1" | "7.1" | "5.1.2" | "5.1.4" | "7.1.2" | "7.1.4" | "9.1" | "9.1.4" | "9.1.6" | "13.1" | "22.2" | "24.1.10" | "30.2"
 
 export type SpeakersView = {
 /**

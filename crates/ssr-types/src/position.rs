@@ -122,6 +122,23 @@ pub enum Speaker {
     Tc,
     Tfc,
     Trc,
+    Lsc,
+    Rsc,
+    Ls1,
+    Rs1,
+    Lrs1,
+    Rrs1,
+    Lbs,
+    Rbs,
+    Lcs,
+    Rcs,
+    Hfl,
+    Hfr,
+    Hrl,
+    Hrr,
+    Bfl,
+    Bfr,
+    Bfc,
     Lfe,
     Lfe2,
 }
@@ -154,6 +171,23 @@ impl Speaker {
             Tc => "Tc",
             Tfc => "Tfc",
             Trc => "Trc",
+            Lsc => "Lsc",
+            Rsc => "Rsc",
+            Ls1 => "Ls1",
+            Rs1 => "Rs1",
+            Lrs1 => "Lrs1",
+            Rrs1 => "Rrs1",
+            Lbs => "Lbs",
+            Rbs => "Rbs",
+            Lcs => "Lcs",
+            Rcs => "Rcs",
+            Hfl => "Hfl",
+            Hfr => "Hfr",
+            Hrl => "Hrl",
+            Hrr => "Hrr",
+            Bfl => "Bfl",
+            Bfr => "Bfr",
+            Bfc => "Bfc",
             Lfe => "LFE",
             Lfe2 => "LFE2",
         }
@@ -186,6 +220,23 @@ impl Speaker {
             "tc" => Tc,
             "tfc" => Tfc,
             "trc" | "tbc" => Trc,
+            "lsc" => Lsc,
+            "rsc" => Rsc,
+            "ls1" => Ls1,
+            "rs1" => Rs1,
+            "lrs1" => Lrs1,
+            "rrs1" => Rrs1,
+            "lbs" => Lbs,
+            "rbs" => Rbs,
+            "lcs" => Lcs,
+            "rcs" => Rcs,
+            "hfl" => Hfl,
+            "hfr" => Hfr,
+            "hrl" => Hrl,
+            "hrr" => Hrr,
+            "bfl" => Bfl,
+            "bfr" => Bfr,
+            "bfc" => Bfc,
             "lfe" => Lfe,
             "lfe2" => Lfe2,
             _ => return None,
@@ -220,6 +271,23 @@ impl Speaker {
             Tc => (0.0, 90.0),
             Tfc => (0.0, 45.0),
             Trc => (180.0, 45.0),
+            Lsc => (10.0, 0.0),
+            Rsc => (-10.0, 0.0),
+            Ls1 => (75.0, 0.0),
+            Rs1 => (-75.0, 0.0),
+            Lrs1 => (120.0, 0.0),
+            Rrs1 => (-120.0, 0.0),
+            Lbs => (135.0, 0.0),
+            Rbs => (-135.0, 0.0),
+            Lcs => (165.0, 0.0),
+            Rcs => (-165.0, 0.0),
+            Hfl => (30.0, 30.0),
+            Hfr => (-30.0, 30.0),
+            Hrl => (150.0, 30.0),
+            Hrr => (-150.0, 30.0),
+            Bfl => (45.0, -30.0),
+            Bfr => (-45.0, -30.0),
+            Bfc => (0.0, -30.0),
             Lfe | Lfe2 => return None,
         })
     }
@@ -279,7 +347,8 @@ impl Speaker {
             Trl => 0x8000,
             Trc => 0x10000,
             Trr => 0x20000,
-            Ls | Rs | Lw | Rw | Tsl | Tsr | Lfe2 => return None,
+            Ls | Rs | Lw | Rw | Tsl | Tsr | Lsc | Rsc | Ls1 | Rs1 | Lrs1 | Rrs1 | Lbs | Rbs
+            | Lcs | Rcs | Hfl | Hfr | Hrl | Hrr | Bfl | Bfr | Bfc | Lfe2 => return None,
         })
     }
 }
@@ -287,6 +356,51 @@ impl Speaker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ALL_SPEAKERS: &[Speaker] = &[
+        Speaker::L,
+        Speaker::R,
+        Speaker::C,
+        Speaker::Ls,
+        Speaker::Rs,
+        Speaker::Lrs,
+        Speaker::Rrs,
+        Speaker::Cs,
+        Speaker::Lw,
+        Speaker::Rw,
+        Speaker::Lc,
+        Speaker::Rc,
+        Speaker::Lss,
+        Speaker::Rss,
+        Speaker::Tfl,
+        Speaker::Tfr,
+        Speaker::Tsl,
+        Speaker::Tsr,
+        Speaker::Trl,
+        Speaker::Trr,
+        Speaker::Tc,
+        Speaker::Tfc,
+        Speaker::Trc,
+        Speaker::Lsc,
+        Speaker::Rsc,
+        Speaker::Ls1,
+        Speaker::Rs1,
+        Speaker::Lrs1,
+        Speaker::Rrs1,
+        Speaker::Lbs,
+        Speaker::Rbs,
+        Speaker::Lcs,
+        Speaker::Rcs,
+        Speaker::Hfl,
+        Speaker::Hfr,
+        Speaker::Hrl,
+        Speaker::Hrr,
+        Speaker::Bfl,
+        Speaker::Bfr,
+        Speaker::Bfc,
+        Speaker::Lfe,
+        Speaker::Lfe2,
+    ];
 
     /// sin, cos and atan2 may differ by a few ULP between platform libms
     /// (Miri perturbs them to model that). The round trips amplify it to at
@@ -301,6 +415,36 @@ mod tests {
                 < 1e-5,
             "{a:?} != {b:?}"
         );
+    }
+
+    #[test]
+    fn positioned_speakers_have_distinct_positions() {
+        let positioned: Vec<_> = ALL_SPEAKERS
+            .iter()
+            .filter_map(|speaker| speaker.position().map(|position| (speaker, position)))
+            .collect();
+        for (index, (speaker, position)) in positioned.iter().enumerate() {
+            assert!(
+                positioned[..index]
+                    .iter()
+                    .all(|(_, previous)| previous != position),
+                "{speaker:?} repeats {position:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn speaker_names_are_unique_and_round_trip() {
+        for (index, speaker) in ALL_SPEAKERS.iter().enumerate() {
+            let name = speaker.name();
+            assert_eq!(Speaker::from_name(name), Some(*speaker), "{name}");
+            assert!(
+                ALL_SPEAKERS[..index]
+                    .iter()
+                    .all(|previous| previous.name() != name),
+                "duplicate speaker name {name}"
+            );
+        }
     }
 
     #[test]

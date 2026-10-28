@@ -1926,9 +1926,12 @@ fn resolve(
             let mut profile =
                 imported_brir_profile(path, source, settings.headphones.gain_db.unwrap_or(0.0));
             let layout = brir::layout(&profile).map_err(brir_error)?;
-            if layout.find("FC").is_some() {
+            if let Some(center) = ["FC", "C"]
+                .into_iter()
+                .find(|name| layout.find(name).is_some())
+            {
                 profile.lfe = brir::LfePolicy::Direction {
-                    name: "FC".into(),
+                    name: center.into(),
                     gain_db: 0.0,
                 };
             }
@@ -2157,12 +2160,17 @@ fn profile_channels(profile: &SpeakerProfile) -> Vec<SpeakerChannelView> {
             channel: u16::try_from(speaker.channel).unwrap_or(u16::MAX),
             subwoofer: false,
         })
+        // The first subwoofer is LFE and the second LFE2, as in 22.2 and 30.2.
         .chain(
             profile
                 .subwoofers
                 .iter()
-                .map(|subwoofer| SpeakerChannelView {
-                    name: "LFE".into(),
+                .enumerate()
+                .map(|(index, subwoofer)| SpeakerChannelView {
+                    name: match index {
+                        0 => "LFE".into(),
+                        _ => format!("LFE{}", index + 1),
+                    },
                     channel: u16::try_from(subwoofer.channel).unwrap_or(u16::MAX),
                     subwoofer: true,
                 }),
@@ -2190,6 +2198,7 @@ fn brir_path(source: &brir::BrirSource) -> Option<String> {
     match source {
         brir::BrirSource::Hesuvi(path)
         | brir::BrirSource::Hrir(path)
+        | brir::BrirSource::LayoutWav(path)
         | brir::BrirSource::Folder(path)
         | brir::BrirSource::Mapped { wav: path, .. } => Some(display(path)),
         brir::BrirSource::Directions(_) => None,
@@ -2214,8 +2223,8 @@ fn direction_id(index: usize) -> DirectionId {
     DirectionId(u16::try_from(index).expect("a layout has far fewer than 65536 directions"))
 }
 
-/// The BRIR source an imported path names: a folder of direction WAVs,
-/// `hesuvi.wav`, or `hrir.wav` (any case).
+/// The BRIR source an imported path names: a folder of direction WAVs, one
+/// of the two ordered WAVs, or a WAV identified by supported `ICHL` labels.
 fn brir_source(path: &Path) -> Option<brir::BrirSource> {
     if path.is_dir() {
         return Some(brir::BrirSource::Folder(path.to_owned()));
@@ -2225,6 +2234,12 @@ fn brir_source(path: &Path) -> Option<brir::BrirSource> {
         Some(brir::BrirSource::Hesuvi(path.to_owned()))
     } else if name.eq_ignore_ascii_case("hrir.wav") {
         Some(brir::BrirSource::Hrir(path.to_owned()))
+    } else if path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("wav"))
+        && brir::is_layout_wav(path).unwrap_or(false)
+    {
+        Some(brir::BrirSource::LayoutWav(path.to_owned()))
     } else {
         None
     }

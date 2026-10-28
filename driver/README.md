@@ -83,33 +83,34 @@ CLEANUP은 해당 핸들의 보류 READ를 취소하고 트림을 0으로 되돌
 | `PcmShapeMask0`~`PcmShapeMask3` | DWORD | `0x1f` | 비트 0~4: int16, packed int24, int24-in-32, int32, float32 |
 | `PcmMaxMaskedChannels0`~`PcmMaxMaskedChannels3` | DWORD | `18` | 스피커 마스크를 가진 PCM의 최대 채널 수; 0은 끔 |
 | `PcmDirectChannels0`~`PcmDirectChannels3` | DWORD | `0xffffffff` | 비트 c−1: 마스크 0인 직접 출력의 c채널 허용(1~32) |
+| `PcmDirectChannelsHigh0`~`PcmDirectChannelsHigh3` | DWORD | `0xffffffff` | 비트 c−33: 마스크 0인 직접 출력의 c채널 허용(33~64) |
 | `EndpointName0`~`EndpointName2` | REG_SZ | 설치 언어의 아래 이름 | HDMI 싱크 설명. 31 UTF-16 코드 단위까지 |
 | `EndpointName3` | REG_SZ | `Spatial SoftReceiver` | 예비 슬롯. 현재 미니페어 없음 |
 | `WritePacket` | DWORD | `0` | 1일 때 `IMiniportWaveRTOutputStream`과 기능 비트를 노출 |
 
-기본 코덱은 E-AC-3, E-AC-3 JOC, MAT 2.0, MAT 2.1입니다. AC-3, TrueHD, DTS 계열은 기본으로 꺼져 있습니다. DTS:X E1/E2는 `SSR_FORMAT_DTS_HD`로 묶습니다. INF의 QWORD 플래그는 `0x000B0001`, DWORD는 `0x00010001`입니다. 값이 없거나 타입·크기가 틀리면 해당 필드의 기본값을 사용합니다. 코덱·레이트·모양·직접 출력 비트는 컴파일된 범위와 AND하고, `PcmMaxMaskedChannels`는 비트 마스크가 아닌 상한이므로 18과 최솟값을 취합니다. 옛 `FormatMask{i}`는 읽지 않습니다. 비노출 엔드포인트의 `AbiInfo.endpoints[i]` 전체는 0입니다. `EndpointMask`의 사용 가능한 비트를 가린 결과가 0이면 기본값 `0x7`을 씁니다. 슬롯 3은 예비입니다.
+기본 코덱은 E-AC-3, E-AC-3 JOC, MAT 2.0, MAT 2.1입니다. AC-3, TrueHD, DTS 계열은 기본으로 꺼져 있습니다. DTS:X E1/E2는 `SSR_FORMAT_DTS_HD`로 묶습니다. INF의 QWORD 플래그는 `0x000B0001`, DWORD는 `0x00010001`입니다. 값이 없거나 타입·크기가 틀리면 해당 필드의 기본값을 사용합니다. `PcmDirectChannels{i}`와 `PcmDirectChannelsHigh{i}` 가운데 하나만 없으면 그쪽 32비트만 기본값을 씁니다. 코덱·레이트·모양·직접 출력 비트는 컴파일된 범위와 AND하고, `PcmMaxMaskedChannels`는 비트 마스크가 아닌 상한이므로 18과 최솟값을 취합니다. 옛 `FormatMask{i}`는 읽지 않습니다. 비노출 엔드포인트의 `AbiInfo.endpoints[i]` 전체는 0입니다. `EndpointMask`의 사용 가능한 비트를 가린 결과가 0이면 기본값 `0x7`을 씁니다. 슬롯 3은 예비입니다.
 
-PCM은 레이아웃 표가 아니라 위 표의 레이트 × 모양 × 채널 규칙입니다. 0이 아닌 `dwChannelMask`는 Windows의 18 스피커 비트(`0x3ffff`)만 쓰고 켜진 비트 수가 채널 수와 같아야 합니다. 따라서 5.1 back/side, 6.1, 7.1 wide, 높이 채널 조합과 18채널 전체를 별도 표 없이 받습니다. Windows 비트로 표현할 수 없는 위치가 있는 9.1.4/9.1.6 등은 마스크 0의 직접 출력으로 받고, 채널 순서 해석은 엔진의 별도 계약입니다. 비확장 WAVEFORMATEX는 mono=0x4, stereo=0x3으로 해석하며 3채널 이상은 거절합니다. 블록 정렬, 바이트율, 길이, GUID와 valid bits도 `core/ssr_format.cpp::PcmAllowed`에서 검사합니다. 링은 8 MiB 그대로입니다.
+PCM은 레이아웃 표가 아니라 위 표의 레이트 × 모양 × 채널 규칙입니다. 0이 아닌 `dwChannelMask`는 Windows의 18 스피커 비트(`0x3ffff`)만 쓰고 켜진 비트 수가 채널 수와 같아야 합니다. 따라서 5.1 back/side, 6.1, 7.1 wide, 높이 채널 조합과 18채널 전체를 별도 표 없이 받습니다. Windows 비트로 표현할 수 없는 위치가 있는 9.1.4/9.1.6 등은 마스크 0의 직접 출력으로 64채널까지 받고, 채널 순서 해석은 엔진의 별도 계약입니다. 기본 직접 배치는 1~6, 8, 10, 12, 14, 16, 24, 32, 35채널에 있습니다. 비확장 WAVEFORMATEX는 mono=0x4, stereo=0x3으로 해석하며 3채널 이상은 거절합니다. 블록 정렬, 바이트율, 길이, GUID와 valid bits도 `core/ssr_format.cpp::PcmAllowed`에서 검사합니다. 링은 8 MiB 그대로입니다.
 
 ### 성긴 데이터 범위와 교집합
 
 PCM과 IEEE_FLOAT에 각각 `KSDATARANGE_AUDIO` 하나를 만들며, 레이트·정수 폭·최대 채널의 외곽 범위만 알립니다. 중간의 지원하지 않는 값은 허용하지 않습니다. Microsoft의 [Data Ranges with Discrete Values](https://learn.microsoft.com/en-us/windows-hardware/drivers/audio/data-ranges-with-discrete-values)는 이 표현을 허용하되 잘못 고른 중간값은 NewStream에서 거절하도록 설명합니다. 여기서는 교집합 후보도 `PcmAllowed`로 확인하고, NewStream과 SetFormat 및 전체 형식 제안은 같은 `SsrValidateFormat` → core 판정 경로를 씁니다. 비트스트림 carrier 표와 RAW 모드 속성, 브리지의 ANALOG 범위는 유지합니다.
 
-`SsrPcmIntersection`은 양쪽 범위와 설정이 허용하면 OEM 기본 형식(0: float32 7.1 48 kHz, 1/2: float32 stereo 48 kHz)을 우선합니다. 후보 순서는 `driver/core/ssr_format.cpp`의 `ChoosePcmIntersection`이 정하고 `core_tests.cpp`의 `PcmIntersectionOrder`가 시험합니다. (1) OEM 기본 형식, (2) OEM 레이트·배치의 다른 표본 모양(float32, int32, int24-in-32, int24, int16 순), (3) OEM 배치의 다른 레이트(48, 44.1, 96, 88.2, 192, 176.4 kHz 순), (4) 표준 스피커 배치(7.1 서라운드 `0x63f`, 5.1 `0x3f`, 5.1 옆 `0x60f`, 7.1.4 `0x2d63f`, 7.1 `0xff`, 쿼드 `0x33`, 스테레오, 모노 순), (5) 엔진이 기본 직접 배치를 가진 채널 수의 마스크 0(2, 8, 6, 12, 16, 10, 14, 1, 3, 4, 5채널 순)입니다. 그 밖의 직접 출력 채널 수는 앱이 그 형식을 직접 제안하면 받지만 교집합이 먼저 고르지는 않습니다. 넓은 범위를 받아도 엔진이 재생하지 못하는 32채널 직접 출력을 고르지 않게 하려는 순서입니다. 고른 후보는 구체적인 WAVEFORMATEXTENSIBLE로 반환합니다. 이것은 공유 장치 형식을 안정적으로 유지하려는 드라이버의 선택 정책이지 Windows가 요구한 OEM 우선 규칙은 아닙니다. [IMiniport::DataRangeIntersection](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/portcls/nf-portcls-iminiport-datarangeintersection)은 구체 형식 반환과 0바이트 질의의 `STATUS_BUFFER_OVERFLOW`, 짧은 버퍼의 `STATUS_BUFFER_TOO_SMALL`, 교집합 없음의 `STATUS_NO_MATCH`를 규정합니다. SysVAD 기준 커밋의 `audio/sysvad/EndpointsCommon/minwavert.cpp::DataRangeIntersection`은 채널 검사 후 PortCls로 위임하지만, 여기서는 성긴 범위의 구멍을 고르지 않도록 직접 처리합니다. KS 범위에는 개별 채널 마스크/valid bits 제약이 없으므로 특정 배치를 원하는 앱은 전체 형식을 제안해야 합니다.
+`SsrPcmIntersection`은 양쪽 범위와 설정이 허용하면 OEM 기본 형식(0: float32 7.1 48 kHz, 1/2: float32 stereo 48 kHz)을 우선합니다. 후보 순서는 `driver/core/ssr_format.cpp`의 `ChoosePcmIntersection`이 정하고 `core_tests.cpp`의 `PcmIntersectionOrder`가 시험합니다. (1) OEM 기본 형식, (2) OEM 레이트·배치의 다른 표본 모양(float32, int32, int24-in-32, int24, int16 순), (3) OEM 배치의 다른 레이트(48, 44.1, 96, 88.2, 192, 176.4 kHz 순), (4) 표준 스피커 배치(7.1 서라운드 `0x63f`, 5.1 `0x3f`, 5.1 옆 `0x60f`, 7.1.4 `0x2d63f`, 7.1 `0xff`, 쿼드 `0x33`, 스테레오, 모노 순), (5) 엔진이 기본 직접 배치를 가진 채널 수의 마스크 0(2, 8, 6, 12, 16, 10, 14, 1, 3, 4, 5, 24, 32, 35채널 순)입니다. 그 밖의 직접 출력 채널 수는 앱이 그 형식을 직접 제안하면 받지만 교집합이 먼저 고르지는 않습니다. 고른 후보는 구체적인 WAVEFORMATEXTENSIBLE로 반환합니다. 이것은 공유 장치 형식을 안정적으로 유지하려는 드라이버의 선택 정책이지 Windows가 요구한 OEM 우선 규칙은 아닙니다. [IMiniport::DataRangeIntersection](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/portcls/nf-portcls-iminiport-datarangeintersection)은 구체 형식 반환과 0바이트 질의의 `STATUS_BUFFER_OVERFLOW`, 짧은 버퍼의 `STATUS_BUFFER_TOO_SMALL`, 교집합 없음의 `STATUS_NO_MATCH`를 규정합니다. SysVAD 기준 커밋의 `audio/sysvad/EndpointsCommon/minwavert.cpp::DataRangeIntersection`은 채널 검사 후 PortCls로 위임하지만, 여기서는 성긴 범위의 구멍을 고르지 않도록 직접 처리합니다. KS 범위에는 개별 채널 마스크/valid bits 제약이 없으므로 특정 배치를 원하는 앱은 전체 형식을 제안해야 합니다.
 
 ### QUERY_INFO 배치 (ABI_VERSION 1, 동결 전)
 
-160바이트, 정렬 8바이트입니다. 예약 필드는 쓰는 쪽 0, 읽는 쪽 무시입니다.
+200바이트, 정렬 8바이트입니다. 예약 필드는 쓰는 쪽 0, 읽는 쪽 무시입니다.
 
 | 오프셋 | 필드 | 바이트 |
 | --- | --- | --- |
 | 0 / 4 / 8 / 12 | abi_version / struct_size / driver_version / ring_bytes | 각각 4 |
-| 16 | compiled: EndpointFormats | 24 |
-| 40 / 48 | features / qpc_frequency | 각각 8 |
-| 56 / 60 | endpoint_mask / reserved | 각각 4 |
-| 64 / 88 / 112 / 136 | endpoints[0..3]: EndpointFormats | 각각 24 |
+| 16 | compiled: EndpointFormats | 32 |
+| 48 / 56 | features / qpc_frequency | 각각 8 |
+| 64 / 68 | endpoint_mask / reserved | 각각 4 |
+| 72 / 104 / 136 / 168 | endpoints[0..3]: EndpointFormats | 각각 32 |
 
-EndpointFormats 내부는 codecs +0(u64), pcm +8(16바이트)입니다. PCM 내부는 rates +0, shapes +4, max_masked_channels +8, direct_channels +12(모두 u32)입니다. `ssr-live devices`는 각 엔드포인트의 코덱 이름과 PCM 규칙을 출력합니다.
+EndpointFormats 내부는 codecs +0(u64), pcm +8(24바이트)입니다. PCM 내부는 rates +0, shapes +4, max_masked_channels +8, reserved +12(각 u32), direct_channels +16(u64)입니다. `ssr-live devices`는 각 엔드포인트의 코덱 이름과 PCM 규칙을 출력합니다.
 
 ### 이름은 설치 데이터
 

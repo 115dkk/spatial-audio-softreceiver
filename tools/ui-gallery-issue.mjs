@@ -5,18 +5,24 @@
 //   node tools/ui-gallery-issue.mjs --shots DIR --check
 //   node tools/ui-gallery-issue.mjs --list-skins
 //   node tools/ui-gallery-issue.mjs --shots DIR --skin SKIN --base URL --tree URL \
-//        --run URL --run-number N --commit SHA --source REF > body.md
+//        --run URL --run-number N --commit SHA --source REF --out PARTS
 //
 // The scene table is apps/spatial-softreceiver/ui/e2e/gallery.json; the
 // gallery spec takes <skin>/<name>.<language>.<scheme>.png for every skin
 // and scene (ADR 0041). The check fails when a picture is missing, empty or
 // not in the table, when a fixture in fixtures/index.json is in no scene, or
 // when the table itself is inconsistent. A review issue holds one skin: three
-// skins do not fit GitHub's body limit together. `--list-skins` prints each
-// skin and its name, a tab apart, for the workflow to loop over. Node
-// built-ins only, so `npm ci` is not needed to run it.
+// skins do not fit GitHub's body limit together, and one skin alone outgrew
+// it at 73 scenes. So the gallery is written in parts, PARTS/part-1.md for the
+// issue body and part-2.md onward for comments that begin with the line
+// `<!-- ui-gallery SKIN part N -->`, each part under the limit and cut between
+// scenes; the number of parts is printed. The check builds the parts at the
+// longest addresses GitHub allows, so a scene that cannot fit fails there and
+// not at publishing. `--list-skins` prints each skin and its name, a tab
+// apart, for the workflow to loop over. Node built-ins only, so `npm ci` is
+// not needed to run it.
 
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -154,7 +160,11 @@ function checkShots(dir, table, list) {
   return expected.size;
 }
 
-function body(options, table, list) {
+/** The first line of part `index` (from 2), which the workflow finds the part's comment by. */
+const partMarker = (skin, index) => `<!-- ui-gallery ${skin} part ${index} -->`;
+
+/** The gallery of one skin as parts under BODY_LIMIT, cut between scenes. */
+function parts(options, table, list) {
   const need = ['skin', 'base', 'tree', 'run', 'run-number', 'commit', 'source'];
   for (const key of need) if (options[key] === undefined) fail(`--${key} is required for the issue body`);
   const skin = options.skin;
@@ -164,28 +174,32 @@ function body(options, table, list) {
   const short = options.commit.slice(0, 7);
   const count = list.reduce((sum, scene) => sum + scene.schemes.length * table.languages.length, 0);
   const others = table.skins.filter((other) => other !== skin).map((other) => table.skinNames[other]);
-  const lines = [
+  const run = `실행 [#${options['run-number']}](${options.run})`;
+  const head = (total) => [
     `<!-- ui-gallery ${skin} -->`,
-    `**화면 갤러리, ${table.skinNames[skin]} 스킨** · 실행 [#${options['run-number']}](${options.run}) · 커밋 ${code(short)} (${code(options.source)})`,
+    `**화면 갤러리, ${table.skinNames[skin]} 스킨** · ${run} · 커밋 ${code(short)} (${code(options.source)})`,
     '',
     `앱의 모든 화면 상태를 ${table.skinNames[skin]} 스킨으로, 한국어와 영어, 밝은 팔레트와 어두운 팔레트에서 찍었습니다. 앱을 띄우지 않고, 실제 화면 코드를 Rust가 만든 시험 자료와 모의 감독자 위에 올려 찍은 것입니다. 장면을 펼쳐 보고, 사진을 누르면 원래 크기로 열립니다. 다른 스킨(${others.join(', ')})은 제목 끝에 그 스킨 이름이 붙은 이슈에 있습니다.`,
     '',
-    `장면 ${list.length}개, 사진 ${count}장 · [원본 PNG](${tree}) · 실행의 \`ui-gallery\` 아티팩트에도 같은 사진이 있습니다.`,
+    `장면 ${list.length}개, 사진 ${count}장 · [원본 PNG](${tree}) · 실행의 \`ui-gallery\` 아티팩트에도 같은 사진이 있습니다.${total > 1 ? ` 본문 하나에 다 들어가지 않아 ${total}부분으로 나눴고, 나머지 부분은 이 이슈의 댓글에 있습니다.` : ''}`,
     '',
     '장면 표는 `apps/spatial-softreceiver/ui/e2e/gallery.json`입니다. 새 화면 상태가 생기면 그 표에 장면을 더하고, Rust 쪽 상태라면 `crates/ssr-types/tests/ui_contract.rs`에 시험 자료를 더합니다.',
   ];
+  const continuation = (index, total) => [
+    partMarker(skin, index),
+    `**화면 갤러리, ${table.skinNames[skin]} 스킨 (${index}/${total})** · ${run} · 커밋 ${code(short)}`,
+  ];
+  const blocks = [];
   for (const group of table.groups) {
-    const scenesInGroup = list.filter((scene) => scene.group === group.id);
-    lines.push('', `### ${group.title}`, '');
-    for (const scene of scenesInGroup) {
+    for (const scene of list.filter((candidate) => candidate.group === group.id)) {
       const [width, height] = scene.size;
       const where = scene.tab === null ? scene.fixture : `${scene.fixture}, ${scene.tab}`;
-      lines.push(
+      const lines = [
         `<details><summary><b>${scene.title}</b> · <code>${scene.name}</code> · ${width}×${height} · ${where}</summary>`,
         '',
         `| | ${table.languages.map((language) => table.languageNames[language]).join(' | ')} |`,
         `|:-:|${table.languages.map(() => ':-:').join('|')}|`,
-      );
+      ];
       for (const scheme of scene.schemes) {
         const cells = table.languages.map((language) => {
           const name = file(scene, language, scheme);
@@ -194,11 +208,40 @@ function body(options, table, list) {
         lines.push(`| ${table.schemeNames[scheme]} | ${cells.join(' | ')} |`);
       }
       lines.push('', '</details>');
+      blocks.push({ group, text: lines.join('\n') });
     }
   }
-  const text = `${lines.join('\n')}\n`;
-  if (text.length > BODY_LIMIT) fail(`the body is ${text.length} characters; GitHub takes at most 65536`);
-  return text;
+  // Packed with the longest headings a part count below 100 gives, so the
+  // real count written afterwards never makes a part longer.
+  // A group cut between parts repeats its heading, marked as continued.
+  const length = (lines) => `${lines.join('\n')}\n`.length;
+  const packed = [{ lines: [], group: null }];
+  const started = new Set();
+  const heading = (group) => ['', `### ${group.title}${started.has(group) ? ' (이어서)' : ''}`, ''];
+  for (const block of blocks) {
+    let part = packed.at(-1);
+    const fixed = packed.length === 1 ? head(99) : continuation(packed.length, 99);
+    const added = [...(part.group === block.group ? [] : heading(block.group)), block.text];
+    if (length([...fixed, ...part.lines, ...added]) > BODY_LIMIT) {
+      part = { lines: [], group: null };
+      packed.push(part);
+      const fresh = [...heading(block.group), block.text];
+      if (length([...continuation(packed.length, 99), ...fresh]) > BODY_LIMIT) {
+        fail(`a scene in ${block.group.title} does not fit one part`);
+      }
+      part.lines.push(...fresh);
+    } else {
+      part.lines.push(...added);
+    }
+    part.group = block.group;
+    started.add(block.group);
+  }
+  const total = packed.length;
+  if (total > 99) fail(`the gallery needs ${total} parts; at most 99 are written`);
+  return packed.map((part, index) => {
+    const fixed = index === 0 ? head(total) : continuation(index + 1, total);
+    return `${[...fixed, ...part.lines].join('\n')}\n`;
+  });
 }
 
 const options = args(process.argv.slice(2));
@@ -210,8 +253,28 @@ if (options.listSkins) {
 } else {
   const count = checkShots(options.shots, table, list);
   if (options.check) {
-    console.log(`ui-gallery-issue: ${table.skins.length} skins, ${list.length} scenes, ${count} pictures, all present`);
+    // GitHub's longest owner (39) and repository (100) names, a full SHA and
+    // a five-digit PR: every real address is shorter, so every real part fits.
+    const sha = 'f'.repeat(40);
+    const repository = `${'o'.repeat(39)}/${'r'.repeat(100)}`;
+    const longest = {
+      base: `https://raw.githubusercontent.com/${repository}/${sha}/pr-99999`,
+      tree: `https://github.com/${repository}/tree/${sha}/pr-99999`,
+      run: `https://github.com/${repository}/actions/runs/99999999999`,
+      'run-number': '99999',
+      commit: sha,
+      source: 'x'.repeat(255),
+    };
+    const counts = table.skins.map((skin) => `${skin} ${parts({ ...longest, skin }, table, list).length}`);
+    console.log(
+      `ui-gallery-issue: ${table.skins.length} skins, ${list.length} scenes, ${count} pictures, all present; ` +
+        `parts at the longest addresses: ${counts.join(', ')}`,
+    );
   } else {
-    process.stdout.write(body(options, table, list));
+    if (options.out === undefined) fail('--out PARTS is required for the issue body');
+    const written = parts(options, table, list);
+    mkdirSync(options.out, { recursive: true });
+    written.forEach((text, index) => writeFileSync(join(options.out, `part-${index + 1}.md`), text));
+    console.log(written.length);
   }
 }

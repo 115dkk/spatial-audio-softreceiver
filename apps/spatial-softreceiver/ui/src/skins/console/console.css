@@ -1772,6 +1772,15 @@ body {
   stroke-width: 1.5;
 }
 
+/* Below the ears a broken ring, as a plan dashes what lies under it; the
+   circle's pathLength is 24, so it breaks into six. */
+.cn-map-direction.is-down circle {
+  fill: var(--cn-surface);
+  stroke: var(--cn-text-3);
+  stroke-width: 2;
+  stroke-dasharray: 2.4 1.6;
+}
+
 .cn-map-name {
   fill: var(--cn-text-2);
   font-family: var(--cn-font);
@@ -1794,6 +1803,15 @@ body {
   fill: var(--cn-surface);
   stroke: currentColor;
   stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+/* The entrance's mark with a broken outline: below the ears. */
+.cn-map-object.is-down {
+  fill: var(--cn-surface);
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
   vector-effect: non-scaling-stroke;
 }
 
@@ -1828,6 +1846,11 @@ body {
   gap: 6px;
 }
 
+/* The below-ear line waits hidden until the map draws something below. */
+.cn-map-legend li[hidden] {
+  display: none;
+}
+
 .cn-map-key {
   display: inline-block;
   width: 10px;
@@ -1841,6 +1864,12 @@ body {
 
 .cn-map-key.is-up {
   border: 1.5px solid var(--cn-text-2);
+}
+
+/* The broken ring in six: a ring of the ink, cut into dashes by angle. */
+.cn-map-key.is-down {
+  background: repeating-conic-gradient(var(--cn-text-2) 0deg 40deg, transparent 40deg 60deg);
+  mask: radial-gradient(circle closest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
 }
 
 .cn-map .cn-hint {

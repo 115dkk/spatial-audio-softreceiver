@@ -12,8 +12,9 @@ name: ui-gallery
 #   publish  그림을 ui-gallery 브랜치의 맥락 폴더(pr-<번호>, master,
 #            ref-<이름>)에 바꿔 넣고, 맥락의 이슈("화면 갤러리: PR #N",
 #            "화면 갤러리: master")의 본문을 이번 갤러리로 바꾼 뒤 짧은 댓글로
-#            알립니다. 이슈가 없으면 만들고, PR이면 PR에 이슈 링크를 한 번
-#            남깁니다.
+#            알립니다. 본문 하나에 들어가지 않는 갤러리는 나머지 부분을 그
+#            이슈의 댓글에 두고, 다음 게시 때 그 댓글을 고쳐 씁니다. 이슈가
+#            없으면 만들고, PR이면 PR에 이슈 링크를 한 번 남깁니다.
 #   close    PR이 닫히면 그 PR의 이슈를 닫고 브랜치에서 그 폴더를 지웁니다.
 #
 # ui-gallery 브랜치는 그림만 담은 커밋 하나입니다. 게시할 때마다 부모 없는
@@ -201,25 +202,59 @@ jobs:
           # follow. Every open issue, label or not, so a removed label does
           # not open a second one.
           # One issue per skin (ADR 0041): the standard skin keeps the plain
-          # title, the others add their name. Three skins do not fit one body.
+          # title, the others add their name. Three skins do not fit one body,
+          # and one skin alone outgrew it: the tool writes the gallery in
+          # parts, part 1 for the body and the rest for comments whose first
+          # line names the part. Later runs edit those comments in place and
+          # empty the ones a shorter gallery no longer needs.
           while IFS=$'\t' read -r skin name <&3; do
             if [ "$skin" = standard ]; then SKIN_TITLE="$TITLE"; else SKIN_TITLE="$TITLE · $name"; fi
             export SKIN_TITLE
-            node tools/ui-gallery-issue.mjs --shots "$RUNNER_TEMP/ui-gallery" --skin "$skin" \
+            parts_dir="$RUNNER_TEMP/gallery-parts/$skin"
+            count="$(node tools/ui-gallery-issue.mjs --shots "$RUNNER_TEMP/ui-gallery" --skin "$skin" \
               --base "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$GALLERY_SHA/$DIR" \
               --tree "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/$GALLERY_SHA/$DIR" \
               --run "$run_url" --run-number "$GITHUB_RUN_NUMBER" \
-              --commit "$COMMIT" --source "$SOURCE" > "$RUNNER_TEMP/body.md"
+              --commit "$COMMIT" --source "$SOURCE" --out "$parts_dir")"
             issue="$(retry gh issue list --state open --limit 5000 --json number,title \
               --jq "map(select(.title == env.SKIN_TITLE)) | .[0].number // empty")"
             if [ -n "$issue" ]; then
-              retry gh issue edit "$issue" --body-file "$RUNNER_TEMP/body.md" >/dev/null
-              retry gh issue comment "$issue" --body "실행 [#$GITHUB_RUN_NUMBER]($run_url)의 갤러리로 본문을 바꿨습니다(커밋 \`${COMMIT:0:7}\`)." >/dev/null
-              echo "Updated issue #$issue ($skin)"
+              retry gh issue edit "$issue" --body-file "$parts_dir/part-1.md" >/dev/null
+              opened=false
             else
-              url="$(retry gh issue create --title "$SKIN_TITLE" --label ui-gallery --body-file "$RUNNER_TEMP/body.md")"
+              url="$(retry gh issue create --title "$SKIN_TITLE" --label ui-gallery --body-file "$parts_dir/part-1.md")"
               issue="${url##*/}"
-              echo "Opened issue #$issue ($skin)"
+              opened=true
+            fi
+            # This workflow's own part comments, as "<id> TAB <first line>".
+            comments="$(retry gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$issue/comments" \
+              --jq '.[] | select(.user.login == "github-actions[bot]") | "\(.id)\t\(.body | split("\n") | .[0])"')"
+            part=2
+            while [ "$part" -le "$count" ]; do
+              marker="<!-- ui-gallery $skin part $part -->"
+              id="$(printf '%s\n' "$comments" | awk -F'\t' -v m="$marker" '$2 == m && !found { print $1; found = 1 }')"
+              if [ -n "$id" ]; then
+                retry gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F "body=@$parts_dir/part-$part.md" >/dev/null
+              else
+                retry gh issue comment "$issue" --body-file "$parts_dir/part-$part.md" >/dev/null
+              fi
+              part=$((part + 1))
+            done
+            while IFS=$'\t' read -r id first; do
+              case "$first" in "<!-- ui-gallery $skin part "*" -->") ;; *) continue ;; esac
+              number="${first#"<!-- ui-gallery $skin part "}"
+              number="${number%" -->"}"
+              case "$number" in '' | *[!0-9]*) continue ;; esac
+              if [ "$number" -gt "$count" ]; then
+                printf '%s\n%s\n' "$first" "실행 [#$GITHUB_RUN_NUMBER]($run_url)의 갤러리는 ${count}부분이라 이 부분은 비었습니다." > "$RUNNER_TEMP/empty-part.md"
+                retry gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F "body=@$RUNNER_TEMP/empty-part.md" >/dev/null
+              fi
+            done <<< "$comments"
+            if [ "$opened" = false ]; then
+              retry gh issue comment "$issue" --body "실행 [#$GITHUB_RUN_NUMBER]($run_url)의 갤러리로 본문을 바꿨습니다(커밋 \`${COMMIT:0:7}\`)." >/dev/null
+              echo "Updated issue #$issue ($skin, $count parts)"
+            else
+              echo "Opened issue #$issue ($skin, $count parts)"
               if [ "$EVENT" = pull_request ]; then
                 retry gh pr comment "$PR" --body "이 PR의 화면 갤러리, $name 스킨: #$issue (화면이 바뀌어 다시 찍을 때마다 그 이슈의 본문이 바뀝니다)" >/dev/null
               fi

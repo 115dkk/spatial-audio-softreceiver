@@ -56,7 +56,8 @@ class ExclusivePolicyContractTests(unittest.TestCase):
             expected = "7c" if ep == 2 else "6c"
             self.assertEqual(bytes.fromhex("".join(mask)), bytes.fromhex(expected + "00000000000000"))
             for name, value in (("PcmRateMask", "0x3f"), ("PcmShapeMask", "0x1f"),
-                                ("PcmMaxMaskedChannels", "18"), ("PcmDirectChannels", "0xffffffff")):
+                                ("PcmMaxMaskedChannels", "18"), ("PcmDirectChannels", "0xffffffff"),
+                                ("PcmDirectChannelsHigh", "0xffffffff")):
                 self.assertIn(f"HKR,Parameters,{name}{ep},0x00010001,{value}", parameters)
         # Do not present the undocumented policy as a supported INF property.
         self.assertNotIn("b3f8fa53", inf.lower())

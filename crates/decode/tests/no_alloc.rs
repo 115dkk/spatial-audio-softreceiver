@@ -91,55 +91,23 @@ fn pcm_emit_buffered_does_not_allocate() {
 }
 
 #[test]
-fn thirty_two_channel_direct_configure_push_and_reset_do_not_allocate() {
-    let speakers = [
-        Speaker::L,
-        Speaker::R,
-        Speaker::C,
-        Speaker::Lfe,
-        Speaker::Lrs,
-        Speaker::Rrs,
-        Speaker::Lc,
-        Speaker::Rc,
-        Speaker::Cs,
-        Speaker::Lss,
-        Speaker::Rss,
-        Speaker::Tc,
-        Speaker::Tfl,
-        Speaker::Tfc,
-        Speaker::Tfr,
-        Speaker::Trl,
-        Speaker::Trc,
-        Speaker::Trr,
-        Speaker::Ls,
-        Speaker::Rs,
-        Speaker::Lw,
-        Speaker::Rw,
-        Speaker::Tsl,
-        Speaker::Tsr,
-        Speaker::L,
-        Speaker::R,
-        Speaker::C,
-        Speaker::Lrs,
-        Speaker::Rrs,
-        Speaker::Lss,
-        Speaker::Rss,
-        Speaker::Tc,
-    ];
+fn sixty_four_channel_direct_configure_push_and_reset_do_not_allocate() {
+    let mut speakers = [Speaker::L; 64];
+    speakers[3] = Speaker::Lfe;
     let mut direct = DirectLayouts::empty();
     direct
-        .set(32, DirectLayout::new(&speakers).unwrap())
+        .set(64, DirectLayout::new(&speakers).unwrap())
         .unwrap();
     let mut decoder = PcmDecoder::new(DecodeConfig {
         direct,
         ..DecodeConfig::default()
     });
-    let bytes = [0_u8; 480 * 32 * 4 + 3];
+    let bytes = [0_u8; 480 * 64 * 4 + 3];
     let mut count = 0;
     assert_no_alloc(|| {
         decoder
             .configure(PcmFormat {
-                channels: 32,
+                channels: 64,
                 sample_rate: 48_000,
                 bits_per_sample: 32,
                 valid_bits: 32,

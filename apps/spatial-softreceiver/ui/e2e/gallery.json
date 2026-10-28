@@ -90,6 +90,9 @@
     { "name": "ready-brir-unreadable", "group": "profile", "title": "BRIR 세트를 읽지 못함", "fixture": "ready-brir-unreadable", "tab": "profile" },
     { "name": "running-profile", "group": "profile", "title": "켜짐, 헤드폰 객체 지도", "fixture": "running", "tab": "profile" },
     { "name": "faulted-profile", "group": "profile", "title": "멈춘 상태의 프로필", "fixture": "faulted", "tab": "profile" },
+    { "name": "running-headphones-22-2", "group": "profile", "title": "켜짐, 22.2 배치 파일로 가져온 헤드폰(귀 아래 방향 셋, 귀 아래 객체)", "fixture": "running-headphones-22-2", "tab": "profile" },
+    { "name": "ready-headphones-24-1-10", "group": "profile", "title": "헤드폰, 24.1.10 배치 파일(방향 34개), 꺼짐", "fixture": "ready-headphones-24-1-10", "tab": "profile" },
+    { "name": "ready-speakers-30-2", "group": "profile", "title": "스피커 30.2 배치(채널 32개, 서브우퍼 둘)", "fixture": "ready-speakers-30-2", "tab": "profile" },
 
     { "name": "ready-upmix-default", "group": "upmix", "title": "업믹스, 처음 상태", "fixture": "ready", "tab": "upmix" },
     { "name": "ready-upmix", "group": "upmix", "title": "음악 엔드포인트에 VST 업믹서를 고름, 꺼짐", "fixture": "ready-upmix", "tab": "upmix" },
@@ -125,6 +128,7 @@
     { "name": "running-asio-fault-status", "group": "asio", "title": "ASIO 입구를 시작하지 못함(이유는 엔진 문장 그대로)", "fixture": "running-asio-fault", "tab": "status" },
     { "name": "running-asio-settings", "group": "asio", "title": "설정의 ASIO 패널, 켜짐(7.1.4, 시스템 소리 12 dB 줄임)", "fixture": "running-asio", "tab": "settings" },
     { "name": "ready-asio-off-settings", "group": "asio", "title": "설정의 ASIO 패널, 꺼짐(배치와 슬라이더 잠김)", "fixture": "ready-asio-off", "tab": "settings" },
+    { "name": "ready-asio-24-1-10-settings", "group": "asio", "title": "설정의 ASIO 패널, 24.1.10(35채널)을 고름", "fixture": "ready-asio-24-1-10", "tab": "settings" },
     { "name": "running-asio-720x480", "group": "asio", "title": "상태 화면의 ASIO 줄, 720×480", "fixture": "running-asio", "tab": "status", "size": [720, 480], "schemes": ["light"] },
 
     { "name": "ready-settings", "group": "settings", "title": "설정(WASAPI 독점, 재생 중인 앱 둘, 업데이트 없음)", "fixture": "ready", "tab": "settings" },
@@ -154,6 +158,11 @@
     { "name": "running-720x480", "group": "window", "title": "상태, 720×480", "fixture": "running", "tab": "status", "size": [720, 480], "schemes": ["light"] },
     { "name": "running-profile-960x640", "group": "window", "title": "프로필, 960×640", "fixture": "running", "tab": "profile", "size": [960, 640], "schemes": ["light"] },
     { "name": "running-profile-720x480", "group": "window", "title": "프로필, 720×480", "fixture": "running", "tab": "profile", "size": [720, 480], "schemes": ["light"] },
+    { "name": "running-headphones-22-2-status", "group": "window", "title": "켜짐, 22.2 헤드폰의 상태 화면(지도가 있는 스킨)", "fixture": "running-headphones-22-2", "tab": "status" },
+    { "name": "running-headphones-22-2-720x480", "group": "window", "title": "22.2 헤드폰 프로필, 720×480", "fixture": "running-headphones-22-2", "tab": "profile", "size": [720, 480], "schemes": ["light"] },
+    { "name": "ready-headphones-24-1-10-960x640", "group": "window", "title": "24.1.10 헤드폰 프로필(방향 34개), 960×640", "fixture": "ready-headphones-24-1-10", "tab": "profile", "size": [960, 640], "schemes": ["light"] },
+    { "name": "ready-headphones-24-1-10-720x480", "group": "window", "title": "24.1.10 헤드폰 프로필(방향 34개), 720×480", "fixture": "ready-headphones-24-1-10", "tab": "profile", "size": [720, 480], "schemes": ["light"] },
+    { "name": "ready-speakers-30-2-720x480", "group": "window", "title": "스피커 30.2 배치, 720×480", "fixture": "ready-speakers-30-2", "tab": "profile", "size": [720, 480], "schemes": ["light"] },
     { "name": "ready-speakers-profile-720x480", "group": "window", "title": "스피커 보정 프로필, 720×480", "fixture": "ready-speakers", "tab": "profile", "size": [720, 480], "schemes": ["light"] },
     {
       "name": "upmix-info-open-720x480",

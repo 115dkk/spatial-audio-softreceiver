@@ -28,6 +28,9 @@ const NAMES: &[&str] = &[
     "ready-speakers",
     "running-speakers",
     "ready-layout-unsupported",
+    "ready-speakers-30-2",
+    "ready-headphones-24-1-10",
+    "running-headphones-22-2",
     "ready-upmix",
     "running-upmix",
     "running-upmix-fallback",
@@ -44,6 +47,7 @@ const NAMES: &[&str] = &[
     "running-asio-clock-fault",
     "running-asio-fault",
     "ready-asio-off",
+    "ready-asio-24-1-10",
     "quit",
 ];
 
@@ -75,6 +79,7 @@ fn expected(name: &str, output_name: &str) -> Expected {
         | "ready-kernel-streaming"
         | "ready-routing-unavailable"
         | "ready-asio-off"
+        | "ready-asio-24-1-10"
         | "quit" => none(),
         "setup-unsupported" => Expected {
             error: Some((
@@ -158,7 +163,10 @@ fn expected(name: &str, output_name: &str) -> Expected {
         | "running-upmix-fallback"
         | "running-upmix-pass"
         | "running-upmix-native-surround"
-        | "ready-speakers-upmix-off" => Expected {
+        | "ready-speakers-upmix-off"
+        | "ready-speakers-30-2"
+        | "ready-headphones-24-1-10"
+        | "running-headphones-22-2" => Expected {
             default_profile: false,
             ..none()
         },

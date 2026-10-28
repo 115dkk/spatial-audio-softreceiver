@@ -7,7 +7,7 @@ use asio_proto::Layout;
 use asio_sys::{AsioDriver, Channel, Error, Host, HostBuffers, Position, Result};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering},
+    atomic::{AtomicU8, AtomicU64, Ordering},
 };
 #[cfg(windows)]
 mod running;
@@ -25,7 +25,7 @@ pub struct Driver {
     state: AtomicU8,
     error: AtomicU8,
     messages: [&'static str; 5],
-    active_channels: AtomicU32,
+    active_channels: AtomicU64,
     frames: Arc<AtomicU64>,
     nanos: Arc<AtomicU64>,
     #[cfg(windows)]
@@ -47,7 +47,7 @@ impl Default for Driver {
                 ssr_i18n::live::asio_driver_callback_not_drained(language),
                 ssr_i18n::live::asio_driver_panicked(language),
             ],
-            active_channels: AtomicU32::new(0),
+            active_channels: AtomicU64::new(0),
             frames: Arc::new(AtomicU64::new(0)),
             nanos: Arc::new(AtomicU64::new(0)),
             #[cfg(windows)]
@@ -145,7 +145,7 @@ impl AsioDriver for Driver {
             .ok_or(Error::InvalidParameter)?;
         Ok(Channel {
             name: (*name).into(),
-            active: self.active_channels.load(Ordering::Acquire) & (1 << index) != 0,
+            active: self.active_channels.load(Ordering::Acquire) & (1_u64 << index) != 0,
         })
     }
     fn create_buffers(
@@ -184,7 +184,7 @@ impl AsioDriver for Driver {
             self.active_channels.store(
                 channels
                     .iter()
-                    .fold(0, |mask, channel| mask | (1 << channel)),
+                    .fold(0_u64, |mask, channel| mask | (1_u64 << channel)),
                 Ordering::Release,
             );
             self.state.store(State::Prepared as u8, Ordering::Release);
@@ -273,15 +273,15 @@ impl AsioDriver for Driver {
     }
 }
 fn validate_channels(channels: &[u32], frames: u32, total: u32) -> Result {
-    if !asio_proto::accepts_buffer(frames) || channels.is_empty() {
+    if !asio_proto::accepts_buffer(frames) || channels.is_empty() || total > 64 {
         return Err(Error::InvalidParameter);
     }
-    let mut seen = 0_u32;
+    let mut seen = 0_u64;
     for &channel in channels {
-        if channel >= total || channel >= 32 || seen & (1 << channel) != 0 {
+        if channel >= total || channel >= 64 || seen & (1_u64 << channel) != 0 {
             return Err(Error::InvalidParameter);
         }
-        seen |= 1 << channel;
+        seen |= 1_u64 << channel;
     }
     Ok(())
 }
@@ -345,6 +345,26 @@ mod tests {
         );
         assert_eq!(
             validate_channels(&[0], 63, 12),
+            Err(Error::InvalidParameter)
+        );
+    }
+
+    #[test]
+    fn channel_validation_accepts_thirty_five_and_sixty_four_but_not_more() {
+        assert_eq!(
+            validate_channels(&(0..35).collect::<Vec<_>>(), 64, 35),
+            Ok(())
+        );
+        assert_eq!(
+            validate_channels(&(0..64).collect::<Vec<_>>(), 2_048, 64),
+            Ok(())
+        );
+        assert_eq!(
+            validate_channels(&[0], 64, 65),
+            Err(Error::InvalidParameter)
+        );
+        assert_eq!(
+            validate_channels(&[64], 64, 65),
             Err(Error::InvalidParameter)
         );
     }

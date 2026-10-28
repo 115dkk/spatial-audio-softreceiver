@@ -243,13 +243,27 @@ export const SPEAKER_LAYOUTS: Record<SpeakerLayout, true> = {
   '5.1.4': true,
   '7.1.2': true,
   '7.1.4': true,
+  '9.1': true,
+  '9.1.4': true,
+  '9.1.6': true,
+  '13.1': true,
+  '22.2': true,
+  '24.1.10': true,
+  '30.2': true,
 };
+/** The ASIO layouts in the contract's order (`enum AsioLayout`, ADR 0025 and ADR 0042), which the screen lists. */
 export const ASIO_LAYOUTS: Record<AsioLayout, true> = {
   '2.0': true,
   '5.1': true,
   '7.1': true,
   '7.1.4': true,
+  '9.1': true,
+  '9.1.4': true,
   '9.1.6': true,
+  '13.1': true,
+  '22.2': true,
+  '24.1.10': true,
+  '30.2': true,
 };
 /** `AsioSettings::default()` (crates/ssr-types/src/app.rs): on, 7.1.4, the system path not lowered. */
 export const ASIO_DEFAULTS: Readonly<AsioSettings> = { enabled: true, layout: '7.1.4', system_attenuation_db: 0 };

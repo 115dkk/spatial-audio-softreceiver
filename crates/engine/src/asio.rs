@@ -143,8 +143,10 @@ pub const fn speaker(channel: asio_proto::Channel) -> Speaker {
         A::R => Speaker::R,
         A::C => Speaker::C,
         A::Lfe => Speaker::Lfe,
-        A::Ls => Speaker::Ls,
-        A::Rs => Speaker::Rs,
+        A::Ls => Speaker::Lrs,
+        A::Rs => Speaker::Rrs,
+        A::Ls110 => Speaker::Ls,
+        A::Rs110 => Speaker::Rs,
         A::Lrs => Speaker::Lrs,
         A::Rrs => Speaker::Rrs,
         A::Lss => Speaker::Lss,
@@ -153,11 +155,42 @@ pub const fn speaker(channel: asio_proto::Channel) -> Speaker {
         A::Rw => Speaker::Rw,
         A::Tfl => Speaker::Tfl,
         A::Tfr => Speaker::Tfr,
-        A::Tml => Speaker::Tsl,
-        A::Tmr => Speaker::Tsr,
+        A::Tml | A::Tsl => Speaker::Tsl,
+        A::Tmr | A::Tsr => Speaker::Tsr,
         A::Trl => Speaker::Trl,
         A::Trr => Speaker::Trr,
+        A::Tc => Speaker::Tc,
+        A::Tfc => Speaker::Tfc,
+        A::Lbs => Speaker::Lbs,
+        A::Rbs => Speaker::Rbs,
+        A::Cs => Speaker::Cs,
+        A::Lfe2 => Speaker::Lfe2,
+        A::Trc => Speaker::Trc,
+        A::Bfc => Speaker::Bfc,
+        A::Bfl => Speaker::Bfl,
+        A::Bfr => Speaker::Bfr,
+        A::Lc => Speaker::Lc,
+        A::Rc => Speaker::Rc,
+        A::Lsc => Speaker::Lsc,
+        A::Rsc => Speaker::Rsc,
+        A::Ls1 => Speaker::Ls1,
+        A::Rs1 => Speaker::Rs1,
+        A::Lrs1 => Speaker::Lrs1,
+        A::Rrs1 => Speaker::Rrs1,
+        A::Lcs => Speaker::Lcs,
+        A::Rcs => Speaker::Rcs,
+        A::Hfl => Speaker::Hfl,
+        A::Hfr => Speaker::Hfr,
+        A::Hrl => Speaker::Hrl,
+        A::Hrr => Speaker::Hrr,
     }
+}
+
+const fn is_lfe(channel: asio_proto::Channel) -> bool {
+    matches!(
+        channel,
+        asio_proto::Channel::Lfe | asio_proto::Channel::Lfe2
+    )
 }
 
 pub const fn wire_layout(layout: AsioLayout) -> WireLayout {
@@ -166,7 +199,13 @@ pub const fn wire_layout(layout: AsioLayout) -> WireLayout {
         AsioLayout::Surround51 => WireLayout::Surround51,
         AsioLayout::Surround71 => WireLayout::Surround71,
         AsioLayout::Surround714 => WireLayout::Surround714,
+        AsioLayout::Surround91 => WireLayout::Surround91,
+        AsioLayout::Surround914 => WireLayout::Surround914,
         AsioLayout::Surround916 => WireLayout::Surround916,
+        AsioLayout::Surround131 => WireLayout::Surround131,
+        AsioLayout::Surround222 => WireLayout::Surround222,
+        AsioLayout::Surround24110 => WireLayout::Surround24110,
+        AsioLayout::Surround302 => WireLayout::Surround302,
     }
 }
 
@@ -176,7 +215,13 @@ pub const fn app_layout(layout: WireLayout) -> AsioLayout {
         WireLayout::Surround51 => AsioLayout::Surround51,
         WireLayout::Surround71 => AsioLayout::Surround71,
         WireLayout::Surround714 => AsioLayout::Surround714,
+        WireLayout::Surround91 => AsioLayout::Surround91,
+        WireLayout::Surround914 => AsioLayout::Surround914,
         WireLayout::Surround916 => AsioLayout::Surround916,
+        WireLayout::Surround131 => AsioLayout::Surround131,
+        WireLayout::Surround222 => AsioLayout::Surround222,
+        WireLayout::Surround24110 => AsioLayout::Surround24110,
+        WireLayout::Surround302 => AsioLayout::Surround302,
     }
 }
 
@@ -185,6 +230,7 @@ pub const fn app_layout(layout: WireLayout) -> AsioLayout {
 #[derive(Debug)]
 pub struct AsioRenderer {
     prepared: Box<Prepared>,
+    layout: WireLayout,
     matrix: Vec<f32>,
     input_channels: usize,
     directions: usize,
@@ -203,7 +249,7 @@ impl AsioRenderer {
         let mut gains = vec![0.0; directions];
         for (input, &channel) in wire.channel_order().iter().enumerate() {
             let source = speaker(channel);
-            if source == Speaker::Lfe {
+            if is_lfe(channel) {
                 continue;
             }
             let position = source.position().ok_or(AsioPrepareError::Position)?;
@@ -216,6 +262,7 @@ impl AsioRenderer {
         prepared.reset_state();
         Ok(Self {
             prepared,
+            layout: wire,
             matrix,
             input_channels,
             directions,
@@ -259,17 +306,14 @@ impl AsioRenderer {
         );
         self.bed.fill(0.0);
         self.lfe.fill(0.0);
-        let wire = wire_layout_from_channels(self.input_channels);
         for input_channel in 0..self.input_channels {
             let source = &input[input_channel * ASIO_PARTITION_FRAMES
                 ..(input_channel + 1) * ASIO_PARTITION_FRAMES];
-            if wire.channel_order()[input_channel] == asio_proto::Channel::Lfe {
+            if is_lfe(self.layout.channel_order()[input_channel]) {
                 for (destination, sample) in self.lfe.iter_mut().zip(source) {
-                    *destination = if sample.is_finite() {
-                        *sample * self.lfe_gain
-                    } else {
-                        0.0
-                    };
+                    if sample.is_finite() {
+                        *destination += *sample * self.lfe_gain;
+                    }
                 }
                 continue;
             }
@@ -301,17 +345,6 @@ impl AsioRenderer {
         self.prepared.process_bed(&bed, output);
         self.limiter
             .process(output, self.prepared.channels(), ASIO_PARTITION_FRAMES);
-    }
-}
-
-fn wire_layout_from_channels(channels: usize) -> WireLayout {
-    match channels {
-        2 => WireLayout::Stereo,
-        6 => WireLayout::Surround51,
-        8 => WireLayout::Surround71,
-        12 => WireLayout::Surround714,
-        16 => WireLayout::Surround916,
-        _ => unreachable!("validated ASIO layout channel count"),
     }
 }
 
@@ -1486,23 +1519,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn five_layouts_map_lfe_and_positions_in_protocol_order() {
+    fn every_layout_maps_to_the_shared_preset_in_protocol_order() {
         for layout in AsioLayout::ALL {
             let wire = wire_layout(layout);
             assert_eq!(wire.channels() as usize, wire.channel_order().len());
-            let positioned = wire
+            let mapped = wire
                 .channel_order()
                 .iter()
-                .filter(|&&channel| channel != asio_proto::Channel::Lfe)
+                .copied()
+                .map(speaker)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                mapped,
+                ssr_types::channel_layout_preset(layout.name()).unwrap(),
+                "{}",
+                layout.name()
+            );
+            let positioned = mapped
+                .iter()
+                .filter(|&&speaker| !matches!(speaker, Speaker::Lfe | Speaker::Lfe2))
                 .count();
             assert_eq!(input_direction_layout(layout).len(), positioned);
-            for &channel in wire.channel_order() {
-                let mapped = speaker(channel);
-                assert_eq!(mapped == Speaker::Lfe, channel == asio_proto::Channel::Lfe);
+            for (&channel, mapped) in wire.channel_order().iter().zip(mapped) {
                 assert_eq!(
-                    mapped.position().is_some(),
-                    channel != asio_proto::Channel::Lfe
+                    matches!(mapped, Speaker::Lfe | Speaker::Lfe2),
+                    is_lfe(channel)
                 );
+                assert_eq!(mapped.position().is_some(), !is_lfe(channel));
             }
         }
     }
@@ -1521,6 +1564,31 @@ mod tests {
         queue.clear(9);
         assert_eq!(queue.generation(), 9);
         assert_eq!(queue.queued_frames(), 0);
+    }
+
+    #[test]
+    fn asio_ring_fits_sixty_four_channels_largest_buffer_and_highest_rate() {
+        let geometry = Geometry {
+            lanes: 1,
+            input_channels: 64,
+            output_channels: 2,
+            max_frames: MAX_ASIO_BUFFER_FRAMES as u32,
+            sample_rate: 1_000_000,
+            latency_bound_frames: 0,
+        };
+        assert_eq!(geometry.validate(), Ok(geometry));
+        assert_eq!(geometry.total_bytes().unwrap(), 1_049_216);
+        assert!(geometry.total_bytes().unwrap() < streamring::MAX_REGION_BYTES);
+    }
+
+    #[test]
+    fn queue_supports_sixty_four_output_channels() {
+        let queue = AsioQueue::new(64, 1);
+        let planar = (0..64).map(|channel| channel as f32).collect::<Vec<_>>();
+        assert!(queue.push_planar(&planar, 1));
+        let mut output = [0.0; 64];
+        assert_eq!(queue.pop_add(&mut output, 1, 1.0), 1);
+        assert_eq!(output, planar.as_slice());
     }
 
     #[test]
@@ -1559,6 +1627,41 @@ mod tests {
         assert_eq!(queue.pop_add(&mut system, 4, 1.0), 4);
         assert!(system.iter().all(|sample| (*sample - 0.3).abs() < 1e-6));
         assert_eq!(queue.queued_frames(), 0);
+    }
+
+    #[test]
+    fn two_lfe_channels_sum_into_the_single_scene_lfe() {
+        let ir = [1.0_f32];
+        let bank =
+            convolver::FilterBank::new(&[[ir.as_slice(), ir.as_slice()]], ASIO_PARTITION_FRAMES)
+                .unwrap();
+        let prepared = Prepared::new(
+            Arc::new(brir::PreparedBrir {
+                layout: Layout::new(vec![Direction::new("front", 0.0, 0.0)]).unwrap(),
+                bank: Arc::new(bank),
+                rate: 48_000,
+                partition: ASIO_PARTITION_FRAMES,
+                lfe: None,
+                gain: 1.0,
+                limiter_ceiling: 1.0,
+                ir_frames: 1,
+                trimmed_leading_frames: 0,
+            }),
+            MAX_ASIO_BUFFER_FRAMES,
+        )
+        .unwrap();
+        let mut renderer = AsioRenderer::new(Box::new(prepared), AsioLayout::Surround222).unwrap();
+        let mut input = vec![0.0; 24 * ASIO_PARTITION_FRAMES];
+        input[3 * ASIO_PARTITION_FRAMES..4 * ASIO_PARTITION_FRAMES].fill(0.25);
+        input[9 * ASIO_PARTITION_FRAMES..10 * ASIO_PARTITION_FRAMES].fill(0.5);
+        let mut output = vec![0.0; 2 * ASIO_PARTITION_FRAMES];
+        renderer.process(&input, &mut output);
+        assert!(
+            renderer
+                .lfe
+                .iter()
+                .all(|sample| (*sample - 0.75).abs() < 1e-6)
+        );
     }
 
     #[test]

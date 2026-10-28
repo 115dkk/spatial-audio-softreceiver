@@ -75,17 +75,24 @@ static void LoadSettings() {
         for (ULONG i = 0; i < SSR_MAX_ENDPOINTS; ++i) {
             WCHAR codec[] = L"CodecMask0", rates[] = L"PcmRateMask0", shapes[] = L"PcmShapeMask0";
             WCHAR masked[] = L"PcmMaxMaskedChannels0", direct[] = L"PcmDirectChannels0";
+            WCHAR directHigh[] = L"PcmDirectChannelsHigh0";
             codec[ARRAYSIZE(codec) - 2] += static_cast<WCHAR>(i);
             rates[ARRAYSIZE(rates) - 2] += static_cast<WCHAR>(i);
             shapes[ARRAYSIZE(shapes) - 2] += static_cast<WCHAR>(i);
             masked[ARRAYSIZE(masked) - 2] += static_cast<WCHAR>(i);
             direct[ARRAYSIZE(direct) - 2] += static_cast<WCHAR>(i);
+            directHigh[ARRAYSIZE(directHigh) - 2] += static_cast<WCHAR>(i);
             auto& f = Settings.Formats[i];
+            ULONG directLowValue = static_cast<ULONG>(f.pcm.direct_channels);
+            ULONG directHighValue = static_cast<ULONG>(f.pcm.direct_channels >> 32U);
             RegistryValue(key.Get(), codec, REG_QWORD, &f.codecs, sizeof(f.codecs));
             RegistryValue(key.Get(), rates, REG_DWORD, &f.pcm.rates, sizeof(f.pcm.rates));
             RegistryValue(key.Get(), shapes, REG_DWORD, &f.pcm.shapes, sizeof(f.pcm.shapes));
             RegistryValue(key.Get(), masked, REG_DWORD, &f.pcm.max_masked_channels, sizeof(f.pcm.max_masked_channels));
-            RegistryValue(key.Get(), direct, REG_DWORD, &f.pcm.direct_channels, sizeof(f.pcm.direct_channels));
+            RegistryValue(key.Get(), direct, REG_DWORD, &directLowValue, sizeof(directLowValue));
+            RegistryValue(key.Get(), directHigh, REG_DWORD, &directHighValue, sizeof(directHighValue));
+            f.pcm.direct_channels = static_cast<uint64_t>(directLowValue) |
+                (static_cast<uint64_t>(directHighValue) << 32U);
         }
     }
     // Normalize defaults too: the absent reserved endpoint must report mask 0
@@ -100,6 +107,7 @@ static void LoadSettings() {
         f.codecs &= SSR_COMPILED_CODECS;
         f.pcm.rates &= SSR_COMPILED_PCM.rates;
         f.pcm.shapes &= SSR_COMPILED_PCM.shapes;
+        f.pcm.reserved = 0;
         // This field is a ceiling, not a bit mask: intersect by minimum.
         if (f.pcm.max_masked_channels > SSR_COMPILED_PCM.max_masked_channels)
             f.pcm.max_masked_channels = SSR_COMPILED_PCM.max_masked_channels;

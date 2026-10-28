@@ -18,6 +18,9 @@
   "ready-speakers",
   "running-speakers",
   "ready-layout-unsupported",
+  "ready-speakers-30-2",
+  "ready-headphones-24-1-10",
+  "running-headphones-22-2",
   "ready-upmix",
   "running-upmix",
   "running-upmix-fallback",
@@ -34,5 +37,6 @@
   "running-asio-clock-fault",
   "running-asio-fault",
   "ready-asio-off",
+  "ready-asio-24-1-10",
   "quit"
 ]

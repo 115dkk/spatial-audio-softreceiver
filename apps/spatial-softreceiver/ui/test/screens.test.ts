@@ -940,7 +940,7 @@ describe('the profile screen', () => {
     await vi.waitFor(() => expect(byKey('brir-file')?.disabled).toBe(false));
     byKey('brir-file')?.click();
     await vi.waitFor(() => expect(textOf()).toContain('C:\\BRIR\\studio\\hesuvi.wav'));
-    expect(picked).toEqual(['BRIR 세트 폴더', 'hesuvi.wav 또는 hrir.wav (wav)']);
+    expect(picked).toEqual(['BRIR 세트 폴더', 'BRIR 파일 (wav)']);
     // Still the speakers: an import never switches the kind.
     expect(badged()).toBe('profile-tab-speakers');
     expect(tones()).toHaveLength(2);

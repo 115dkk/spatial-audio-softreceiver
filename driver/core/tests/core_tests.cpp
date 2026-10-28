@@ -821,6 +821,20 @@ void PcmIntersectionOrder() {
     rule = {32000, 32, 32, true, false};
     CHECK(!ssr::ChoosePcmIntersection(SSR_DEFAULT_PCM, oem, IntersectionAccept, &rule, &result));
 
+    auto highDirect = SSR_DEFAULT_PCM;
+    highDirect.max_masked_channels = 0;
+    highDirect.direct_channels = (UINT64_C(1) << 23U) | (UINT64_C(1) << 31U) |
+        (UINT64_C(1) << 34U);
+    auto acceptAny = [](const ssr::PcmCandidate&, void*) { return true; };
+    CHECK(ssr::ChoosePcmIntersection(highDirect, oem, acceptAny, nullptr, &result));
+    CHECK(result.channels == 24 && result.channel_mask == 0);
+    highDirect.direct_channels &= ~(UINT64_C(1) << 23U);
+    CHECK(ssr::ChoosePcmIntersection(highDirect, oem, acceptAny, nullptr, &result));
+    CHECK(result.channels == 32 && result.channel_mask == 0);
+    highDirect.direct_channels &= ~(UINT64_C(1) << 31U);
+    CHECK(ssr::ChoosePcmIntersection(highDirect, oem, acceptAny, nullptr, &result));
+    CHECK(result.channels == 35 && result.channel_mask == 0);
+
     auto enabled = SSR_DEFAULT_PCM;
     enabled.rates = 1U;
     CHECK(ssr::ChoosePcmIntersection(enabled, oem, PcmIntersectionAllowed, &enabled, &result));
@@ -833,7 +847,7 @@ void PcmIntersectionOrder() {
     CHECK(!ssr::ChoosePcmIntersection(enabled, oem, PcmIntersectionAllowed, &enabled, &result));
     enabled = SSR_DEFAULT_PCM;
     enabled.max_masked_channels = 2;
-    enabled.direct_channels = 1U << 1U;
+    enabled.direct_channels = UINT64_C(1) << 1U;
     CHECK(ssr::ChoosePcmIntersection(enabled, oem, PcmIntersectionAllowed, &enabled, &result));
     CHECK(result.channels == 2);
 }
@@ -862,7 +876,7 @@ void PcmCandidateAgreementGrid() {
         0x2d63f, SSR_PCM_SPEAKER_BITS, 0x40000, UINT32_MAX};
     const uint32_t outside[] = {0, 1, 32000, 47999, 48001, 192001, UINT32_MAX};
     const uint32_t limits[] = {0, 2, 8, 18};
-    for (uint16_t channels = 1; channels <= 33; ++channels) for (uint32_t mask : masks) {
+    for (uint16_t channels = 1; channels <= 65; ++channels) for (uint32_t mask : masks) {
         uint32_t count = 0;
         for (uint32_t m = mask; m; m &= m - 1U) ++count;
         for (uint32_t limit : limits) {
@@ -890,8 +904,11 @@ void PcmMaskBits() {
         for (const auto& shape : kTestShapes)
             CheckCandidate(enabled, {2, SSR_PCM_RATES[0], 3, shape.bits, shape.valid, shape.floating},
                 (shape.bit & enabled.shapes) != 0);
-        enabled = SSR_DEFAULT_PCM; enabled.direct_channels = UINT32_C(1) << bit;
-        for (uint16_t c = 1; c <= 33; ++c)
+    }
+    for (uint32_t bit = 0; bit < 64; ++bit) {
+        auto enabled = SSR_DEFAULT_PCM;
+        enabled.direct_channels = UINT64_C(1) << bit;
+        for (uint16_t c = 1; c <= 65; ++c)
             CheckCandidate(enabled, {c, SSR_PCM_RATES[0], 0, 16, 16, false}, c == bit + 1U);
     }
 }
@@ -1065,7 +1082,7 @@ void FormatTypeRules() {
 void PcmRangeRules() {
     ssr::PcmRangeBounds bounds{};
     CHECK(ssr::PcmRange(SSR_DEFAULT_PCM, false, &bounds));
-    CHECK(bounds.max_channels == 32 && bounds.min_bits == 16 && bounds.max_bits == 32 &&
+    CHECK(bounds.max_channels == 64 && bounds.min_bits == 16 && bounds.max_bits == 32 &&
         bounds.min_rate == SSR_PCM_RATES[0] && bounds.max_rate == SSR_PCM_RATES[SSR_PCM_RATE_COUNT - 1] );
     CHECK(ssr::PcmRange(SSR_DEFAULT_PCM, true, &bounds));
     CHECK(bounds.min_bits == 32 && bounds.max_bits == 32);
@@ -1075,7 +1092,7 @@ void PcmRangeRules() {
     CHECK(ssr::PcmRange(enabled, true, &bounds)); CHECK(!ssr::PcmRange(enabled, false, &bounds));
     enabled.shapes = SSR_PCM_SHAPE_INT16;
     CHECK(ssr::PcmRange(enabled, false, &bounds)); CHECK(bounds.min_bits == 16 && bounds.max_bits == 16);
-    enabled = SSR_DEFAULT_PCM; enabled.max_masked_channels = 0; enabled.direct_channels = 1U << 11U;
+    enabled = SSR_DEFAULT_PCM; enabled.max_masked_channels = 0; enabled.direct_channels = UINT64_C(1) << 11U;
     CHECK(ssr::PcmRange(enabled, false, &bounds)); CHECK(bounds.max_channels == 12);
     enabled = SSR_DEFAULT_PCM; enabled.direct_channels = 0; enabled.max_masked_channels = UINT32_MAX;
     CHECK(ssr::PcmRange(enabled, false, &bounds)); CHECK(bounds.max_channels == 18);
@@ -1104,7 +1121,10 @@ void PcmRangeRules() {
             CHECK(ssr::PcmRange(enabled, shape.floating, &bounds));
             CHECK(bounds.min_bits == shape.bits && bounds.max_bits == shape.bits);
         }
-        enabled = SSR_DEFAULT_PCM; enabled.max_masked_channels = 0; enabled.direct_channels = UINT32_C(1) << bit;
+    }
+    for (uint32_t bit = 0; bit < 64; ++bit) {
+        enabled = SSR_DEFAULT_PCM; enabled.max_masked_channels = 0;
+        enabled.direct_channels = UINT64_C(1) << bit;
         CHECK(ssr::PcmRange(enabled, false, &bounds)); CHECK(bounds.max_channels == bit + 1U);
     }
 }
@@ -1115,17 +1135,24 @@ void PcmIntersectionCandidates() {
         CHECK(ssr::PcmCandidateAllowed(*static_cast<SSR_PCM_FORMATS*>(opaque), candidate));
         return true;
     };
-    for (uint32_t bit = 0; bit < 32; ++bit) for (uint32_t field = 0; field < 3; ++field) {
+    for (uint32_t bit = 0; bit < 32; ++bit) for (uint32_t field = 0; field < 2; ++field) {
         auto enabled = SSR_DEFAULT_PCM;
         if (field == 0) enabled.rates = UINT32_C(1) << bit;
-        else if (field == 1) enabled.shapes = UINT32_C(1) << bit;
-        else { enabled.direct_channels = UINT32_C(1) << bit; enabled.max_masked_channels = 0; }
+        else enabled.shapes = UINT32_C(1) << bit;
         ssr::PcmCandidate result{};
         const bool found = ssr::ChoosePcmIntersection(enabled, oem, accepts, &enabled, &result);
-        const bool expected = field == 0 ? bit < SSR_PCM_RATE_COUNT : field == 1 ?
-            ((UINT32_C(1) << bit) & (SSR_PCM_SHAPES_INTEGER | SSR_PCM_SHAPE_FLOAT32)) != 0 :
-            ((UINT32_C(1) << bit) & SSR_DIRECT_DEFAULT_CHANNELS) != 0;
+        const bool expected = field == 0 ? bit < SSR_PCM_RATE_COUNT :
+            ((UINT32_C(1) << bit) & (SSR_PCM_SHAPES_INTEGER | SSR_PCM_SHAPE_FLOAT32)) != 0;
         CHECK(found == expected);
+        if (found) CHECK(ssr::PcmCandidateAllowed(enabled, result));
+    }
+    for (uint32_t bit = 0; bit < 64; ++bit) {
+        auto enabled = SSR_DEFAULT_PCM;
+        enabled.direct_channels = UINT64_C(1) << bit;
+        enabled.max_masked_channels = 0;
+        ssr::PcmCandidate result{};
+        const bool found = ssr::ChoosePcmIntersection(enabled, oem, accepts, &enabled, &result);
+        CHECK(found == (((UINT64_C(1) << bit) & SSR_DIRECT_DEFAULT_CHANNELS) != 0));
         if (found) CHECK(ssr::PcmCandidateAllowed(enabled, result));
     }
 }
@@ -1151,10 +1178,10 @@ void PcmRules() {
         make(static_cast<uint16_t>(channels + 1), mask);
         CHECK(!ssr::PcmAllowed(SSR_DEFAULT_PCM, wave, 40));
     }
-    const uint16_t direct[] = {0, 1, 2, 16, 24, 32, 33};
+    const uint16_t direct[] = {0, 1, 2, 16, 24, 32, 35, 64, 65};
     for (uint16_t channels : direct) {
         make(channels, 0);
-        CHECK(ssr::PcmAllowed(SSR_DEFAULT_PCM, wave, 40) == (channels >= 1 && channels <= 32));
+        CHECK(ssr::PcmAllowed(SSR_DEFAULT_PCM, wave, 40) == (channels >= 1 && channels <= 64));
     }
     make(1, 0x40000); CHECK(!ssr::PcmAllowed(SSR_DEFAULT_PCM, wave, 40));
     for (uint32_t rate : SSR_PCM_RATES) {
@@ -1173,7 +1200,7 @@ void PcmRules() {
     CHECK(!ssr::PcmAllowed(enabled, wave, 40));
     enabled = SSR_DEFAULT_PCM; enabled.max_masked_channels = 1;
     CHECK(!ssr::PcmAllowed(enabled, wave, 40));
-    make(32, 0); enabled = SSR_DEFAULT_PCM; enabled.direct_channels &= 0x7fffffff;
+    make(64, 0); enabled = SSR_DEFAULT_PCM; enabled.direct_channels &= ~(UINT64_C(1) << 63U);
     CHECK(!ssr::PcmAllowed(enabled, wave, 40));
     const uint16_t plainChannels[] = {1, 2, 3};
     for (uint16_t channels : plainChannels) {

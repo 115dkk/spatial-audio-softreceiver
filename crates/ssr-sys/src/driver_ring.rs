@@ -310,6 +310,7 @@ mod tests {
         info.abi_version += 1;
         assert!(parse_query_info(info.as_bytes()).is_err());
         info.abi_version = ABI_VERSION;
+        info.struct_size = size_of::<AbiInfo>() as u32;
         info.reserved = u32::MAX;
         assert_eq!(parse_query_info(info.as_bytes()).unwrap(), info);
     }

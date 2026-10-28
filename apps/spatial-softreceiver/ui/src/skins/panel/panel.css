@@ -1345,6 +1345,34 @@ html[data-skin="panel"] #app {
   margin-top: 4px;
 }
 
+/*
+ * Many layouts: one family a line, the lines parted by hairlines like the
+ * rows of a menu. A line too long for the display wraps inside itself.
+ */
+.pn-choices.is-lined {
+  display: block;
+}
+
+.pn-choice-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+}
+
+/* The hairline spans the row's hover, as between the display's other rows. */
+.pn-choice-line + .pn-choice-line {
+  padding-top: 2px;
+  border-top: 1px solid var(--pn-d-line);
+}
+
+/* A detail (the ASIO layouts' channel counts) goes under its name, so a
+   family's options stay on their line. */
+.pn-choices.is-lined .pn-choice .pn-row-text {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
 .pn-choice[aria-checked="true"] .pn-row-label {
   color: var(--pn-d-hi);
 }
@@ -1869,6 +1897,14 @@ html[data-skin="panel"] #app {
   stroke-width: 2;
 }
 
+/* Below the ears a ring of separate pixels; the circle's pathLength is 32. */
+.pn-map-object.is-down {
+  fill: var(--pn-d-bg);
+  stroke: var(--pn-c);
+  stroke-width: 2;
+  stroke-dasharray: 2 2;
+}
+
 .pn-map-points {
   position: absolute;
   inset: 0;
@@ -1899,6 +1935,31 @@ html[data-skin="panel"] #app {
 .pn-map-point.is-up::before {
   border: 1.5px solid var(--pn-d-text-2);
   background: var(--pn-d-bg);
+}
+
+/*
+ * Below the ears: the same ring broken into six lit dashes, as a dot-matrix
+ * display would draw a ring it leaves gaps in. A ring of the ink cut by
+ * angle, its middle left open.
+ */
+.pn-map-point.is-down::before,
+.pn-swatch.is-down {
+  border: 0;
+  background: repeating-conic-gradient(var(--pn-d-text-2) 0deg 40deg, transparent 40deg 60deg);
+  mask: radial-gradient(circle closest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+}
+
+.pn-map-point.is-down::before {
+  left: 5px;
+  top: 5px;
+  width: 10px;
+  height: 10px;
+}
+
+button.pn-map-point.is-down:hover:not(:disabled)::before,
+.pn-map-point.is-down[aria-busy="true"]::before {
+  background: repeating-conic-gradient(var(--pn-d-hi) 0deg 40deg, transparent 40deg 60deg);
+  box-shadow: none;
 }
 
 button.pn-map-point {
@@ -1938,6 +1999,17 @@ button.pn-map-point:disabled {
   pointer-events: none;
 }
 
+/*
+ * More than 16 directions (22.2, 30.2, 24.1.10): the names take the
+ * display's small type, Galmuri11 on the device's pixel grid (type.ts, law 7),
+ * and map.ts places each where it overlaps no other.
+ */
+.pn-map.is-dense .pn-map-label {
+  font-family: var(--pn-ff-unit, var(--pn-px11));
+  font-size: var(--pn-fs-unit, 12px);
+  line-height: var(--pn-lh-unit, 12px);
+}
+
 .pn-map-status {
   margin-top: 4px;
   color: var(--pn-d-text-3);
@@ -1959,6 +2031,11 @@ button.pn-map-point:disabled {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* The below-ear line waits hidden until the map draws something below. */
+.pn-map-legend li[hidden] {
+  display: none;
 }
 
 .pn-swatch {
@@ -2054,6 +2131,12 @@ button.pn-map-point:disabled {
 
 .pn-tests .pn-row {
   border-top: 1px solid var(--pn-d-line);
+}
+
+/* Many directions: narrower columns, the angles as bare numbers. */
+.pn-tests.is-dense {
+  grid-template-columns: repeat(auto-fill, 128px);
+  column-gap: 20px;
 }
 
 .pn-profile-side .pn-map-frame {

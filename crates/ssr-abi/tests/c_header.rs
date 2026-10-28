@@ -103,7 +103,13 @@ fn layout_trailer() -> String {
         t,
         PcmFormats,
         "SSR_PCM_FORMATS",
-        [rates, shapes, max_masked_channels, direct_channels]
+        [
+            rates,
+            shapes,
+            max_masked_channels,
+            reserved,
+            direct_channels
+        ]
     );
     assert_layout!(t, EndpointFormats, "SSR_ENDPOINT_FORMATS", [codecs, pcm]);
     assert_layout!(
@@ -242,9 +248,13 @@ fn generate() -> String {
                     ("SSR_COMPILED_PCM", ssr_abi::COMPILED_PCM)
                 };
                 format!(
-                    "#define {name}_INIT {{ {}, {}, {}, {}U }}\n\n\
+                    "#define {name}_INIT {{ {}, {}, {}, {}, UINT64_C({}) }}\n\n\
                      static const SSR_PCM_FORMATS {name} = {name}_INIT;",
-                    value.rates, value.shapes, value.max_masked_channels, value.direct_channels
+                    value.rates,
+                    value.shapes,
+                    value.max_masked_channels,
+                    value.reserved,
+                    value.direct_channels
                 )
             } else {
                 line.to_owned()
@@ -361,7 +371,14 @@ fn default_capabilities_match_header_and_inf() {
                 "PcmMaxMaskedChannels",
                 ssr_abi::DEFAULT_PCM.max_masked_channels,
             ),
-            ("PcmDirectChannels", ssr_abi::DEFAULT_PCM.direct_channels),
+            (
+                "PcmDirectChannels",
+                ssr_abi::DEFAULT_PCM.direct_channels as u32,
+            ),
+            (
+                "PcmDirectChannelsHigh",
+                (ssr_abi::DEFAULT_PCM.direct_channels >> 32) as u32,
+            ),
         ] {
             let name = format!("{field}{index}");
             assert_eq!(parse_inf_dword(&inf, &name), expected, "{name}");

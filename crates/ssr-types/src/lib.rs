@@ -48,9 +48,25 @@ pub fn channel_layout_preset(name: &str) -> Option<&'static [Speaker]> {
         "5.1.4" => &[L, R, C, Lfe, Lrs, Rrs, Tfl, Tfr, Trl, Trr],
         "7.1.2" => &[L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Tfl, Tfr],
         "7.1.4" => &[L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Tfl, Tfr, Trl, Trr],
-        "9.1.4" => &[L, R, C, Lfe, Lrs, Rrs, Lc, Rc, Lss, Rss, Tfl, Tfr, Trl, Trr],
+        "9.1" => &[L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Lw, Rw],
+        "9.1.4" => &[L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Lw, Rw, Tfl, Tfr, Trl, Trr],
         "9.1.6" => &[
-            L, R, C, Lfe, Lrs, Rrs, Lc, Rc, Lss, Rss, Tfl, Tfr, Trl, Trr, Tsl, Tsr,
+            L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Lw, Rw, Tfl, Tfr, Tsl, Tsr, Trl, Trr,
+        ],
+        "13.1" => &[
+            L, R, C, Lfe, Lrs, Rrs, Lss, Rss, Tc, Tfl, Tfc, Tfr, Trl, Trr,
+        ],
+        "22.2" => &[
+            Lw, Rw, C, Lfe, Lbs, Rbs, L, R, Cs, Lfe2, Lss, Rss, Tfl, Tfr, Tfc, Tc, Trl, Trr, Tsl,
+            Tsr, Trc, Bfc, Bfl, Bfr,
+        ],
+        "24.1.10" => &[
+            L, R, C, Lfe, Lss, Rss, Lbs, Rbs, Lw, Rw, Tfl, Tfr, Tsl, Tsr, Trl, Trr, Lc, Rc, Lsc,
+            Rsc, Ls1, Rs1, Ls, Rs, Lrs1, Rrs1, Lrs, Rrs, Lcs, Rcs, Cs, Hfl, Hfr, Hrl, Hrr,
+        ],
+        "30.2" => &[
+            C, L, R, Ls, Rs, Lfe, Cs, Lrs, Rrs, Lss, Rss, Lc, Rc, Hfl, Tfc, Hfr, Lfe2, Lw, Rw, Tc,
+            Tsl, Tsr, Trc, Hrl, Hrr, Bfc, Bfl, Bfr, Tfl, Tfr, Trl, Trr,
         ],
         _ => return None,
     })

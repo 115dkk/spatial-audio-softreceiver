@@ -1,7 +1,7 @@
 //! Active Windows render endpoints. Enumeration is not a real-time operation.
 
 use crate::output::Encoding;
-use ssr_types::{OutputError, OutputLayout};
+use ssr_types::{OutputError, OutputLayout, app::SpeakerLayout};
 use wasapi::{Device, DeviceEnumerator, Direction, ShareMode, WasapiError};
 use windows::Win32::{
     Foundation::ERROR_NOT_FOUND,
@@ -65,26 +65,6 @@ pub fn render_endpoints() -> Result<Vec<Endpoint>, OutputError> {
     Ok(endpoints)
 }
 
-const STANDARD_LAYOUTS: [OutputLayout; 5] = [
-    OutputLayout::STEREO,
-    OutputLayout {
-        channels: 4,
-        channel_mask: 0x33,
-    },
-    OutputLayout {
-        channels: 6,
-        channel_mask: 0x3f,
-    },
-    OutputLayout {
-        channels: 8,
-        channel_mask: 0x63f,
-    },
-    OutputLayout {
-        channels: 12,
-        channel_mask: 0x2d63f,
-    },
-];
-
 pub(crate) fn supports_layout(device: &Device, layout: OutputLayout) -> bool {
     Encoding::ALL.into_iter().any(|encoding| {
         device.get_iaudioclient().is_ok_and(|client| {
@@ -124,8 +104,9 @@ pub fn render_endpoint_formats() -> Result<Vec<EndpointFormats>, OutputError> {
                 channels: wave.get_nchannels(),
                 channel_mask: wave.get_dwchannelmask(),
             },
-            layouts: STANDARD_LAYOUTS
+            layouts: SpeakerLayout::ALL
                 .into_iter()
+                .map(SpeakerLayout::output_layout)
                 .map(|layout| LayoutSupport {
                     channels: layout.channels,
                     channel_mask: layout.channel_mask,

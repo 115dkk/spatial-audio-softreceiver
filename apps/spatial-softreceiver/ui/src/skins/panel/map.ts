@@ -9,23 +9,28 @@ import type { DirectionView, EngineStatus, SceneObject } from '../../bindings';
 import { h, liveText, setAttr, svg } from '../../dom';
 import { text } from '../../text';
 import type { Context } from '../../screens/common';
+import { type MapGeometry, heightClass, heightOf, placeDirections } from '../../screens/maplabels';
 import { MAP_POOL } from '../../screens/objectmap';
 import { LANES } from './scope';
 import { dot } from './ui';
 
-/** viewBox units: a square, the horizon ring inside it. */
-const SIZE = 300;
+/**
+ * viewBox units: a square, the horizon ring inside it. The frame is 260 to
+ * 300 px wide (the status page's map column, the profile's side), and the
+ * names are at most 16 px (the display's type at 150 %, type.ts), so they
+ * are placed for 18.5 units.
+ */
+export const MAP_GEOMETRY: MapGeometry = { size: 300, radius: 104, gap: 20, listenerClear: 28, em: 18.5, pointRadius: 8 };
+const SIZE = MAP_GEOMETRY.size;
 const CENTER = SIZE / 2;
-const RADIUS = 104;
-const LABEL_GAP = 20;
-const LISTENER_CLEAR = 28;
+const RADIUS = MAP_GEOMETRY.radius;
 /** Levels at or under the floor draw small and faint; 0 dBFS draws largest. */
 const FLOOR_DB = -60;
 const OBJECT_R_MIN = 3;
 const OBJECT_R_MAX = 10;
 const OPACITY_MIN = 0.4;
-/** About 15° up counts as above the listening place. */
-const UP_Z = 0.25;
+/** More directions than this take the display's smaller type for their names. */
+export const DENSE_DIRECTIONS = 16;
 
 const round1 = (value: number) => (Math.round(value * 10) / 10).toString();
 const percent = (units: number) => `${((units / SIZE) * 100).toFixed(2)}%`;
@@ -34,13 +39,6 @@ function toPlane(x: number, y: number): [number, number] {
   const length = Math.hypot(x, y);
   const scale = length > 1 ? 1 / length : 1;
   return [CENTER + x * scale * RADIUS, CENTER - y * scale * RADIUS];
-}
-
-/** Azimuth 0° is ahead and grows to the left. */
-function vector(direction: DirectionView): [number, number, number] {
-  const azimuth = (direction.azimuth_deg * Math.PI) / 180;
-  const elevation = (direction.elevation_deg * Math.PI) / 180;
-  return [-Math.sin(azimuth) * Math.cos(elevation), Math.cos(azimuth) * Math.cos(elevation), Math.sin(elevation)];
 }
 
 function same(a: readonly DirectionView[], b: readonly DirectionView[]): boolean {
@@ -74,28 +72,31 @@ export function soundMap(ctx: Context, directions: readonly DirectionView[], run
   if (running) ctx.offer('test_direction');
   const points = h('div', { class: 'pn-map-points' });
   let drawn: readonly DirectionView[] = [];
+  // Below-ear directions drawn, and whether an object has been below the
+  // ears since the map was built (then its legend line stays).
+  let directionsBelow = false;
+  let objectsBelow = false;
+  const below = h('li', null, h('span', { class: 'pn-swatch is-down', 'aria-hidden': 'true' }), p.legendDown);
+  below.hidden = true;
+  const showBelow = () => {
+    const hidden = !(directionsBelow || objectsBelow);
+    if (below.hidden !== hidden) below.hidden = hidden;
+  };
 
   const drawDirections = (next: readonly DirectionView[]) => {
     if (same(next, drawn)) return;
     drawn = next;
     const marks: HTMLElement[] = [];
-    for (const direction of next) {
-      const [x, y, z] = vector(direction);
-      const [cx, cy] = toPlane(x, y);
-      const up = z >= UP_Z;
-      const length = Math.hypot(x, y);
-      // A name sits outward from its point; a raised point's name inward,
-      // unless that would reach the listening place; under it when overhead.
-      const inward = up && length * RADIUS - LABEL_GAP > LISTENER_CLEAR;
-      const sign = inward ? -1 : 1;
-      const [ux, uy] = length < 0.05 ? [0, -1] : [(sign * x) / length, (sign * y) / length];
+    const placed = placeDirections(next, MAP_GEOMETRY);
+    for (const { direction, height, cx, cy, x, y } of placed) {
       const where = `left:${percent(cx)};top:${percent(cy)}`;
       const sending = ctx.sending?.kind === 'test_direction' && ctx.sending.value === direction.id;
       const angles = p.angles(direction.azimuth_deg, direction.elevation_deg);
+      const kind = heightClass(height);
       const point = running
         ? h('button', {
             type: 'button',
-            class: `pn-map-point${up ? ' is-up' : ''}`,
+            class: `pn-map-point${kind}`,
             style: where,
             'data-key': `${keyPrefix}-${direction.id}`,
             'data-intent': 'test_direction',
@@ -105,26 +106,21 @@ export function soundMap(ctx: Context, directions: readonly DirectionView[], run
             title: angles,
             onClick: () => ctx.send({ kind: 'test_direction', value: direction.id }),
           })
-        : h('span', { class: `pn-map-point${up ? ' is-up' : ''}`, style: where, title: `${direction.name} · ${angles}` });
+        : h('span', { class: `pn-map-point${kind}`, style: where, title: `${direction.name} · ${angles}` });
       marks.push(
         point,
-        h(
-          'span',
-          {
-            class: `pn-map-label${up ? ' is-up' : ''}`,
-            style: `left:${percent(cx + ux * LABEL_GAP)};top:${percent(cy - uy * LABEL_GAP)}`,
-            'aria-hidden': 'true',
-          },
-          direction.name,
-        ),
+        h('span', { class: `pn-map-label${kind}`, style: `left:${percent(x)};top:${percent(y)}`, 'aria-hidden': 'true' }, direction.name),
       );
     }
     points.replaceChildren(...marks);
+    element.classList.toggle('is-dense', next.length > DENSE_DIRECTIONS);
+    directionsBelow = placed.some((mark) => mark.height === 'down');
+    showBelow();
   };
-  drawDirections(directions);
 
   const circles = Array.from({ length: MAP_POOL }, () =>
-    svg('circle', { class: 'pn-map-object', cx: CENTER, cy: CENTER, r: OBJECT_R_MIN, display: 'none' }),
+    // pathLength: a below-ear object's dotted ring breaks into eight at any size.
+    svg('circle', { class: 'pn-map-object', cx: CENTER, cy: CENTER, r: OBJECT_R_MIN, pathLength: 32, display: 'none' }),
   );
   let shown = 0;
   const drawing = svg(
@@ -150,6 +146,7 @@ export function soundMap(ctx: Context, directions: readonly DirectionView[], run
     ...text.panel.lamps.slice(0, LANES).map((name, lane) => h('li', null, dot(`lane-${lane}`), name)),
     h('li', null, h('span', { class: 'pn-swatch is-flat', 'aria-hidden': 'true' }), p.legendFlat),
     h('li', null, h('span', { class: 'pn-swatch is-up', 'aria-hidden': 'true' }), p.legendUp),
+    below,
   );
   const element = h(
     'div',
@@ -158,6 +155,7 @@ export function soundMap(ctx: Context, directions: readonly DirectionView[], run
     h('p', { class: 'pn-map-status', 'aria-live': 'off' }, status.node),
     legend,
   );
+  drawDirections(directions);
 
   function place(scene: readonly SceneObject[]) {
     const count = Math.min(scene.length, MAP_POOL);
@@ -171,9 +169,12 @@ export function soundMap(ctx: Context, directions: readonly DirectionView[], run
       setAttr(circle, 'r', round1(OBJECT_R_MIN + strength * (OBJECT_R_MAX - OBJECT_R_MIN)));
       setAttr(circle, 'opacity', (OPACITY_MIN + strength * (1 - OPACITY_MIN)).toFixed(2));
       const lane = object.lane < LANES ? `lane-${object.lane}` : 'lane-x';
-      setAttr(circle, 'class', `pn-map-object ${lane} ${object.z >= UP_Z ? 'is-up' : 'is-flat'}`);
+      const height = heightOf(object.z);
+      if (height === 'down') objectsBelow = true;
+      setAttr(circle, 'class', `pn-map-object ${lane} is-${height}`);
       if (slot >= shown) circle.removeAttribute('display');
     }
+    showBelow();
     for (let slot = count; slot < shown; slot += 1) circles[slot]?.setAttribute('display', 'none');
     shown = count;
     status.set(count === 0 ? p.mapObjectsNone : count === 1 ? p.mapObjectsOne : p.mapObjectsMany(count));

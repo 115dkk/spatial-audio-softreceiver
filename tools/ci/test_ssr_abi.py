@@ -33,7 +33,7 @@ class GeneratedAbiTests(unittest.TestCase):
             "driver_version": 0x10203, "ring_bytes": 0x400000,
             "compiled.codecs": 0x12, "compiled.pcm.rates": 0x34,
             "compiled.pcm.shapes": 0x56, "compiled.pcm.max_masked_channels": 8,
-            "compiled.pcm.direct_channels": 2, "features": 7,
+            "compiled.pcm.direct_channels": 1 << 34, "features": 7,
             "qpc_frequency": 10_000_000, "endpoint_mask": 7,
             "endpoints[2].codecs": 0x80, "endpoints[2].pcm.rates": 0x20,
         }
@@ -42,6 +42,7 @@ class GeneratedAbiTests(unittest.TestCase):
         info = parse_abi_info(ssr_abi.ABI_INFO.pack(*values))
         self.assertEqual(info["driver_version"], 0x10203)
         self.assertEqual(info["compiled"]["pcm"]["max_masked_channels"], 8)
+        self.assertEqual(info["compiled"]["pcm"]["direct_channels"], 1 << 34)
         self.assertEqual(info["endpoints"][2]["codecs"], 0x80)
         self.assertEqual(info["endpoints"][2]["pcm"]["rates"], 0x20)
 

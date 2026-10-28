@@ -190,7 +190,8 @@ fn direction(id: u16, name: &str, azimuth_deg: f32, elevation_deg: f32) -> Direc
     }
 }
 
-/// A speaker layout as the supervisor shows it: every device channel.
+/// A speaker layout as the supervisor shows it: every device channel. 22.2
+/// and 30.2 have two subwoofers, `LFE` and `LFE2` (ADR 0042).
 fn layout_channels(layout: SpeakerLayout) -> Vec<SpeakerChannelView> {
     layout
         .speakers()
@@ -199,7 +200,7 @@ fn layout_channels(layout: SpeakerLayout) -> Vec<SpeakerChannelView> {
         .map(|(channel, speaker)| SpeakerChannelView {
             name: speaker.name().to_owned(),
             channel: u16::try_from(channel).unwrap(),
-            subwoofer: *speaker == Speaker::Lfe,
+            subwoofer: matches!(speaker, Speaker::Lfe | Speaker::Lfe2),
         })
         .collect()
 }
@@ -339,6 +340,61 @@ fn speaker_profile(language: Language) -> ProfileView {
         },
         ..headphone_profile(language)
     }
+}
+
+/// Speakers by `layout`, without correction, the name the layout's.
+fn speaker_layout_named(language: Language, layout: SpeakerLayout) -> ProfileView {
+    ProfileView {
+        name: layout.name().to_owned(),
+        directions: speaker_directions(layout),
+        speakers: speakers_view(layout),
+        ..speaker_layout_profile(language)
+    }
+}
+
+/// Headphones through an Impulcifer 3.x layout file (ADR 0042): one
+/// direction per channel but the LFEs, named and placed as the layout's
+/// speakers, in channel order. The profile is named after the folder.
+fn layout_file_profile(folder: &str, layout: SpeakerLayout) -> ProfileView {
+    ProfileView {
+        kind: ProfileKind::Headphones,
+        name: folder.to_owned(),
+        gain_db: -3.0,
+        directions: speaker_directions(layout),
+        from_file: false,
+        headphones: HeadphonesView {
+            brir: Some(format!(r"C:\Users\me\BRIR\{folder}\{}.wav", layout.name())),
+        },
+        speakers: speakers_view(SpeakerLayout::Surround714),
+    }
+}
+
+/// A 22.2 source's objects in the main lane: the front, two of the top
+/// layer and the three below the ears, at the speakers' nominal angles.
+fn scene_22_2() -> Vec<SceneObject> {
+    let object = |index: u8, azimuth: f32, elevation: f32, level_dbfs: f32| {
+        let (azimuth, elevation) = (azimuth.to_radians(), elevation.to_radians());
+        // Adding 0.0 writes an axis that is zero as 0.0 rather than -0.0.
+        let round = |value: f32| (value * 1000.0).round() / 1000.0 + 0.0;
+        SceneObject {
+            lane: 0,
+            index,
+            x: round(-azimuth.sin() * elevation.cos()),
+            y: round(azimuth.cos() * elevation.cos()),
+            z: round(elevation.sin()),
+            level_dbfs,
+        }
+    };
+    vec![
+        object(2, 0.0, 0.0, -10.0),
+        object(6, 30.0, 0.0, -14.0),
+        object(7, -30.0, 0.0, -16.0),
+        object(14, 0.0, 45.0, -20.0),
+        object(15, 0.0, 90.0, -28.0),
+        object(21, 0.0, -30.0, -18.0),
+        object(22, 45.0, -30.0, -24.0),
+        object(23, -45.0, -30.0, -26.0),
+    ]
 }
 
 fn profile_file(language: Language) -> ProfileView {
@@ -1114,6 +1170,51 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
             },
         ),
         (
+            // Speakers by the 30.2 layout: 32 device channels, two of them
+            // subwoofers, and three directions below the ears (ADR 0042).
+            "ready-speakers-30-2",
+            Snapshot {
+                profile: speaker_layout_named(language, SpeakerLayout::Surround302),
+                ..ready.clone()
+            },
+        ),
+        (
+            // Headphones through a 24.1.10 layout file: 34 directions.
+            "ready-headphones-24-1-10",
+            Snapshot {
+                profile: layout_file_profile("mix-stage", SpeakerLayout::Surround24110),
+                ..ready.clone()
+            },
+        ),
+        (
+            // Headphones through a 22.2 layout file while a 22.2 source
+            // plays direct (24 channels, no mask); three directions and three
+            // objects are below the ears.
+            "running-headphones-22-2",
+            Snapshot {
+                profile: layout_file_profile("hall", SpeakerLayout::Surround222),
+                engine: Some({
+                    let mut engine = engine_status(language);
+                    engine.endpoints[0].format = Some(SourceFormat::Pcm(PcmFormat {
+                        channels: 24,
+                        sample_rate: 48_000,
+                        bits_per_sample: 32,
+                        valid_bits: 32,
+                        sample_type: SampleType::Float,
+                        channel_mask: 0,
+                    }));
+                    EngineStatus {
+                        directions: layout_file_profile("hall", SpeakerLayout::Surround222)
+                            .directions,
+                        scene: scene_22_2(),
+                        ..engine
+                    }
+                }),
+                roles_taken: true,
+                ..with_phase(ready.clone(), Phase::Running)
+            },
+        ),
+        (
             "ready-upmix",
             Snapshot {
                 upmix: music_upmix(UpmixState::Stopped),
@@ -1311,6 +1412,17 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
                 ..ready.clone()
             },
         ),
+        (
+            // A DAW may send 24.1.10, 35 channels, through the ASIO input.
+            "ready-asio-24-1-10",
+            Snapshot {
+                asio: AsioSettings {
+                    layout: AsioLayout::Surround24110,
+                    ..AsioSettings::default()
+                },
+                ..ready.clone()
+            },
+        ),
         ("quit", with_phase(ready, Phase::Quit)),
     ];
     for (name, snapshot) in &mut fixtures {
@@ -1358,7 +1470,13 @@ fn intents() -> Vec<Intent> {
         Intent::SetAsioLayout(AsioLayout::Surround51),
         Intent::SetAsioLayout(AsioLayout::Surround71),
         Intent::SetAsioLayout(AsioLayout::Surround714),
+        Intent::SetAsioLayout(AsioLayout::Surround91),
+        Intent::SetAsioLayout(AsioLayout::Surround914),
         Intent::SetAsioLayout(AsioLayout::Surround916),
+        Intent::SetAsioLayout(AsioLayout::Surround131),
+        Intent::SetAsioLayout(AsioLayout::Surround222),
+        Intent::SetAsioLayout(AsioLayout::Surround24110),
+        Intent::SetAsioLayout(AsioLayout::Surround302),
         Intent::SetAsioSystemAttenuation(0.0),
         Intent::SetAsioSystemAttenuation(60.0),
         Intent::SetGain(-3.5),

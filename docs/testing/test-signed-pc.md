@@ -3,7 +3,7 @@
 이 문서는 릴리스의 `spatial-softreceiver-driver-test-<버전>-x64.zip`에 `README.md`로 들어갑니다. 시험서명 모드를 켠 Windows PC에서, GitHub 호스트 러너로는 할 수 없는 드라이버 시험을 하는 방법을 적습니다. 시험하는 분이 AI 도우미와 함께 따라 할 수 있도록 명령, 합격 기준, 남길 파일을 단계마다 적습니다.
 
 GitHub 러너가 PR마다 이미 하는 드라이버 시험(여기서 되풀이할 필요가 없는 것):
-- 설치와 적재, 엔드포인트 마스크 `0x7`의 세 렌더 엔드포인트, 기본 형식 규칙(코덱 마스크는 엔드포인트 0과 1이 `0x6c`, 패스스루 엔드포인트 2가 TrueHD를 더한 `0x7c`. PCM 규칙: 표본율 `0x3f`, 표본 모양 `0x1f`, 마스크 채널 상한 18, 직접 출력 채널 `0xffffffff`)
+- 설치와 적재, 엔드포인트 마스크 `0x7`의 세 렌더 엔드포인트, 기본 형식 규칙(코덱 마스크는 엔드포인트 0과 1이 `0x6c`, 패스스루 엔드포인트 2가 TrueHD를 더한 `0x7c`. PCM 규칙: 표본율 `0x3f`, 표본 모양 `0x1f`, 마스크 채널 상한 18, 직접 출력 채널 하위·상위가 각각 `0xffffffff`)
 - 엔드포인트마다 톤을 재생해 링으로 읽어 오기(공유 모드 기본값은 엔드포인트 0이 float32 7.1/48 kHz, 엔드포인트 1과 2가 float32 stereo/48 kHz. `collect.ps1`의 DeviceFormat 관찰값은 정보이고 합격 조건이 아님)
 - 세 엔드포인트의 톤을 동시에 `ssr-live --source driver`로 받아 가상 케이블에서 듣기
 - 독점 정책(0/1은 독점 거절, 2는 독점 허용)과 볼륨·음소거 기록
@@ -425,7 +425,7 @@ py .\bitstream_check.py --ssr-live .\ssr-live.exe --ssr-replay .\ssr-replay.exe 
 
 사람이 시험서명 PC에서 더 확인할 것은 실제 플레이어와 디코더 조합의 장치 선택·fallback 표시, 재생 중 음질, 그리고 0의 시스템 소리와 1의 공유 음악이 함께 들리는지입니다. MPC-HC와 LAV Filters를 예로 듭니다.
 
-기본 `CodecMask2=0x7c`에서는 DD+, MAT, TrueHD를 받지만 AC-3와 DTS 계열은 꺼져 있습니다. PCM은 별도 규칙(`PcmRateMask2=0x3f`, `PcmShapeMask2=0x1f`, `PcmMaxMaskedChannels2=18`, `PcmDirectChannels2=0xffffffff`)으로 44.1~192 kHz의 여섯 표본율, 다섯 표본 모양, Windows 18개 스피커 비트의 배치 및 마스크 0의 1~32채널 직접 출력을 받습니다. 옛 `FormatMask2`는 읽지 않습니다. 기본으로 꺼진 코덱(AC-3, DTS 계열)의 협상은 지원 디코더에 맞춰 별도로 켠 시험 구성에서만 확인하며, 기본 구성에서 그 코덱이 거절되는 것은 드라이버 결함으로 보지 않습니다. 아래 재생과 함께 0으로 시스템 소리, 1로 공유 음악을 보내 둘이 끊기지 않는지도 확인합니다. PCM 형식의 범위는 4-1단계에서 봅니다.
+기본 `CodecMask2=0x7c`에서는 DD+, MAT, TrueHD를 받지만 AC-3와 DTS 계열은 꺼져 있습니다. PCM은 별도 규칙(`PcmRateMask2=0x3f`, `PcmShapeMask2=0x1f`, `PcmMaxMaskedChannels2=18`, `PcmDirectChannels2=0xffffffff`, `PcmDirectChannelsHigh2=0xffffffff`)으로 44.1~192 kHz의 여섯 표본율, 다섯 표본 모양, Windows 18개 스피커 비트의 배치 및 마스크 0의 1~64채널 직접 출력을 받습니다. 옛 `FormatMask2`는 읽지 않습니다. 기본으로 꺼진 코덱(AC-3, DTS 계열)의 협상은 지원 디코더에 맞춰 별도로 켠 시험 구성에서만 확인하며, 기본 구성에서 그 코덱이 거절되는 것은 드라이버 결함으로 보지 않습니다. 아래 재생과 함께 0으로 시스템 소리, 1로 공유 음악을 보내 둘이 끊기지 않는지도 확인합니다. PCM 형식의 범위는 4-1단계에서 봅니다.
 
 1. LAV Audio Decoder 설정에서 비트스트리밍(AC-3, E-AC-3, TrueHD, DTS, DTS-HD)을 켭니다.
 2. 오디오 렌더러를 MPC Audio Renderer로 하고, 독점 모드로 **`Spatial SoftReceiver PASS`** 출력을 고릅니다. `Spatial SoftReceiver`와 `Spatial SoftReceiver Music`은 독점을 거절합니다.
@@ -455,7 +455,7 @@ py .\bitstream_check.py --ssr-live .\ssr-live.exe --ssr-replay .\ssr-replay.exe 
 
 ## 4-1. PCM 형식 범위
 
-드라이버는 PCM을 표 대신 규칙으로 받습니다(ADR 0024의 2026-10-13 고침): 44.1~192 kHz의 여섯 표본율, 다섯 표본 모양(16비트, 24비트 packed, 24-in-32, 32비트 정수, float32), 그리고 채널 규칙(Windows 18개 스피커 비트의 아무 조합, 또는 마스크 0의 1~32채널 직접 출력)입니다. 이 단계는 높이 채널이 있는 PCM, 24비트 packed, 176.4·192 kHz, 직접 출력 16·24채널이 Windows와 재생기에서 실제로 열리는지 봅니다. 1과 2는 도구 zip의 `ssr-live.exe`로 합니다. 3과 4는 가능하면 합니다. 그런 형식을 내는 Windows 설정이나 재생기가 있어야 하기 때문입니다.
+드라이버는 PCM을 표 대신 규칙으로 받습니다(ADR 0024의 2026-10-13 고침). 규칙에는 44.1~192 kHz의 여섯 표본율, 다섯 표본 모양(16비트, 24비트 packed, 24-in-32, 32비트 정수, float32), Windows 18개 스피커 비트의 아무 조합과 마스크 0의 1~64채널 직접 출력이 있습니다. 이 단계에서는 높이 채널이 있는 PCM, 24비트 packed, 176.4·192 kHz, 직접 출력 16·24·32·35채널이 Windows와 재생기에서 실제로 열리는지 봅니다. Windows 오디오 엔진이 공유 모드에서 33채널 이상을 받는지는 아직 확인하지 않았으므로 3단계에서 따로 기록합니다. 1과 2는 도구 zip의 `ssr-live.exe`로 합니다. 3과 4는 그런 형식을 내는 시험 재생기가 있을 때 합니다.
 
 1. 드라이버가 알리는 규칙을 봅니다. 제어 장치를 여는 다른 프로그램(`ssr-live play`, `ring_record.py`)은 먼저 끕니다:
 
@@ -468,7 +468,7 @@ py .\bitstream_check.py --ssr-live .\ssr-live.exe --ssr-replay .\ssr-replay.exe 
 
      ```text
        endpoint 0: codecs [E-AC-3, E-AC-3 JOC, MAT 2.0, MAT 2.1]
-         PCM: rates [44100, 48000, 88200, 96000, 176400, 192000] Hz; shapes [int16, int24 packed, int24-in-32, int32, float32]; masked channels <= 18; direct-out channels [1-32]
+         PCM: rates [44100, 48000, 88200, 96000, 176400, 192000] Hz; shapes [int16, int24 packed, int24-in-32, int32, float32]; masked channels <= 18; direct-out channels [1-64]
      ```
 
 2. Windows의 독점 형식 질의로 높이 채널 PCM을 봅니다:
@@ -483,15 +483,27 @@ py .\bitstream_check.py --ssr-live .\ssr-live.exe --ssr-replay .\ssr-replay.exe 
    - `Spatial SoftReceiver PASS` 아래의 `12 channels mask 0x2d63f`(7.1.4)가 `exclusive yes`
    - 같은 장치의 2, 4, 6, 8채널 줄도 `exclusive yes`
 
-3. **(가능하면) 공유 모드 기본 형식.** 제어판 소리(`mmsys.cpl`) → 재생 → `Spatial SoftReceiver Music` → 속성 → 고급의 기본 형식 목록을 적고 캡처합니다. 바꾸기 전의 값도 적어 둡니다. 목록에 24비트 176400 Hz나 192000 Hz 항목이 있으면 하나씩 골라 적용하고, 공간 오디오를 끈 채 2단계 명령을 다시 돌립니다:
+3. **(가능하면) 공유 모드 기본 형식과 32채널 초과 확인.** 제어판 소리(`mmsys.cpl`) → 재생 → `Spatial SoftReceiver Music` → 속성 → 고급의 기본 형식 목록을 적고 캡처합니다. 바꾸기 전의 값도 적어 둡니다. 목록에 24비트 176400 Hz나 192000 Hz 항목이 있으면 하나씩 골라 적용하고, 공간 오디오를 끈 채 아래 명령을 실행합니다.
 
    ```powershell
    py .\driver_flow_check.py --expect-mask 0x7 --summary driver-flow-pcm-rate.json
    ```
 
+   이어서 공유 모드 WASAPI에서 WAVEFORMATEXTENSIBLE의 채널 마스크를 0으로 지정할 수 있는 시험 재생기를 씁니다. `Spatial SoftReceiver Music`에 float32 48 kHz의 24, 32, 35채널을 각각 20초 동안 보내고, 재생을 시작하기 전에 녹화를 켭니다. 파일 이름은 채널 수마다 바꿉니다.
+
+   ```powershell
+   py .\ring_record.py --seconds 20 --out pcm-shared-direct24.ssrdump
+   py .\ring_record.py --seconds 20 --out pcm-shared-direct32.ssrdump
+   py .\ring_record.py --seconds 20 --out pcm-shared-direct35.ssrdump
+   ```
+
+   시험 재생기가 돌려준 `IAudioClient::Initialize`의 HRESULT, 실제로 초기화한 형식, Windows 빌드를 함께 적습니다. 35채널이 다른 채널 수로 변환되었다면 성공으로 세지 않습니다. 링에 도착한 형식으로 Windows 오디오 엔진이 32채널을 넘는 공유 스트림을 드라이버까지 보냈는지 판정합니다.
+
    **합격 기준**
    - 2단계의 합격 기준을 모두 만족
-   - 엔드포인트 1의 `format.rate`가 고른 표본율이고 `format.sample`이 `int`. `format.bits`(24면 packed)는 그대로 적음
+   - 기본 형식을 바꾼 시험에서는 엔드포인트 1의 `format.rate`가 고른 표본율이고 `format.sample`이 `int`임. `format.bits`가 24라면 packed인지도 적음
+   - 24, 32, 35채널 시험에서 `Initialize`가 `0x00000000`을 돌려주고, 각 요약의 엔드포인트 1 `formats[]`에 `channel_layout: direct-out`, 요청한 `channels`, `channel_mask: 0`이 있음
+   - 특히 35채널 요약이 위 조건을 만족해야 'Windows가 공유 모드에서 32채널 초과를 받음'으로 기록함. 초기화가 실패하거나 링에서 다른 채널 수가 나오면 '받지 않음'으로 기록하고 HRESULT와 실제 형식을 남김. 이 결과만으로 드라이버 결함이라고 판정하지 않으며, 4단계의 35채널 독점 시험으로 드라이버 판정을 따로 함
    - 끝나면 기본 형식을 적어 둔 원래 값으로 되돌림
 
 4. **(가능하면) 재생기의 독점 PCM.** 독점 WASAPI 출력에서 형식을 고를 수 있는 재생기가 있으면, **`Spatial SoftReceiver PASS`** 로 아래 PCM을 하나씩 재생하면서 녹화합니다:
@@ -507,13 +519,15 @@ py .\bitstream_check.py --ssr-live .\ssr-live.exe --ssr-replay .\ssr-replay.exe 
    | 176.4·192 kHz | 176400 또는 192000 Hz | `container_rate`가 보낸 표본율 |
    | 직접 출력 16채널 | 채널 마스크 0, 16채널 | `channel_layout`이 `direct-out`, `channels`가 16 |
    | 직접 출력 24채널 | 채널 마스크 0, 24채널 | `channel_layout`이 `direct-out`, `channels`가 24 |
+   | 직접 출력 32채널 | 채널 마스크 0, 32채널 | `channel_layout`이 `direct-out`, `channels`가 32 |
+   | 직접 출력 35채널 | 채널 마스크 0, 35채널 | `channel_layout`이 `direct-out`, `channels`가 35 |
 
    `--out`의 이름은 시험마다 바꿉니다. 녹화를 끝낸 뒤 같은 재생을 6-1단계의 `ssr-live play`에 `--endpoints 2`를 붙여 듣습니다. 제어 장치는 핸들을 하나만 받으므로 녹화와 듣기는 따로 합니다.
 
    **합격 기준**
    - 요약의 `formats[]`가 위 표와 맞고, `byte_pos_discontinuities`, `overrun_records`, `lost_bytes`가 0
-   - 높이 채널, 24비트 packed, 176.4·192 kHz, 직접 출력 16채널은 `ssr-live` 보고의 `endpoints[2].unsupported`가 `null`이고 소리가 들림. 16채널은 기본 배치 9.1.6으로 들림(6-1단계의 표)
-   - 직접 출력 24채널은 `--direct-layout`이 없으면 `endpoints[2].unsupported`가 `PCM with channel mask 0 has no direct layout for its channel count`, `endpoints[2].unsupported_reason`이 `direct_layout`이고, 다른 엔드포인트의 소리는 끊기지 않음. 소스의 채널 순서대로 24개 이름을 `--direct-layout 24=<이름,...>`으로 주면 두 값이 `null`이고 소리가 들림
+   - 높이 채널, 24비트 packed, 176.4·192 kHz, 직접 출력 16·24·32·35채널은 `ssr-live` 보고의 `endpoints[2].unsupported`가 `null`이고 소리가 들림
+   - 직접 출력 16채널은 9.1.6, 24채널은 22.2, 32채널은 30.2, 35채널은 24.1.10 기본 배치로 들림(6-1단계의 표)
    - 재생기가 그 형식을 열지 못하거나 다른 형식으로 바꿔 보냈으면, 고른 형식과 재생기 쪽 메시지를 그대로 적음
 
 ## 5. 쓰기 패킷 주기 (ADR 0014)
@@ -632,21 +646,24 @@ py .\report_check.py --preset replug driver-replug.json
 | 1~6, 8 | Windows가 마스크 0에 가정하는 순서(예: 8은 L, R, C, LFE, Lrs, Rrs, Lss, Rss) | Windows 기본 마스크 |
 | 10 | 7.1.2: 7.1 뒤에 Tfl, Tfr | ffmpeg |
 | 12 | 7.1.4: 7.1.2 뒤에 Trl, Trr | ffmpeg |
-| 14 | 9.1.4: L, R, C, LFE, Lrs, Rrs, **Lc, Rc**, Lss, Rss, Tfl, Tfr, Trl, Trr | ffmpeg |
-| 16 | 9.1.6: 9.1.4 뒤에 Tsl, Tsr | ffmpeg |
+| 14 | 9.1.4: L, R, C, LFE, Lrs, Rrs, Lss, Rss, **Lw, Rw**, Tfl, Tfr, Trl, Trr | ADR 0042 |
+| 16 | 9.1.6: 9.1 뒤에 Tfl, Tfr, Tsl, Tsr, Trl, Trr | ADR 0042 |
+| 24 | 22.2 | SMPTE ST 2036-2, ADR 0042 |
+| 32 | 30.2 | ETSI TS 103 491과 Impulcifer 배치 파일, ADR 0042 |
+| 35 | 24.1.10 | Impulcifer 배치 파일, ADR 0042 |
 
-- ffmpeg의 9.1.4와 9.1.6에서 7·8번 채널은 와이드(±60°)가 아니라 정면 가까이(±15°, FLC/FRC)입니다. 와이드를 쓰는 소스이거나 순서가 다른 소스라면 `play`에 `--direct-layout <채널 수>=<프리셋 또는 이름 목록>`을 붙입니다. 여러 채널 수를 정하려면 여러 번 붙입니다.
+- 9.1.4와 9.1.6의 9.1 바닥 채널은 와이드 `Lw/Rw`(±60°)를 씁니다. ffmpeg의 `Lc/Rc`(±15°) 순서나 다른 순서를 쓰는 소스라면 `play`에 `--direct-layout <채널 수>=<프리셋 또는 이름 목록>`을 붙입니다. 여러 채널 수를 정하려면 여러 번 붙입니다.
 
   ```powershell
-  .\ssr-live.exe play --source driver --output "<DAC 이름 일부>" --profile profile.toml --direct-layout 16=FL,FR,FC,LFE,BL,BR,WL,WR,SL,SR,TFL,TFR,TBL,TBR,TSL,TSR
+  .\ssr-live.exe play --source driver --output "<DAC 이름 일부>" --profile profile.toml --direct-layout 16=FL,FR,FC,LFE,BL,BR,FLC,FRC,SL,SR,TFL,TFR,TBL,TBR,TSL,TSR
   ```
 
-- 프리셋: `mono`, `stereo`, `3.0`, `quad`, `5.0`, `5.1`, `7.1`, `5.1.2`, `5.1.4`, `7.1.2`, `7.1.4`, `9.1.4`, `9.1.6`
-- 이름(대소문자 무시): `L R C LFE Ls Rs Lrs Rrs Lss Rss Lw Rw Lc Rc Cs Tfl Tfr Tfc Tsl Tsr Trl Trr Trc Tc`(`LFE2`도 받음), 그리고 Impulcifer와 ffmpeg가 쓰는 `FL FR FC BL BR BC SL SR FLC FRC WL WR TFL TFR TFC TSL TSR TBL TBR TBC TC`
+- 프리셋: `mono`, `stereo`, `3.0`, `quad`, `5.0`, `5.1`, `7.1`, `5.1.2`, `5.1.4`, `7.1.2`, `7.1.4`, `9.1`, `9.1.4`, `9.1.6`, `13.1`, `22.2`, `24.1.10`, `30.2`
+- 이름(대소문자 무시): `L R C LFE Ls Rs Lrs Rrs Lss Rss Lw Rw Lc Rc Cs Tfl Tfr Tfc Tsl Tsr Trl Trr Trc Tc Lsc Rsc Ls1 Rs1 Lrs1 Rrs1 Lbs Rbs Lcs Rcs Hfl Hfr Hrl Hrr Bfl Bfr Bfc`(`LFE2`도 받음), 그리고 ffmpeg 채널 이름(`FL`, `FLC`, `WL`, `BFC` 등)
 - `5.0`, `5.1`, `5.1.2`, `5.1.4` 프리셋의 서라운드는 Windows 5.1처럼 뒤쪽 쌍(Lrs, Rrs)입니다. 옆 채널(SL, SR)을 쓰는 소스(ffmpeg의 5.1, 5.1.4 등)라면 이름 목록으로 적습니다.
 - 모르는 이름, 같은 자리 두 번, 채널 수와 이름 수가 다른 값은 재생을 시작하기 전에 거절합니다. `--report`의 `direct_layouts`에는 명령행으로 정한 배치만 남습니다.
-- LFE(`LFE` 또는 `LFE2`)는 한 배치에 하나만 둡니다. 둘을 넣으면 재생을 시작하기 전에 거절합니다.
-- 기본 순서가 없는 채널 수(7, 9, 11, 13, 15, 17 이상)는 배치를 정하지 않으면 재생하지 않습니다. 이때 보고의 `endpoints[*].unsupported`는 `PCM with channel mask 0 has no direct layout for its channel count`, `endpoints[*].unsupported_reason`은 `direct_layout`입니다. 자리 이름이 24개뿐이라(LFE 하나 포함) 직접 출력은 24채널까지 배치할 수 있습니다.
+- 한 배치에는 `LFE`와 `LFE2`를 하나씩 둘 수 있습니다. 같은 LFE 이름을 두 번 넣으면 재생을 시작하기 전에 거절합니다.
+- 기본 순서가 없는 채널 수(7, 9, 11, 13, 15, 17~23, 25~31, 33~34, 36~64)는 배치를 정하지 않으면 재생하지 않습니다. 이때 보고의 `endpoints[*].unsupported`는 `PCM with channel mask 0 has no direct layout for its channel count`, `endpoints[*].unsupported_reason`은 `direct_layout`입니다.
 
 ### 6-2. 스피커로 듣기 (선택, 다채널 장비가 있을 때)
 
@@ -936,7 +953,7 @@ pwsh -NoProfile -File .\tools\ci\installer_cycle.ps1 -Releases '<릴리스 산�
 
 1. 10-1의 처음 설정을 마친 뒤 관리자 PowerShell에서 `reg query "HKLM\SOFTWARE\ASIO\Spatial SoftReceiver"`와 `Test-Path "$env:ProgramFiles\Spatial SoftReceiver\ASIO\ssrasio.dll"`을 돌립니다.
 2. 앱을 켜고, 설정 화면의 'ASIO 입구' 패널에서 켜져 있는지 확인하고 DAW 출력 배치를 고릅니다(기본 7.1.4).
-3. DAW의 오디오 설정에서 ASIO 장치 `Spatial SoftReceiver`를 고르고, 버퍼를 128, 256, 512프레임으로 바꿔 가며 프로젝트를 재생합니다. 채널마다 따로 소리를 보내 봅니다. 상태 화면의 ASIO 줄을 봅니다.
+3. DAW의 오디오 설정에서 ASIO 장치 `Spatial SoftReceiver`를 고르고, 버퍼를 128, 256, 512프레임으로 바꿔 가며 프로젝트를 재생합니다. 앱에서 2.0, 5.1, 7.1, 7.1.4, 9.1, 9.1.4, 9.1.6, 13.1, 22.2, 24.1.10, 30.2를 차례로 고르고 채널마다 따로 소리를 보내 봅니다. 상태 화면의 ASIO 줄을 봅니다.
 4. DAW가 재생하는 동안 브라우저나 게임의 소리도 재생합니다. 'ASIO 입구' 패널에서 시스템 소리를 줄이는 슬라이더를 움직여 봅니다.
 5. 재생 중에 패널에서 배치를 바꿉니다.
 6. 재생 중에 앱을 트레이의 '종료'로 끝냈다가 다시 실행합니다. 이어서 앱을 끈 채로 DAW만 열어 둡니다.
@@ -946,7 +963,7 @@ pwsh -NoProfile -File .\tools\ci\installer_cycle.ps1 -Releases '<릴리스 산�
 
 **합격 기준**
 - 1단계에서 레지스트리 키의 `CLSID`가 보이고 DLL 파일이 있음. 없으면 `%LOCALAPPDATA%\Spatial SoftReceiver\setup-result.json`의 `asio_registration`과 `asio_error`를 결과에 적습니다
-- 3단계에서 DAW가 장치를 열고 배치의 채널 수(7.1.4면 12개)를 보이며, 각 채널의 소리가 그 방향에서 들림. 버퍼를 바꿔도 끊기지 않고, 상태 화면에 DAW 실행 파일, 샘플레이트, 버퍼, 배치가 보이며 언더런 수가 늘지 않음. DAW가 보고하는 출력 지연을 결과에 적습니다
+- 3단계에서 DAW가 장치를 열고 각 배치의 채널 수(2, 6, 8, 12, 10, 14, 16, 14, 24, 35, 32개)를 차례대로 보이며, 각 채널의 소리가 그 방향에서 들림. 22.2와 30.2에서는 LFE와 LFE2가 모두 저음으로 들림. 버퍼를 바꿔도 끊기지 않고, 상태 화면에 DAW 실행 파일, 샘플레이트, 버퍼, 배치가 보이며 언더런 수가 늘지 않음. DAW가 보고하는 출력 지연을 결과에 적습니다
 - 4단계에서 두 소리가 함께 들리고, 슬라이더를 끝까지 올리면 시스템 소리만 들리지 않음
 - 5단계에서 DAW가 장치를 다시 열어 새 채널 수로 이어 재생함(DAW가 다시 열기 요청을 무시하면 DAW 이름을 적습니다)
 - 6단계에서 앱이 끝나도 DAW가 멈추거나 죽지 않음(소리만 끊김). 앱을 다시 실행하면 몇 초 안에 소리가 다시 남. 앱이 꺼져 있는 동안에도 DAW가 장치를 열 수 있음

@@ -275,14 +275,34 @@ export const LAYOUT_SPEAKERS: Readonly<Record<SpeakerLayout, readonly string[]>>
   '5.1.4': ['L', 'R', 'C', 'LFE', 'Ls', 'Rs', 'Tfl', 'Tfr', 'Trl', 'Trr'],
   '7.1.2': ['L', 'R', 'C', 'LFE', 'Lrs', 'Rrs', 'Lss', 'Rss', 'Tfl', 'Tfr'],
   '7.1.4': ['L', 'R', 'C', 'LFE', 'Lrs', 'Rrs', 'Lss', 'Rss', 'Tfl', 'Tfr', 'Trl', 'Trr'],
+  '9.1': ['L', 'R', 'C', 'LFE', 'Lrs', 'Rrs', 'Lss', 'Rss', 'Lw', 'Rw'],
+  '9.1.4': ['L', 'R', 'C', 'LFE', 'Lrs', 'Rrs', 'Lss', 'Rss', 'Lw', 'Rw', 'Tfl', 'Tfr', 'Trl', 'Trr'],
+  '9.1.6': ['L', 'R', 'C', 'LFE', 'Lrs', 'Rrs', 'Lss', 'Rss', 'Lw', 'Rw', 'Tfl', 'Tfr', 'Tsl', 'Tsr', 'Trl', 'Trr'],
+  '13.1': ['L', 'R', 'C', 'LFE', 'Lrs', 'Rrs', 'Lss', 'Rss', 'Tc', 'Tfl', 'Tfc', 'Tfr', 'Trl', 'Trr'],
+  '22.2': [
+    'Lw', 'Rw', 'C', 'LFE', 'Lbs', 'Rbs', 'L', 'R', 'Cs', 'LFE2', 'Lss', 'Rss',
+    'Tfl', 'Tfr', 'Tfc', 'Tc', 'Trl', 'Trr', 'Tsl', 'Tsr', 'Trc', 'Bfc', 'Bfl', 'Bfr',
+  ],
+  '24.1.10': [
+    'L', 'R', 'C', 'LFE', 'Lss', 'Rss', 'Lbs', 'Rbs', 'Lw', 'Rw', 'Tfl', 'Tfr', 'Tsl', 'Tsr', 'Trl', 'Trr',
+    'Lc', 'Rc', 'Lsc', 'Rsc', 'Ls1', 'Rs1', 'Ls', 'Rs', 'Lrs1', 'Rrs1', 'Lrs', 'Rrs', 'Lcs', 'Rcs', 'Cs',
+    'Hfl', 'Hfr', 'Hrl', 'Hrr',
+  ],
+  '30.2': [
+    'C', 'L', 'R', 'Ls', 'Rs', 'LFE', 'Cs', 'Lrs', 'Rrs', 'Lss', 'Rss', 'Lc', 'Rc', 'Hfl', 'Tfc', 'Hfr',
+    'LFE2', 'Lw', 'Rw', 'Tc', 'Tsl', 'Tsr', 'Trc', 'Hrl', 'Hrr', 'Bfc', 'Bfl', 'Bfr', 'Tfl', 'Tfr', 'Trl', 'Trr',
+  ],
 };
 
-/** The subwoofer's name; it is no direction (`Speaker::angles()` is None). */
-const SUBWOOFER = 'LFE';
+/**
+ * The subwoofers' names (22.2 and 30.2 have two); they are no direction
+ * (`Speaker::angles()` is None).
+ */
+const SUBWOOFERS: ReadonlySet<string> = new Set(['LFE', 'LFE2']);
 
 /**
  * `Speaker::angles()` in crates/ssr-types/src/position.rs for the speakers the
- * layouts use: nominal azimuth (positive left) and elevation, in degrees.
+ * layouts use: nominal azimuth (positive left) and elevation (positive up), in degrees.
  */
 export const SPEAKER_ANGLES: Readonly<Record<string, readonly [azimuth: number, elevation: number]>> = {
   L: [30, 0],
@@ -292,23 +312,50 @@ export const SPEAKER_ANGLES: Readonly<Record<string, readonly [azimuth: number, 
   Rs: [-110, 0],
   Lrs: [150, 0],
   Rrs: [-150, 0],
+  Cs: [180, 0],
+  Lw: [60, 0],
+  Rw: [-60, 0],
+  Lc: [15, 0],
+  Rc: [-15, 0],
   Lss: [90, 0],
   Rss: [-90, 0],
   Tfl: [45, 45],
   Tfr: [-45, 45],
+  Tsl: [90, 45],
+  Tsr: [-90, 45],
   Trl: [135, 45],
   Trr: [-135, 45],
+  Tc: [0, 90],
+  Tfc: [0, 45],
+  Trc: [180, 45],
+  Lsc: [10, 0],
+  Rsc: [-10, 0],
+  Ls1: [75, 0],
+  Rs1: [-75, 0],
+  Lrs1: [120, 0],
+  Rrs1: [-120, 0],
+  Lbs: [135, 0],
+  Rbs: [-135, 0],
+  Lcs: [165, 0],
+  Rcs: [-165, 0],
+  Hfl: [30, 30],
+  Hfr: [-30, 30],
+  Hrl: [150, 30],
+  Hrr: [-150, 30],
+  Bfl: [45, -30],
+  Bfr: [-45, -30],
+  Bfc: [0, -30],
 };
 
-/** The layout's device channels: one speaker each, in mask order. */
+/** The layout's device channels: one speaker each, in channel order. */
 export function speakerChannels(layout: SpeakerLayout): SpeakerChannelView[] {
-  return LAYOUT_SPEAKERS[layout].map((name, channel) => ({ name, channel, subwoofer: name === SUBWOOFER }));
+  return LAYOUT_SPEAKERS[layout].map((name, channel) => ({ name, channel, subwoofer: SUBWOOFERS.has(name) }));
 }
 
-/** The layout's directions: every speaker but the subwoofer, in channel order. */
+/** The layout's directions: every speaker but the subwoofers, in channel order. */
 export function speakerDirections(layout: SpeakerLayout): DirectionView[] {
   return LAYOUT_SPEAKERS[layout]
-    .filter((name) => name !== SUBWOOFER)
+    .filter((name) => !SUBWOOFERS.has(name))
     .map((name, id) => {
       const [azimuth, elevation] = SPEAKER_ANGLES[name] ?? [0, 0];
       return { id, name, azimuth_deg: azimuth, elevation_deg: elevation };

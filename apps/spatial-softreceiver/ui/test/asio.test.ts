@@ -98,7 +98,13 @@ describe('the ASIO panel on the settings screen', () => {
           ['5.1', 6],
           ['7.1', 8],
           ['7.1.4', 12],
+          ['9.1', 10],
+          ['9.1.4', 14],
           ['9.1.6', 16],
+          ['13.1', 14],
+          ['22.2', 24],
+          ['24.1.10', 35],
+          ['30.2', 32],
         ] as const
       ).map(([name, channels]) => `${name} (${t.format.channels(channels)})`),
     );

@@ -42,8 +42,8 @@ PCM_SHAPE_INT32 = 8
 PCM_SHAPE_FLOAT32 = 16
 PCM_SHAPES_INTEGER = 15
 PCM_SPEAKER_BITS = 262143
-MAX_PCM_CHANNELS = 32
-DIRECT_DEFAULT_CHANNELS = 43711
+MAX_PCM_CHANNELS = 64
+DIRECT_DEFAULT_CHANNELS = 19335785151
 FORMAT_AC3 = 2
 FORMAT_EAC3 = 4
 FORMAT_EAC3_JOC = 8
@@ -188,18 +188,20 @@ PCM_FORMATS_FIELDS = (
     "rates",
     "shapes",
     "max_masked_channels",
+    "reserved",
     "direct_channels",
 )
-PCM_FORMATS = struct.Struct("<IIII")
+PCM_FORMATS = struct.Struct("<IIIIQ")
 
 ENDPOINT_FORMATS_FIELDS = (
     "codecs",
     "pcm.rates",
     "pcm.shapes",
     "pcm.max_masked_channels",
+    "pcm.reserved",
     "pcm.direct_channels",
 )
-ENDPOINT_FORMATS = struct.Struct("<QIIII")
+ENDPOINT_FORMATS = struct.Struct("<QIIIIQ")
 
 ABI_INFO_FIELDS = (
     "abi_version",
@@ -210,6 +212,7 @@ ABI_INFO_FIELDS = (
     "compiled.pcm.rates",
     "compiled.pcm.shapes",
     "compiled.pcm.max_masked_channels",
+    "compiled.pcm.reserved",
     "compiled.pcm.direct_channels",
     "features",
     "qpc_frequency",
@@ -219,24 +222,28 @@ ABI_INFO_FIELDS = (
     "endpoints[0].pcm.rates",
     "endpoints[0].pcm.shapes",
     "endpoints[0].pcm.max_masked_channels",
+    "endpoints[0].pcm.reserved",
     "endpoints[0].pcm.direct_channels",
     "endpoints[1].codecs",
     "endpoints[1].pcm.rates",
     "endpoints[1].pcm.shapes",
     "endpoints[1].pcm.max_masked_channels",
+    "endpoints[1].pcm.reserved",
     "endpoints[1].pcm.direct_channels",
     "endpoints[2].codecs",
     "endpoints[2].pcm.rates",
     "endpoints[2].pcm.shapes",
     "endpoints[2].pcm.max_masked_channels",
+    "endpoints[2].pcm.reserved",
     "endpoints[2].pcm.direct_channels",
     "endpoints[3].codecs",
     "endpoints[3].pcm.rates",
     "endpoints[3].pcm.shapes",
     "endpoints[3].pcm.max_masked_channels",
+    "endpoints[3].pcm.reserved",
     "endpoints[3].pcm.direct_channels",
 )
-ABI_INFO = struct.Struct("<IIIIQIIIIQQIIQIIIIQIIIIQIIIIQIIII")
+ABI_INFO = struct.Struct("<IIIIQIIIIQQQIIQIIIIQQIIIIQQIIIIQQIIIIQ")
 
 ENDPOINT_STATS_FIELDS = (
     "total_bytes",
