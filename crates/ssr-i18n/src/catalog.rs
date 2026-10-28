@@ -404,11 +404,15 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "hesuvi.wav, hrir.wav 또는 방향별 WAV 폴더를 고르십시오."]
+    #[doc = "hesuvi.wav, hrir.wav, Impulcifer의 배치별 BRIR 파일 또는 방향별 WAV 폴더를 고르십시오."]
     pub fn invalid_brir_source(language: Language) -> &'static str {
         match language {
-            Language::Ko => "hesuvi.wav, hrir.wav 또는 방향별 WAV 폴더를 고르십시오.",
-            Language::En => "Choose hesuvi.wav, hrir.wav, or a folder of per-direction WAV files.",
+            Language::Ko => {
+                "hesuvi.wav, hrir.wav, Impulcifer의 배치별 BRIR 파일 또는 방향별 WAV 폴더를 고르십시오."
+            }
+            Language::En => {
+                "Choose hesuvi.wav, hrir.wav, an Impulcifer layout BRIR file, or a folder of per-direction WAVs."
+            }
         }
     }
 

@@ -4014,14 +4014,14 @@ fn default_language_and_failed_profile_errors_follow_language_changes() {
         .unwrap_err();
     assert_eq!(
         failed.message,
-        "Choose hesuvi.wav, hrir.wav, or a folder of per-direction WAV files."
+        "Choose hesuvi.wav, hrir.wav, an Impulcifer layout BRIR file, or a folder of per-direction WAVs."
     );
     supervisor
         .handle(Intent::SetLanguage(Some(Language::Ko)))
         .unwrap();
     assert_eq!(
         supervisor.snapshot().error.unwrap().message,
-        "hesuvi.wav, hrir.wav 또는 방향별 WAV 폴더를 고르십시오."
+        "hesuvi.wav, hrir.wav, Impulcifer의 배치별 BRIR 파일 또는 방향별 WAV 폴더를 고르십시오."
     );
 }
 
