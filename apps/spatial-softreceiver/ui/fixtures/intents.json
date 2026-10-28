@@ -115,7 +115,31 @@
   },
   {
     "kind": "set_asio_layout",
+    "value": "9.1"
+  },
+  {
+    "kind": "set_asio_layout",
+    "value": "9.1.4"
+  },
+  {
+    "kind": "set_asio_layout",
     "value": "9.1.6"
+  },
+  {
+    "kind": "set_asio_layout",
+    "value": "13.1"
+  },
+  {
+    "kind": "set_asio_layout",
+    "value": "22.2"
+  },
+  {
+    "kind": "set_asio_layout",
+    "value": "24.1.10"
+  },
+  {
+    "kind": "set_asio_layout",
+    "value": "30.2"
   },
   {
     "kind": "set_asio_system_attenuation",

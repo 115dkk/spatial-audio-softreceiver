@@ -274,8 +274,20 @@ pub enum AsioLayout {
     #[default]
     #[serde(rename = "7.1.4")]
     Surround714,
+    #[serde(rename = "9.1")]
+    Surround91,
+    #[serde(rename = "9.1.4")]
+    Surround914,
     #[serde(rename = "9.1.6")]
     Surround916,
+    #[serde(rename = "13.1")]
+    Surround131,
+    #[serde(rename = "22.2")]
+    Surround222,
+    #[serde(rename = "24.1.10")]
+    Surround24110,
+    #[serde(rename = "30.2")]
+    Surround302,
 }
 
 /// Saved ASIO entrance settings. Missing fields keep the original defaults.
@@ -465,12 +477,19 @@ impl SpeakerLayout {
 }
 
 impl AsioLayout {
-    pub const ALL: [Self; 5] = [
+    /// In the order the screen lists them.
+    pub const ALL: [Self; 11] = [
         Self::Stereo,
         Self::Surround51,
         Self::Surround71,
         Self::Surround714,
+        Self::Surround91,
+        Self::Surround914,
         Self::Surround916,
+        Self::Surround131,
+        Self::Surround222,
+        Self::Surround24110,
+        Self::Surround302,
     ];
 
     pub const fn name(self) -> &'static str {
@@ -479,7 +498,13 @@ impl AsioLayout {
             Self::Surround51 => "5.1",
             Self::Surround71 => "7.1",
             Self::Surround714 => "7.1.4",
+            Self::Surround91 => "9.1",
+            Self::Surround914 => "9.1.4",
             Self::Surround916 => "9.1.6",
+            Self::Surround131 => "13.1",
+            Self::Surround222 => "22.2",
+            Self::Surround24110 => "24.1.10",
+            Self::Surround302 => "30.2",
         }
     }
 }

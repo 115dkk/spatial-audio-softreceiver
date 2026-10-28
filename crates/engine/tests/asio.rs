@@ -129,9 +129,19 @@ impl Harness {
     }
 
     fn new_at(frames: u32, origin: u32) -> Self {
+        Self::new_at_layout(frames, origin, ssr_types::AsioLayout::Stereo)
+    }
+
+    fn new_layout(frames: u32, layout: ssr_types::AsioLayout) -> Self {
+        Self::new_at_layout(frames, 0, layout)
+    }
+
+    fn new_at_layout(frames: u32, origin: u32, layout: ssr_types::AsioLayout) -> Self {
         let geometry = Geometry {
             lanes: 1,
-            input_channels: 2,
+            input_channels: ssr_types::channel_layout_preset(layout.name())
+                .unwrap()
+                .len() as u32,
             output_channels: 2,
             max_frames: frames,
             sample_rate: 48_000,
@@ -145,7 +155,7 @@ impl Harness {
         let alive = Arc::new(AtomicBool::new(true));
         let waits = Arc::new(AtomicU64::new(0));
         let settings = AsioSettings {
-            layout: ssr_types::AsioLayout::Stereo,
+            layout,
             ..AsioSettings::default()
         };
         let shared = Arc::new(AsioShared::new(settings));
@@ -658,6 +668,22 @@ fn fake_daw_64_128_512_follow_dac_demand_and_process_without_allocations() {
         assert!(h.signal.0.load(Ordering::Acquire) >= 21);
         h.runtime.take().unwrap().stop();
     }
+}
+
+#[test]
+fn layout_24_1_10_streams_thirty_five_channels_through_the_engine() {
+    let mut h = Harness::new_layout(2_048, ssr_types::AsioLayout::Surround24110);
+    assert_eq!(h.geometry.input_channels, 35);
+    assert!(h.geometry.total_bytes().unwrap() < streamring::MAX_REGION_BYTES);
+    h.supply();
+    let samples = h.period(0.25);
+    assert!(samples.iter().all(|sample| sample.is_finite()));
+    assert!(samples.iter().any(|sample| *sample != 0.25));
+    let status = h.shared.status().unwrap();
+    assert_eq!(status.channels, 35);
+    assert_eq!(status.layout, ssr_types::AsioLayout::Surround24110);
+    assert_eq!(status.underruns, 0);
+    h.runtime.take().unwrap().stop();
 }
 
 #[test]

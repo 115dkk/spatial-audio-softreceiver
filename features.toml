@@ -429,6 +429,35 @@ tests = [
 note = "uniform partitions only: 22 inputs x 24,000-tap IRs x 480-frame blocks measured about 0.5 ms per block in release; 6.5 s sets need truncation or non-uniform partitions"
 
 [[feature]]
+id = "brir.ordered_3x_tracks"
+kind = "pipeline"
+milestone = "M4"
+status = "implemented"
+tests = [
+  "brir::hesuvi_layout_equals_prepare_for_every_track_count",
+  "brir::hrir_layout_equals_prepare_and_skips_lfe",
+  "brir::ordered_three_x_files_accept_full_track_counts",
+  "brir::first_extended_pair_selects_three_x_angles_and_overrides_still_win",
+  "brir::three_x_slots_have_unique_positions",
+]
+note = "hrir.wav accepts 16 through 82 even tracks and hesuvi.wav accepts 14 through 80 even tracks; files longer than the 2.x prefix use the complete 3.x nominal slot table"
+
+[[feature]]
+id = "brir.layout_files"
+kind = "pipeline"
+milestone = "M4"
+status = "implemented"
+tests = [
+  "brir::every_layout_file_uses_ssr_direction_names_and_angles",
+  "brir::unmatched_layout_labels_still_allow_a_csv_sidecar",
+  "brir::truncated_layout_chunk_is_rejected_without_panicking",
+  "brir::layout_file_label_tables_match_ssr_presets",
+  "brir::extensible_pcm32_with_zero_mask_and_fact_is_read",
+  "supervisor::importing_a_layout_wav_builds_a_headphone_profile",
+]
+note = "ICHL labels identify the numbered 13.1, 22.2, 24.1.10 and 30.2 layouts; LFE tracks are skipped and all directions use the matching SSR preset's names and nominal angles"
+
+[[feature]]
 id = "brir.prepare"
 kind = "pipeline"
 milestone = "M1"
@@ -1424,6 +1453,23 @@ tests = [
   "vst-audio-protocol::every_pending_request_has_its_own_deadline",
 ]
 note = "ADR 0021 control framing, deterministic deadlines, fallback and restart policy, and two-generation state history, in vst-audio-protocol (ADR 0039)"
+
+[[feature]]
+id = "asio.high_channel_layouts"
+kind = "pipeline"
+milestone = "M4"
+status = "implemented"
+tests = [
+  "asio-proto::all_layout_orders_and_names_are_fixed",
+  "asio-proto::legacy_wire_values_zero_through_four_do_not_change",
+  "ssr-asio::channel_validation_accepts_thirty_five_and_sixty_four_but_not_more",
+  "engine::every_layout_maps_to_the_shared_preset_in_protocol_order",
+  "engine::asio_ring_fits_sixty_four_channels_largest_buffer_and_highest_rate",
+  "engine::queue_supports_sixty_four_output_channels",
+  "engine::two_lfe_channels_sum_into_the_single_scene_lfe",
+  "engine::layout_24_1_10_streams_thirty_five_channels_through_the_engine",
+]
+note = "ASIO layouts 9.1, 9.1.4, 13.1, 22.2, 24.1.10 and 30.2 use ADR 0042 channel order; active-channel sets and stream rings accept up to 64 channels, while the two LFE inputs in 22.2 and 30.2 sum into the scene LFE"
 
 [[feature]]
 id = "asio.entrance"

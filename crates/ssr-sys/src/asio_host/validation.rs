@@ -251,6 +251,26 @@ mod tests {
     }
 
     #[test]
+    fn admission_accepts_the_thirty_five_channel_layout_at_the_largest_buffer() {
+        let memory = ControlBuf::new();
+        let config = OutputConfig {
+            layout: Layout::Surround24110,
+            ..OutputConfig::default()
+        };
+        let control = memory.control();
+        control.initialize(42).unwrap();
+        control.set_sample_rate(config.sample_rate);
+        control.set_layout(config.layout);
+        control.set_dac_period_frames(config.dac_period_frames);
+        control.set_latency_frames(config.latency_frames);
+        control.set_buffer_frames(2_048);
+        let geometry = client_geometry(control, config).unwrap();
+        assert_eq!(geometry.input_channels, 35);
+        assert_eq!(geometry.max_frames, 2_048);
+        assert!(geometry.total_bytes().unwrap() < streamring::MAX_REGION_BYTES);
+    }
+
+    #[test]
     fn admission_does_not_reset_output_or_lease_counters() {
         let memory = configured();
         let control = memory.control();

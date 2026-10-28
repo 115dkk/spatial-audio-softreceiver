@@ -15,7 +15,7 @@ export type Arch = "x64" | "arm64" | "other"
 /**
  * The input layouts a DAW may send (ADR 0025), independent of the output.
  */
-export type AsioLayout = "2.0" | "5.1" | "7.1" | "7.1.4" | "9.1.6"
+export type AsioLayout = "2.0" | "5.1" | "7.1" | "7.1.4" | "9.1" | "9.1.4" | "9.1.6" | "13.1" | "22.2" | "24.1.10" | "30.2"
 
 /**
  * Saved ASIO entrance settings. Missing fields keep the original defaults.

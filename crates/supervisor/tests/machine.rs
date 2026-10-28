@@ -2858,6 +2858,30 @@ fn hesuvi(directory: &TestDirectory, folder: &str) -> std::path::PathBuf {
     path
 }
 
+fn layout_brir(directory: &TestDirectory) -> std::path::PathBuf {
+    let labels = [
+        "L", "R", "C", "LFE", "Lb", "Rb", "Ls", "Rs", "T", "HL", "HC", "HR", "HLs", "HRs",
+    ];
+    let path = directory.join("numbered-layout.wav");
+    write_wav(&path, &vec![vec![0.25, 0.0, 0.0]; labels.len() * 2]);
+    let tracks: Vec<String> = labels
+        .iter()
+        .flat_map(|label| [format!("{label}-left"), format!("{label}-right")])
+        .collect();
+    let payload = serde_json::json!({"version": 1, "tracks": tracks}).to_string();
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes.extend_from_slice(b"ICHL");
+    bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(payload.as_bytes());
+    if !payload.len().is_multiple_of(2) {
+        bytes.push(0);
+    }
+    let riff_size = (bytes.len() - 8) as u32;
+    bytes[4..8].copy_from_slice(&riff_size.to_le_bytes());
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
 fn secs_correction(
     directory: &TestDirectory,
     name: &str,
@@ -2989,6 +3013,30 @@ fn import_brir_while_speakers_play_only_stores_it() {
         supervisor.snapshot().profile.kind,
         ssr_types::app::ProfileKind::Speakers
     );
+}
+
+#[test]
+fn importing_a_layout_wav_builds_a_headphone_profile() {
+    use ssr_types::app::ProfileKind;
+
+    let directory = TestDirectory::new("layout-brir");
+    let path = layout_brir(&directory);
+    let (shared, mut supervisor) = start(ready_pc(), dac_settings());
+
+    supervisor.handle(Intent::ImportBrir(path.clone())).unwrap();
+    assert_eq!(supervisor.settings().profile.headphones.brir, Some(path));
+    supervisor
+        .handle(Intent::SetProfileKind(ProfileKind::Headphones))
+        .unwrap();
+    assert_eq!(supervisor.snapshot().profile.kind, ProfileKind::Headphones);
+    assert_eq!(
+        view_names(&supervisor.snapshot()),
+        [
+            "L", "R", "C", "Lrs", "Rrs", "Lss", "Rss", "Tc", "Tfl", "Tfc", "Tfr", "Trl", "Trr"
+        ]
+    );
+    supervisor.handle(Intent::Enable).unwrap();
+    assert!(launched(&shared)[0].contains("lfe=Direction { name: \"C\", gain_db: 0.0 }"));
 }
 
 #[test]

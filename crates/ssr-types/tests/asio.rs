@@ -4,10 +4,9 @@ use ssr_types::{AsioLayout, AsioSettings, AsioStatus, EngineStatus};
 
 #[test]
 fn asio_layouts_serialize_with_explicit_names() {
-    for (layout, name) in AsioLayout::ALL
-        .into_iter()
-        .zip(["2.0", "5.1", "7.1", "7.1.4", "9.1.6"])
-    {
+    for (layout, name) in AsioLayout::ALL.into_iter().zip([
+        "2.0", "5.1", "7.1", "7.1.4", "9.1", "9.1.4", "9.1.6", "13.1", "22.2", "24.1.10", "30.2",
+    ]) {
         let json = serde_json::to_string(&layout).unwrap();
         assert_eq!(json, format!("\"{name}\""));
         assert_eq!(layout.name(), name);

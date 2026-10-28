@@ -15,6 +15,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -24,7 +25,10 @@ use ssr_types::{Direction, DirectionId, Layout, Speaker};
 
 pub mod ir;
 
-const HESUVI_TRACK_ORDER: [&str; 30] = [
+const HESUVI_2X_TRACKS: usize = 30;
+const HRIR_2X_TRACKS: usize = 32;
+
+const HESUVI_TRACK_ORDER: [&str; 80] = [
     "FL-left",
     "FL-right",
     "SL-left",
@@ -55,9 +59,59 @@ const HESUVI_TRACK_ORDER: [&str; 30] = [
     "TBL-right",
     "TBR-left",
     "TBR-right",
+    "FCL-left",
+    "FCL-right",
+    "FCR-left",
+    "FCR-right",
+    "SCL-left",
+    "SCL-right",
+    "SCR-left",
+    "SCR-right",
+    "SL1-left",
+    "SL1-right",
+    "SR1-left",
+    "SR1-right",
+    "SL2-left",
+    "SL2-right",
+    "SR2-left",
+    "SR2-right",
+    "BL1-left",
+    "BL1-right",
+    "BR1-left",
+    "BR1-right",
+    "BL2-left",
+    "BL2-right",
+    "BR2-left",
+    "BR2-right",
+    "BCL-left",
+    "BCL-right",
+    "BCR-left",
+    "BCR-right",
+    "BC-left",
+    "BC-right",
+    "HFL-left",
+    "HFL-right",
+    "HFR-left",
+    "HFR-right",
+    "HFC-left",
+    "HFC-right",
+    "HBL-left",
+    "HBL-right",
+    "HBR-left",
+    "HBR-right",
+    "HBC-left",
+    "HBC-right",
+    "TC-left",
+    "TC-right",
+    "DFL-left",
+    "DFL-right",
+    "DFR-left",
+    "DFR-right",
+    "DFC-left",
+    "DFC-right",
 ];
 
-const HRIR_TRACK_ORDER: [&str; 32] = [
+const HRIR_TRACK_ORDER: [&str; 82] = [
     "FL-left",
     "FL-right",
     "FR-left",
@@ -90,6 +144,140 @@ const HRIR_TRACK_ORDER: [&str; 32] = [
     "TBL-right",
     "TBR-left",
     "TBR-right",
+    "FCL-left",
+    "FCL-right",
+    "FCR-left",
+    "FCR-right",
+    "SCL-left",
+    "SCL-right",
+    "SCR-left",
+    "SCR-right",
+    "SL1-left",
+    "SL1-right",
+    "SR1-left",
+    "SR1-right",
+    "SL2-left",
+    "SL2-right",
+    "SR2-left",
+    "SR2-right",
+    "BL1-left",
+    "BL1-right",
+    "BR1-left",
+    "BR1-right",
+    "BL2-left",
+    "BL2-right",
+    "BR2-left",
+    "BR2-right",
+    "BCL-left",
+    "BCL-right",
+    "BCR-left",
+    "BCR-right",
+    "BC-left",
+    "BC-right",
+    "HFL-left",
+    "HFL-right",
+    "HFR-left",
+    "HFR-right",
+    "HFC-left",
+    "HFC-right",
+    "HBL-left",
+    "HBL-right",
+    "HBR-left",
+    "HBR-right",
+    "HBC-left",
+    "HBC-right",
+    "TC-left",
+    "TC-right",
+    "DFL-left",
+    "DFL-right",
+    "DFR-left",
+    "DFR-right",
+    "DFC-left",
+    "DFC-right",
+];
+
+/// The 3.x nominal slot table. A track count beyond the 2.x prefix selects
+/// these angles for every direction in that file.
+const THREE_X_SLOTS: [(&str, f32, f32); 40] = [
+    ("FL", 30.0, 0.0),
+    ("FR", -30.0, 0.0),
+    ("FC", 0.0, 0.0),
+    ("BL", 135.0, 0.0),
+    ("BR", -135.0, 0.0),
+    ("SL", 90.0, 0.0),
+    ("SR", -90.0, 0.0),
+    ("WL", 60.0, 0.0),
+    ("WR", -60.0, 0.0),
+    ("TFL", 45.0, 45.0),
+    ("TFR", -45.0, 45.0),
+    ("TSL", 90.0, 65.0),
+    ("TSR", -90.0, 65.0),
+    ("TBL", 135.0, 45.0),
+    ("TBR", -135.0, 45.0),
+    ("FCL", 15.0, 0.0),
+    ("FCR", -15.0, 0.0),
+    ("SCL", 10.0, 0.0),
+    ("SCR", -10.0, 0.0),
+    ("SL1", 75.0, 0.0),
+    ("SR1", -75.0, 0.0),
+    ("SL2", 105.0, 0.0),
+    ("SR2", -105.0, 0.0),
+    ("BL1", 120.0, 0.0),
+    ("BR1", -120.0, 0.0),
+    ("BL2", 150.0, 0.0),
+    ("BR2", -150.0, 0.0),
+    ("BCL", 165.0, 0.0),
+    ("BCR", -165.0, 0.0),
+    ("BC", 180.0, 0.0),
+    ("HFL", 30.0, 30.0),
+    ("HFR", -30.0, 30.0),
+    ("HFC", 0.0, 30.0),
+    ("HBL", 135.0, 30.0),
+    ("HBR", -135.0, 30.0),
+    ("HBC", 180.0, 30.0),
+    ("TC", 0.0, 90.0),
+    ("DFL", 45.0, -30.0),
+    ("DFR", -45.0, -30.0),
+    ("DFC", 0.0, -30.0),
+];
+
+#[derive(Clone, Copy)]
+struct LayoutFileSpec {
+    name: &'static str,
+    labels: &'static [&'static str],
+}
+
+const LAYOUT_FILE_SPECS: [LayoutFileSpec; 4] = [
+    LayoutFileSpec {
+        name: "13.1",
+        labels: &[
+            "L", "R", "C", "LFE", "Lb", "Rb", "Ls", "Rs", "T", "HL", "HC", "HR", "HLs", "HRs",
+        ],
+    },
+    LayoutFileSpec {
+        name: "22.2",
+        labels: &[
+            "FL", "FR", "FC", "LFE1", "BL", "BR", "FLc", "FRc", "BC", "LFE2", "SiL", "SiR", "TpFL",
+            "TpFR", "TpFC", "TpC", "TpBL", "TpBR", "TpSiL", "TpSiR", "TpBC", "BtFC", "BtFL",
+            "BtFR",
+        ],
+    },
+    LayoutFileSpec {
+        name: "24.1.10",
+        labels: &[
+            "L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs", "Lw", "Rw", "Ltf", "Rtf", "Ltm", "Rtm",
+            "Ltr", "Rtr", "Lc", "Rc", "Lsc", "Rsc", "Ls1", "Rs1", "Ls2", "Rs2", "Lrs1", "Rrs1",
+            "Lrs2", "Rrs2", "Lcs", "Rcs", "Cs", "Lfh", "Rfh", "Lrh", "Rrh",
+        ],
+    },
+    LayoutFileSpec {
+        name: "30.2",
+        labels: &[
+            "C", "L", "R", "Ls", "Rs", "LFE1", "Cs", "Lsr", "Rsr", "Lss", "Rss", "Lc", "Rc", "Lh",
+            "Ch", "Rh", "LFE2", "Lw", "Rw", "Oh", "Lhs", "Rhs", "Chr", "Lhr", "Rhr", "Cb", "Lb",
+            "Rb", "Ltf", "Rtf", "Ltr", "Rtr",
+        ],
+    },
 ];
 
 /// Where a profile's BRIRs come from.
@@ -102,6 +290,8 @@ pub enum BrirSource {
     Hrir(PathBuf),
     /// One stereo WAV (left ear, right ear) per direction, angles explicit.
     Directions(Vec<DirectionFile>),
+    /// A multichannel WAV whose `ICHL` labels identify a supported numbered layout.
+    LayoutWav(PathBuf),
     /// One multichannel WAV plus a sidecar CSV naming each direction's left and right tracks.
     Mapped { wav: PathBuf, map: PathBuf },
     /// A folder of stereo WAVs named `<DIRECTION>.wav`, left ear first.
@@ -195,6 +385,8 @@ pub enum BrirError {
     Convolver(#[from] convolver::ConvolverError),
     #[error(transparent)]
     Ir(#[from] ir::IrError),
+    #[error("{path}: invalid ICHL chunk: {detail}")]
+    LayoutChunk { path: PathBuf, detail: String },
     #[error("sidecar {path}, line {line}: {detail}")]
     Sidecar {
         path: PathBuf,
@@ -265,6 +457,7 @@ pub fn canonical_name(name: &str) -> Option<&'static str> {
             Speaker::Trl => Some("TBL"),
             Speaker::Trr => Some("TBR"),
             Speaker::Tc => Some("TC"),
+            Speaker::Cs if name.eq_ignore_ascii_case("BC") => Some("BC"),
             Speaker::Cs
             | Speaker::Lc
             | Speaker::Rc
@@ -304,6 +497,25 @@ pub fn canonical_name(name: &str) -> Option<&'static str> {
         "TBL" => Some("TBL"),
         "TBR" => Some("TBR"),
         "TC" | "TOP" => Some("TC"),
+        "FCL" => Some("FCL"),
+        "FCR" => Some("FCR"),
+        "SCL" => Some("SCL"),
+        "SCR" => Some("SCR"),
+        "SL1" => Some("SL1"),
+        "SR1" => Some("SR1"),
+        "SL2" => Some("SL2"),
+        "SR2" => Some("SR2"),
+        "BL1" => Some("BL1"),
+        "BR1" => Some("BR1"),
+        "BL2" => Some("BL2"),
+        "BR2" => Some("BR2"),
+        "BCL" => Some("BCL"),
+        "BCR" => Some("BCR"),
+        "BC" => Some("BC"),
+        "HBC" => Some("HBC"),
+        "DFL" => Some("DFL"),
+        "DFR" => Some("DFR"),
+        "DFC" => Some("DFC"),
         _ => None,
     }
 }
@@ -358,7 +570,7 @@ pub fn preset_angles(preset: AnglePreset, canonical: &str) -> Option<(f32, f32)>
         "TBL" => Some((135.0, top_height)),
         "TBR" => Some((-135.0, top_height)),
         "TC" => Some((0.0, 90.0)),
-        _ => None,
+        _ => three_x_angles(canonical),
     }
 }
 
@@ -367,6 +579,13 @@ pub fn preset_angles(preset: AnglePreset, canonical: &str) -> Option<(f32, f32)>
 /// SR -90, WL 60, WR -60, TFL (45, 45), TFR (-45, 45), TSL (90, 45),
 /// TSR (-90, 45), TBL (135, 45), TBR (-135, 45). `None` for LFE and unknown
 /// names.
+fn three_x_angles(name: &str) -> Option<(f32, f32)> {
+    THREE_X_SLOTS
+        .iter()
+        .find(|(slot, _, _)| slot.eq_ignore_ascii_case(name))
+        .map(|(_, azimuth, elevation)| (*azimuth, *elevation))
+}
+
 pub fn standard_angles(name: &str) -> Option<(f32, f32)> {
     match name {
         "FL" | "FR" | "FC" | "BL" | "BR" | "SL" | "SR" | "WL" | "WR" | "TFL" | "TFR" | "TSL"
@@ -580,10 +799,17 @@ pub fn load_profile(path: &Path) -> Result<Profile, BrirError> {
 /// chunk shorter than its header says) is left to [`prepare`].
 pub fn layout(profile: &Profile) -> Result<Layout, BrirError> {
     let directions = match &profile.brir {
-        BrirSource::Hesuvi(path) => {
-            ordered_layout(path, &HESUVI_TRACK_ORDER, 14, "HeSuVi", profile)?
+        BrirSource::Hesuvi(path) => ordered_layout(
+            path,
+            &HESUVI_TRACK_ORDER,
+            14,
+            HESUVI_2X_TRACKS,
+            "HeSuVi",
+            profile,
+        )?,
+        BrirSource::Hrir(path) => {
+            ordered_layout(path, &HRIR_TRACK_ORDER, 16, HRIR_2X_TRACKS, "hrir", profile)?
         }
-        BrirSource::Hrir(path) => ordered_layout(path, &HRIR_TRACK_ORDER, 16, "hrir", profile)?,
         BrirSource::Directions(files) => {
             let mut rate = SetRate::default();
             let mut directions = Vec::with_capacity(files.len());
@@ -598,6 +824,7 @@ pub fn layout(profile: &Profile) -> Result<Layout, BrirError> {
             }
             directions
         }
+        BrirSource::LayoutWav(path) => layout_wav_layout(path)?,
         BrirSource::Mapped { wav, map } => mapped_layout(wav, map, profile)?,
         BrirSource::Folder(path) => folder_layout(path, profile)?,
     };
@@ -641,6 +868,7 @@ fn ordered_layout(
     path: &Path,
     order: &[&str],
     minimum_tracks: usize,
+    two_x_tracks: usize,
     format: &'static str,
     profile: &Profile,
 ) -> Result<Vec<Direction>, BrirError> {
@@ -661,13 +889,268 @@ fn ordered_layout(
             names.push(speaker);
         }
     }
+    let three_x = tracks > two_x_tracks;
     names
         .into_iter()
         .map(|name| {
-            let (azimuth, elevation) = angles_for(profile, name)?;
+            let (azimuth, elevation) = ordered_angles_for(profile, name, three_x)?;
             Ok(Direction::new(name, azimuth, elevation))
         })
         .collect()
+}
+
+struct JsonCursor<'a> {
+    text: &'a str,
+    offset: usize,
+}
+
+impl<'a> JsonCursor<'a> {
+    fn new(bytes: &'a [u8]) -> Result<Self, String> {
+        Ok(Self {
+            text: std::str::from_utf8(bytes).map_err(|_| "metadata is not UTF-8")?,
+            offset: 0,
+        })
+    }
+
+    fn skip_space(&mut self) {
+        while self.peek().is_some_and(char::is_whitespace) {
+            self.bump();
+        }
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.text[self.offset..].chars().next()
+    }
+
+    fn bump(&mut self) -> Option<char> {
+        let character = self.peek()?;
+        self.offset += character.len_utf8();
+        Some(character)
+    }
+
+    fn expect(&mut self, expected: char) -> Result<(), String> {
+        self.skip_space();
+        match self.bump() {
+            Some(actual) if actual == expected => Ok(()),
+            _ => Err(format!("expected {expected:?}")),
+        }
+    }
+
+    fn string(&mut self) -> Result<String, String> {
+        self.expect('"')?;
+        let mut value = String::new();
+        loop {
+            match self.bump() {
+                Some('"') => return Ok(value),
+                Some('\\') => match self.bump() {
+                    Some('"') => value.push('"'),
+                    Some('\\') => value.push('\\'),
+                    Some('/') => value.push('/'),
+                    Some('b') => value.push('\u{0008}'),
+                    Some('f') => value.push('\u{000c}'),
+                    Some('n') => value.push('\n'),
+                    Some('r') => value.push('\r'),
+                    Some('t') => value.push('\t'),
+                    Some('u') => {
+                        let mut code = 0u32;
+                        for _ in 0..4 {
+                            let digit = self
+                                .bump()
+                                .and_then(|character| character.to_digit(16))
+                                .ok_or_else(|| "invalid Unicode escape".to_owned())?;
+                            code = code * 16 + digit;
+                        }
+                        value.push(
+                            char::from_u32(code)
+                                .ok_or_else(|| "invalid Unicode scalar".to_owned())?,
+                        );
+                    }
+                    _ => return Err("invalid string escape".into()),
+                },
+                Some(character) if !character.is_control() => value.push(character),
+                Some(_) => return Err("unescaped control character".into()),
+                None => return Err("unterminated string".into()),
+            }
+        }
+    }
+}
+
+fn parse_layout_chunk(bytes: &[u8]) -> Result<Vec<String>, String> {
+    let mut json = JsonCursor::new(bytes)?;
+    json.expect('{')?;
+    let mut version = false;
+    let mut tracks = None;
+    loop {
+        let key = json.string()?;
+        json.expect(':')?;
+        match key.as_str() {
+            "version" => {
+                if version {
+                    return Err("duplicate version field".into());
+                }
+                json.skip_space();
+                if json.bump() != Some('1') {
+                    return Err("unsupported version".into());
+                }
+                version = true;
+            }
+            "tracks" => {
+                if tracks.is_some() {
+                    return Err("duplicate tracks field".into());
+                }
+                json.expect('[')?;
+                let mut names = Vec::new();
+                json.skip_space();
+                if json.peek() != Some(']') {
+                    loop {
+                        names.push(json.string()?);
+                        json.skip_space();
+                        if json.peek() != Some(',') {
+                            break;
+                        }
+                        json.bump();
+                    }
+                }
+                json.expect(']')?;
+                tracks = Some(names);
+            }
+            _ => return Err(format!("unknown field {key:?}")),
+        }
+        json.skip_space();
+        if json.peek() != Some(',') {
+            break;
+        }
+        json.bump();
+    }
+    json.expect('}')?;
+    json.skip_space();
+    if json.peek().is_some() {
+        return Err("trailing data".into());
+    }
+    if !version {
+        return Err("missing version field".into());
+    }
+    tracks.ok_or_else(|| "missing tracks field".into())
+}
+
+/// Reports whether a WAV carries an `ICHL` label sequence for one of the
+/// supported numbered layouts.
+pub fn is_layout_wav(path: &Path) -> Result<bool, BrirError> {
+    let tracks = ir::read_wav_header(path)?.tracks;
+    Ok(read_layout_file_spec(path, tracks)?.is_some())
+}
+
+fn layout_chunk_error(path: &Path, detail: impl Into<String>) -> BrirError {
+    BrirError::LayoutChunk {
+        path: path.to_path_buf(),
+        detail: detail.into(),
+    }
+}
+
+fn read_layout_file_spec(
+    path: &Path,
+    wav_tracks: usize,
+) -> Result<Option<&'static LayoutFileSpec>, BrirError> {
+    let io_error = |source| BrirError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let mut file = fs::File::open(path).map_err(io_error)?;
+    let physical = file.metadata().map_err(io_error)?.len();
+    if physical < 12 {
+        return Err(layout_chunk_error(path, "truncated RIFF header"));
+    }
+    let mut riff = [0; 12];
+    file.read_exact(&mut riff).map_err(io_error)?;
+    if &riff[..4] != b"RIFF" || &riff[8..] != b"WAVE" {
+        return Err(layout_chunk_error(path, "not a RIFF WAV file"));
+    }
+    let declared = u64::from(u32::from_le_bytes(
+        riff[4..8]
+            .try_into()
+            .expect("the RIFF size field has four bytes"),
+    ));
+    let end = declared
+        .checked_add(8)
+        .filter(|end| *end >= 12 && *end <= physical)
+        .ok_or_else(|| layout_chunk_error(path, "truncated or oversized RIFF container"))?;
+    let mut found: Option<Vec<String>> = None;
+    let mut offset = 12u64;
+    while offset < end {
+        let header_end = offset
+            .checked_add(8)
+            .filter(|header_end| *header_end <= end)
+            .ok_or_else(|| layout_chunk_error(path, "truncated chunk header"))?;
+        file.seek(SeekFrom::Start(offset)).map_err(io_error)?;
+        let mut chunk = [0; 8];
+        file.read_exact(&mut chunk).map_err(io_error)?;
+        let size = u64::from(u32::from_le_bytes(
+            chunk[4..]
+                .try_into()
+                .expect("the chunk size field has four bytes"),
+        ));
+        let data_end = header_end
+            .checked_add(size)
+            .filter(|data_end| *data_end <= end)
+            .ok_or_else(|| layout_chunk_error(path, "truncated or oversized chunk"))?;
+        let next = data_end
+            .checked_add(size & 1)
+            .filter(|next| *next <= end)
+            .ok_or_else(|| layout_chunk_error(path, "truncated chunk padding"))?;
+        if &chunk[..4] == b"ICHL" {
+            if found.is_some() {
+                return Err(layout_chunk_error(path, "duplicate ICHL chunk"));
+            }
+            if size > 4096 {
+                return Err(layout_chunk_error(path, "oversized ICHL chunk"));
+            }
+            let mut payload = vec![0; size as usize];
+            file.read_exact(&mut payload).map_err(io_error)?;
+            let tracks = parse_layout_chunk(&payload)
+                .map_err(|error| layout_chunk_error(path, format!("invalid JSON: {error}")))?;
+            if tracks.len() != wav_tracks {
+                return Err(layout_chunk_error(
+                    path,
+                    "track labels do not match the WAV track count",
+                ));
+            }
+            found = Some(tracks);
+        }
+        offset = next;
+    }
+    let Some(tracks) = found else {
+        return Ok(None);
+    };
+    Ok(LAYOUT_FILE_SPECS.iter().find(|spec| {
+        tracks.len() == spec.labels.len() * 2
+            && spec.labels.iter().enumerate().all(|(index, label)| {
+                tracks[index * 2] == format!("{label}-left")
+                    && tracks[index * 2 + 1] == format!("{label}-right")
+            })
+    }))
+}
+
+fn required_layout_file_spec(
+    path: &Path,
+    tracks: usize,
+) -> Result<&'static LayoutFileSpec, BrirError> {
+    read_layout_file_spec(path, tracks)?
+        .ok_or_else(|| layout_chunk_error(path, "labels do not match a supported numbered layout"))
+}
+
+fn layout_wav_layout(path: &Path) -> Result<Vec<Direction>, BrirError> {
+    let tracks = ir::read_wav_header(path)?.tracks;
+    let spec = required_layout_file_spec(path, tracks)?;
+    let speakers = ssr_types::channel_layout_preset(spec.name)
+        .expect("every layout-file table names an SSR layout preset");
+    Ok(speakers
+        .iter()
+        .filter_map(|speaker| {
+            speaker
+                .angles()
+                .map(|(azimuth, elevation)| Direction::new(speaker.name(), azimuth, elevation))
+        })
+        .collect())
 }
 
 fn folder_layout(path: &Path, profile: &Profile) -> Result<Vec<Direction>, BrirError> {
@@ -782,11 +1265,19 @@ fn load_brir_source(source: &BrirSource, profile: &Profile) -> Result<LoadedBrir
     // Every declared direction is kept, silent ones included, so the layout
     // is what the headers say (`layout`, ADR 0016's 2026-10-15 amendment).
     let loaded = match source {
-        BrirSource::Hesuvi(path) => {
-            load_ordered_wav(path, &HESUVI_TRACK_ORDER, 14, "HeSuVi", profile)
+        BrirSource::Hesuvi(path) => load_ordered_wav(
+            path,
+            &HESUVI_TRACK_ORDER,
+            14,
+            HESUVI_2X_TRACKS,
+            "HeSuVi",
+            profile,
+        ),
+        BrirSource::Hrir(path) => {
+            load_ordered_wav(path, &HRIR_TRACK_ORDER, 16, HRIR_2X_TRACKS, "hrir", profile)
         }
-        BrirSource::Hrir(path) => load_ordered_wav(path, &HRIR_TRACK_ORDER, 16, "hrir", profile),
         BrirSource::Directions(files) => load_direction_files(files),
+        BrirSource::LayoutWav(path) => load_layout_wav(path),
         BrirSource::Mapped { wav, map } => load_mapped_wav(wav, map, profile),
         BrirSource::Folder(path) => load_folder(path, profile),
     }?;
@@ -800,6 +1291,7 @@ fn load_ordered_wav(
     path: &Path,
     order: &[&str],
     minimum_tracks: usize,
+    two_x_tracks: usize,
     format: &'static str,
     profile: &Profile,
 ) -> Result<LoadedBrir, BrirError> {
@@ -834,6 +1326,7 @@ fn load_ordered_wav(
         by_name.get_mut(speaker).expect("speaker was inserted")[ear] = Some(samples);
     }
 
+    let three_x = tracks > two_x_tracks;
     let mut directions = Vec::new();
     let mut irs = Vec::new();
     for name in direction_order {
@@ -847,7 +1340,7 @@ fn load_ordered_wav(
                 format,
             });
         };
-        let (azimuth, elevation) = angles_for(profile, name)?;
+        let (azimuth, elevation) = ordered_angles_for(profile, name, three_x)?;
         directions.push(Direction::new(name, azimuth, elevation));
         irs.push([left, right]);
     }
@@ -866,21 +1359,34 @@ fn load_ordered_wav(
     })
 }
 
-fn angles_for(profile: &Profile, name: &str) -> Result<(f32, f32), BrirError> {
+fn angle_override(profile: &Profile, name: &str) -> Option<(f32, f32)> {
     let requested_canonical = canonical_name(name);
-    if let Some((_, azimuth, elevation)) =
-        profile
-            .angle_overrides
-            .iter()
-            .find(|(override_name, _, _)| {
-                override_name.eq_ignore_ascii_case(name)
-                    || requested_canonical.is_some()
-                        && canonical_name(override_name) == requested_canonical
-            })
-    {
-        return Ok((*azimuth, *elevation));
-    }
-    preset_angles(profile.angles, name).ok_or_else(|| BrirError::UnknownDirection(name.to_owned()))
+    profile
+        .angle_overrides
+        .iter()
+        .find(|(override_name, _, _)| {
+            override_name.eq_ignore_ascii_case(name)
+                || requested_canonical.is_some()
+                    && canonical_name(override_name) == requested_canonical
+        })
+        .map(|(_, azimuth, elevation)| (*azimuth, *elevation))
+}
+
+fn angles_for(profile: &Profile, name: &str) -> Result<(f32, f32), BrirError> {
+    angle_override(profile, name)
+        .or_else(|| preset_angles(profile.angles, name))
+        .ok_or_else(|| BrirError::UnknownDirection(name.to_owned()))
+}
+
+fn ordered_angles_for(
+    profile: &Profile,
+    name: &str,
+    three_x: bool,
+) -> Result<(f32, f32), BrirError> {
+    angle_override(profile, name)
+        .or_else(|| three_x.then(|| three_x_angles(name)).flatten())
+        .or_else(|| preset_angles(profile.angles, name))
+        .ok_or_else(|| BrirError::UnknownDirection(name.to_owned()))
 }
 
 fn load_direction_files(files: &[DirectionFile]) -> Result<LoadedBrir, BrirError> {
@@ -930,6 +1436,30 @@ fn load_direction_files(files: &[DirectionFile]) -> Result<LoadedBrir, BrirError
     }
     Ok(LoadedBrir {
         rate: rate.expect("nonempty files set a rate"),
+        directions,
+        irs,
+    })
+}
+
+fn load_layout_wav(path: &Path) -> Result<LoadedBrir, BrirError> {
+    let wav = ir::read_wav_raw(path)?;
+    let spec = required_layout_file_spec(path, wav.channels.len())?;
+    let speakers = ssr_types::channel_layout_preset(spec.name)
+        .expect("every layout-file table names an SSR layout preset");
+    let mut directions = Vec::with_capacity(speakers.len());
+    let mut irs = Vec::with_capacity(speakers.len());
+    for (channel, speaker) in speakers.iter().enumerate() {
+        let Some((azimuth, elevation)) = speaker.angles() else {
+            continue;
+        };
+        directions.push(Direction::new(speaker.name(), azimuth, elevation));
+        irs.push([
+            wav.channels[channel * 2].clone(),
+            wav.channels[channel * 2 + 1].clone(),
+        ]);
+    }
+    Ok(LoadedBrir {
+        rate: wav.rate,
         directions,
         irs,
     })
@@ -1246,4 +1776,31 @@ fn trim_common_leading_delay(irs: &mut [[Vec<f32>; 2]], rate: u32) -> usize {
         }
     }
     trim
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn layout_file_label_tables_match_ssr_presets() {
+        for spec in LAYOUT_FILE_SPECS {
+            let preset = ssr_types::channel_layout_preset(spec.name).unwrap();
+            assert_eq!(spec.labels.len(), preset.len(), "{}", spec.name);
+        }
+    }
+
+    #[test]
+    fn three_x_slots_have_unique_positions() {
+        for (index, (name, azimuth, elevation)) in THREE_X_SLOTS.iter().enumerate() {
+            assert!(
+                THREE_X_SLOTS[..index]
+                    .iter()
+                    .all(|(_, old_azimuth, old_elevation)| {
+                        old_azimuth != azimuth || old_elevation != elevation
+                    }),
+                "{name} repeats ({azimuth}, {elevation})"
+            );
+        }
+    }
 }

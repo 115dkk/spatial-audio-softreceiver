@@ -132,7 +132,7 @@ fn channels_map(names: &[&str]) -> String {
 fn hesuvi_layout_equals_prepare_for_every_track_count() {
     let directory = TestDirectory::new("hesuvi");
     let mut seen = Vec::new();
-    for tracks in (14..=30).step_by(2) {
+    for tracks in (14..=80).step_by(2) {
         let path = directory.join(&format!("hesuvi-{tracks}.wav"));
         write_wav(&path, 48_000, &impulse_tracks(tracks, 48));
         let directions = assert_matches_prepare(&profile(BrirSource::Hesuvi(path)));
@@ -151,15 +151,18 @@ fn hesuvi_layout_equals_prepare_for_every_track_count() {
             assert_eq!(directions[9].azimuth_deg, 45.0);
             assert_eq!(directions[9].elevation_deg, 45.0);
         }
+        if tracks == 80 {
+            assert_eq!(directions.last().unwrap().name, "DFC");
+        }
     }
     assert_eq!(seen.first(), Some(&(14, 7)));
-    assert_eq!(seen.last(), Some(&(30, 15)));
+    assert_eq!(seen.last(), Some(&(80, 40)));
 }
 
 #[test]
 fn hrir_layout_equals_prepare_and_skips_lfe() {
     let directory = TestDirectory::new("hrir");
-    for tracks in [16, 20, 32] {
+    for tracks in (16..=82).step_by(2) {
         let path = directory.join(&format!("hrir-{tracks}.wav"));
         write_wav(&path, 44_100, &impulse_tracks(tracks, 48));
         let directions = assert_matches_prepare(&profile(BrirSource::Hrir(path)));
