@@ -25,7 +25,7 @@ import {
   toggle,
 } from './kit';
 import { sceneMap } from './map';
-import { lanesOf, type Page } from './overview';
+import { laneTitle, lanesOf, type Page } from './overview';
 
 const KINDS: readonly ProfileKind[] = ['headphones', 'speakers'];
 const LAYOUTS = Object.keys(SPEAKER_LAYOUTS) as SpeakerLayout[];
@@ -354,7 +354,9 @@ export function profilePage(b: Build, engineNow: EngineStatus | null): Page {
   const { snapshot } = b.ctx;
   const running = snapshot.phase.kind === 'running';
   const engine = running ? engineNow : null;
-  const map = sceneMap(engine?.directions ?? snapshot.profile.directions, engine !== null, lanesOf(snapshot));
+  const map = sceneMap(engine?.directions ?? snapshot.profile.directions, engine !== null, lanesOf(snapshot), (lane) =>
+    laneTitle(snapshot, lane),
+  );
   if (engine !== null) map.update(engine);
   const element = h(
     'div',

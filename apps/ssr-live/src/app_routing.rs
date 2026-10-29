@@ -193,6 +193,7 @@ mod tests {
         AudioApp {
             pid: 42,
             exe: "player.exe".into(),
+            path: r"c:\apps\player.exe".into(),
             display_name: "Player".into(),
             device: DeviceId("observed-device".into()),
             active: true,

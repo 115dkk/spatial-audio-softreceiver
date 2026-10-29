@@ -55,6 +55,7 @@ describe('the settings panels', () => {
       ko.settings.startup,
       ko.settings.language,
       ko.skins.label,
+      ko.entrance.label,
       ko.settings.outputPath,
       ko.settings.routing,
       ko.asio,
@@ -66,8 +67,8 @@ describe('the settings panels', () => {
   it('put each heading beside its controls, the heading naming a lone select', () => {
     mounted(fixture('ready'));
     const groups = $$('.settings .settings-group');
-    // The eight above and the PC and driver facts.
-    expect(groups).toHaveLength(10);
+    // The nine above and the PC and driver facts.
+    expect(groups).toHaveLength(11);
     for (const group of groups) {
       expect([...group.children].map((child) => child.className)).toEqual(['panel-title', 'settings-group-body']);
       expect(group.children[0]?.tagName).toBe('H2');
@@ -75,6 +76,7 @@ describe('the settings panels', () => {
     const lone: [string, string][] = [
       ['language', ko.settings.language],
       ['skin', ko.skins.label],
+      ['entrance', ko.entrance.label],
       ['output-path', ko.settings.outputPath],
     ];
     for (const [key, title] of lone) {

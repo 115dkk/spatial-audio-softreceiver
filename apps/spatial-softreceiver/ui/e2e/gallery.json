@@ -13,6 +13,7 @@
   "groups": [
     { "id": "wizard", "title": "처음 설정" },
     { "id": "status", "title": "상태" },
+    { "id": "apps", "title": "앱 소리 입구" },
     { "id": "profile", "title": "프로필" },
     { "id": "upmix", "title": "업믹스" },
     { "id": "asio", "title": "ASIO 입구" },
@@ -21,7 +22,10 @@
     { "id": "window", "title": "작은 창" }
   ],
   "scenarios": [
-    { "name": "setup-welcome", "group": "wizard", "title": "환영", "fixture": "setup-welcome", "tab": null },
+    { "name": "setup-welcome", "group": "wizard", "title": "환영(입구 고르기)", "fixture": "setup-welcome", "tab": null },
+    { "name": "setup-apps-unsupported", "group": "wizard", "title": "앱 소리 입구를 쓸 수 없는 Windows(드라이버 입구로 바꾸기)", "fixture": "setup-apps-unsupported", "tab": null },
+    { "name": "setup-choose-discard", "group": "wizard", "title": "버리는 출력 고르기", "fixture": "setup-choose-discard", "tab": null },
+    { "name": "setup-choose-discard-empty", "group": "wizard", "title": "고를 버리는 출력이 없음", "fixture": "setup-choose-discard-empty", "tab": null },
     { "name": "setup-unsupported", "group": "wizard", "title": "지원하지 않는 Windows", "fixture": "setup-unsupported", "tab": null },
     { "name": "setup-not-test-signing", "group": "wizard", "title": "시험서명 모드가 꺼짐", "fixture": "setup-not-test-signing", "tab": null },
     { "name": "setup-driver-not-installed", "group": "wizard", "title": "드라이버 설치 전", "fixture": "setup-driver-not-installed", "tab": null },
@@ -64,6 +68,25 @@
     { "name": "running", "group": "status", "title": "켜짐(입구 셋과 계측)", "fixture": "running", "tab": "status" },
     { "name": "running-reconnecting", "group": "status", "title": "출력에 다시 연결하는 중", "fixture": "running-reconnecting", "tab": "status" },
     { "name": "faulted", "group": "status", "title": "다시 연결하지 못해 멈춤", "fixture": "faulted", "tab": "status" },
+
+    { "name": "ready-apps", "group": "apps", "title": "꺼짐, 주 차선에 앱 하나", "fixture": "ready-apps", "tab": "status" },
+    {
+      "name": "ready-apps-picker",
+      "group": "apps",
+      "title": "음악 차선의 앱 고르기(전면 패널은 표시부 안의 목록)",
+      "fixture": "ready-apps",
+      "tab": "status",
+      "steps": [{ "focus": "[data-key=\"capture-app-1\"]" }],
+      "skinSteps": { "panel": [{ "click": "[data-key=\"capture-app-1\"]" }, { "wait": "[data-region=\"capture-apps-1\"]" }] }
+    },
+    { "name": "ready-apps-no-app", "group": "apps", "title": "받을 앱을 고르지 않고 켬", "fixture": "ready-apps-no-app", "tab": "status" },
+    { "name": "ready-apps-not-running", "group": "apps", "title": "고른 앱이 실행 중이 아님", "fixture": "ready-apps-not-running", "tab": "status" },
+    { "name": "running-apps", "group": "apps", "title": "켜짐, 앱의 소리를 받는 중(고르기 잠김)", "fixture": "running-apps", "tab": "status" },
+    { "name": "running-apps-waiting", "group": "apps", "title": "받던 앱이 끝나 다시 실행되기를 기다림", "fixture": "running-apps-waiting", "tab": "status" },
+    { "name": "running-apps-exclusive", "group": "apps", "title": "켜짐, 출력 장치를 독점으로 엶", "fixture": "running-apps-exclusive", "tab": "status" },
+    { "name": "running-apps-exclusive-settings", "group": "apps", "title": "켜짐, 독점 켜짐(다음에 켤 때 바뀜)", "fixture": "running-apps-exclusive", "tab": "settings" },
+    { "name": "ready-apps-settings", "group": "apps", "title": "설정: 입구, 버리는 출력, 독점 켜기, 커널 스트리밍 없음", "fixture": "ready-apps", "tab": "settings" },
+    { "name": "running-apps-settings", "group": "apps", "title": "켜짐, 입구와 버리는 출력은 끈 뒤에 바꿈", "fixture": "running-apps", "tab": "settings" },
 
     { "name": "ready-profile", "group": "profile", "title": "스피커 2.0, 처음 상태", "fixture": "ready", "tab": "profile" },
     {
@@ -176,6 +199,8 @@
       "skinSteps": { "panel": [{ "wait": "#upmix-info" }] }
     },
     { "name": "ready-settings-720x480", "group": "window", "title": "설정, 720×480", "fixture": "ready", "tab": "settings", "size": [720, 480], "schemes": ["light"] },
-    { "name": "setup-choose-output-720x480", "group": "window", "title": "출력 고르기, 720×480", "fixture": "setup-choose-output", "tab": null, "size": [720, 480], "schemes": ["light"] }
+    { "name": "setup-choose-output-720x480", "group": "window", "title": "출력 고르기, 720×480", "fixture": "setup-choose-output", "tab": null, "size": [720, 480], "schemes": ["light"] },
+    { "name": "setup-welcome-720x480", "group": "window", "title": "입구 고르기, 720×480", "fixture": "setup-welcome", "tab": null, "size": [720, 480], "schemes": ["light"] },
+    { "name": "running-apps-720x480", "group": "window", "title": "앱 소리 입구, 켜짐, 720×480", "fixture": "running-apps", "tab": "status", "size": [720, 480], "schemes": ["light"] }
   ]
 }

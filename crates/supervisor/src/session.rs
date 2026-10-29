@@ -84,6 +84,9 @@ pub enum SessionNotice {
     OutputCadenceReopen {
         period_ms: f32,
     },
+    /// Every selected process-loopback source ended; the wrapped engine keeps
+    /// running in silence while the supervisor waits for another process.
+    CaptureEnded,
     Fault(EngineFault),
 }
 
@@ -349,6 +352,8 @@ impl Session {
             language: ssr_types::app::Language::Ko,
             language_choice: None,
             skin: ssr_types::app::Skin::Standard,
+            entrance: ssr_types::app::EntranceKind::Driver,
+            app_capture: Default::default(),
             output_path: ssr_types::app::OutputPath::Wasapi,
             phase,
             profile: crate::machine::default_profile_view(),

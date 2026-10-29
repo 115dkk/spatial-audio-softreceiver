@@ -112,11 +112,94 @@ pub mod supervisor {
         }
     }
 
+    #[doc = "앱 소리 입구는 Windows 빌드 {min_build} 이상이 필요합니다. 이 PC는 그보다 이전 버전이므로 드라이버 입구만 쓸 수 있습니다."]
+    pub fn app_capture_os_requirement(
+        language: Language,
+        min_build: impl core::fmt::Display,
+    ) -> String {
+        match language {
+            Language::Ko => format!(
+                "앱 소리 입구는 Windows 빌드 {min_build} 이상이 필요합니다. 이 PC는 그보다 이전 버전이므로 드라이버 입구만 쓸 수 있습니다."
+            ),
+            Language::En => format!(
+                "The app-sound entrance requires Windows build {min_build} or newer. This PC has an older version, so only the driver entrance is available."
+            ),
+        }
+    }
+
+    #[doc = "앱이 다시 실행되어 소리를 다시 받습니다: {app}"]
+    pub fn app_capture_reattached(language: Language, app: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("앱이 다시 실행되어 소리를 다시 받습니다: {app}"),
+            Language::En => format!("The app started again. Capturing its sound again: {app}"),
+        }
+    }
+
+    #[doc = "앱의 소리 재생 대기 중: {app}"]
+    pub fn app_capture_waiting(language: Language, app: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("앱의 소리 재생 대기 중: {app}"),
+            Language::En => format!("Waiting for the app to play sound: {app}"),
+        }
+    }
+
     #[doc = "앱의 출력 설정을 바꿨습니다: {app}"]
     pub fn app_entrance_moved(language: Language, app: impl core::fmt::Display) -> String {
         match language {
             Language::Ko => format!("앱의 출력 설정을 바꿨습니다: {app}"),
             Language::En => format!("Changed the app's output setting: {app}"),
+        }
+    }
+
+    #[doc = "앱의 소리를 버리는 출력으로 보내지 못해 켜지 않았습니다: {app}"]
+    pub fn app_output_change_failed(language: Language, app: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => {
+                format!("앱의 소리를 버리는 출력으로 보내지 못해 켜지 않았습니다: {app}")
+            }
+            Language::En => format!(
+                "Could not send the app's sound to the discard output, so capture did not turn on: {app}"
+            ),
+        }
+    }
+
+    #[doc = "앱의 출력을 되돌렸습니다: {app}"]
+    pub fn app_output_restored(language: Language, app: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("앱의 출력을 되돌렸습니다: {app}"),
+            Language::En => format!("Restored the app's output: {app}"),
+        }
+    }
+
+    #[doc = "앱의 출력을 이전 설정으로 되돌리지 못했습니다: {app}"]
+    pub fn app_output_undo_failed(language: Language, app: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!("앱의 출력을 이전 설정으로 되돌리지 못했습니다: {app}"),
+            Language::En => format!("Could not restore the app's previous output setting: {app}"),
+        }
+    }
+
+    #[doc = "앱이 실행 중이 아니어서 출력이 버리는 출력으로 남아 있습니다. 되돌리려면 이 프로그램을 열어 둔 채 해당 앱을 한 번 실행하십시오: {app}"]
+    pub fn app_output_undo_pending(language: Language, app: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!(
+                "앱이 실행 중이 아니어서 출력이 버리는 출력으로 남아 있습니다. 되돌리려면 이 프로그램을 열어 둔 채 해당 앱을 한 번 실행하십시오: {app}"
+            ),
+            Language::En => format!(
+                "The app is not running, so its output is still set to the discard output. To restore it, run the app once while this program is open: {app}"
+            ),
+        }
+    }
+
+    #[doc = "앱들의 출력을 바꾸기 전에 남기는 기록을 저장하지 못했습니다. 아무것도 바꾸지 않았으며 켜지 않았습니다."]
+    pub fn app_outputs_record_failed(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "앱들의 출력을 바꾸기 전에 남기는 기록을 저장하지 못했습니다. 아무것도 바꾸지 않았으며 켜지 않았습니다."
+            }
+            Language::En => {
+                "Could not save the record required before changing the apps' outputs. Nothing was changed, and capture did not turn on."
+            }
         }
     }
 
@@ -188,11 +271,51 @@ pub mod supervisor {
         }
     }
 
+    #[doc = "같은 앱을 여러 개 실행해 어느 쪽 소리를 받을지 정하지 못했습니다. 하나만 남기고 나머지는 종료한 뒤 다시 켜십시오: {app}"]
+    pub fn capture_app_ambiguous(language: Language, app: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!(
+                "같은 앱을 여러 개 실행해 어느 쪽 소리를 받을지 정하지 못했습니다. 하나만 남기고 나머지는 종료한 뒤 다시 켜십시오: {app}"
+            ),
+            Language::En => format!(
+                "Several copies of the app are running, so it is unclear which one to capture. Leave only one open, then turn it on again: {app}"
+            ),
+        }
+    }
+
+    #[doc = "켜기 전에 소리를 받을 앱을 고르십시오."]
+    pub fn capture_app_first(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "켜기 전에 소리를 받을 앱을 고르십시오.",
+            Language::En => "Choose an app to capture before turning it on.",
+        }
+    }
+
+    #[doc = "앱의 소리 세션이 없습니다. 이 앱을 실행하고 소리를 재생한 뒤 켜십시오: {app}"]
+    pub fn capture_app_not_running(language: Language, app: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!(
+                "앱의 소리 세션이 없습니다. 이 앱을 실행하고 소리를 재생한 뒤 켜십시오: {app}"
+            ),
+            Language::En => format!(
+                "The app has no audio session. Start it and play some sound, then turn it on: {app}"
+            ),
+        }
+    }
+
     #[doc = "캡처 장치와의 연결이 끊어졌습니다."]
     pub fn capture_disconnected(language: Language) -> &'static str {
         match language {
             Language::Ko => "캡처 장치와의 연결이 끊어졌습니다.",
             Language::En => "The capture device disconnected.",
+        }
+    }
+
+    #[doc = "주 차선과 음악 차선에는 서로 다른 앱을 골라야 합니다."]
+    pub fn capture_same_app(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "주 차선과 음악 차선에는 서로 다른 앱을 골라야 합니다.",
+            Language::En => "Choose different apps for the main and music lanes.",
         }
     }
 
@@ -256,11 +379,35 @@ pub mod supervisor {
         }
     }
 
+    #[doc = "먼저 끈 뒤 소리를 받을 앱을 바꾸십시오."]
+    pub fn disable_before_changing_apps(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "먼저 끈 뒤 소리를 받을 앱을 바꾸십시오.",
+            Language::En => "Turn it off before changing the apps to capture.",
+        }
+    }
+
+    #[doc = "먼저 끈 뒤 입구를 바꾸십시오."]
+    pub fn disable_before_changing_entrance(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "먼저 끈 뒤 입구를 바꾸십시오.",
+            Language::En => "Turn it off before changing the entrance.",
+        }
+    }
+
     #[doc = "먼저 끈 뒤 출력을 바꾸십시오."]
     pub fn disable_before_changing_output(language: Language) -> &'static str {
         match language {
             Language::Ko => "먼저 끈 뒤 출력을 바꾸십시오.",
             Language::En => "Turn it off before changing the output.",
+        }
+    }
+
+    #[doc = "소리를 듣는 장치는 버리는 출력으로 고를 수 없습니다."]
+    pub fn discard_is_output(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "소리를 듣는 장치는 버리는 출력으로 고를 수 없습니다.",
+            Language::En => "The discard output cannot be the device you listen on.",
         }
     }
 
@@ -428,6 +575,16 @@ pub mod supervisor {
         }
     }
 
+    #[doc = "앱 소리 입구에서는 커널 스트리밍 대신 일반 방식으로 출력을 엽니다."]
+    pub fn ks_not_for_app_capture(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "앱 소리 입구에서는 커널 스트리밍 대신 일반 방식으로 출력을 엽니다.",
+            Language::En => {
+                "The app-sound entrance opens the output in the usual way instead of using kernel streaming."
+            }
+        }
+    }
+
     #[doc = "Kernel Streaming으로 출력을 열지 못해 WASAPI 독점 모드를 씁니다: {detail}"]
     pub fn ks_unavailable(language: Language, detail: impl core::fmt::Display) -> String {
         match language {
@@ -464,6 +621,18 @@ pub mod supervisor {
             }
             Language::En => {
                 "The virtual audio device for games and other apps could not be found. Check the driver status."
+            }
+        }
+    }
+
+    #[doc = "고른 출력 외에는 앱의 원래 소리를 보낼 장치가 없습니다. 쓰지 않는 HDMI 출력이나 가상 케이블을 연결하거나 켠 뒤 다시 확인하십시오."]
+    pub fn no_discard_output(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "고른 출력 외에는 앱의 원래 소리를 보낼 장치가 없습니다. 쓰지 않는 HDMI 출력이나 가상 케이블을 연결하거나 켠 뒤 다시 확인하십시오."
+            }
+            Language::En => {
+                "There is no device other than the selected output to receive the apps' original sound. Connect or enable an unused HDMI output or a virtual cable, then check again."
             }
         }
     }
@@ -507,6 +676,18 @@ pub mod supervisor {
             Language::En => format!(
                 "The output device identifier changed, so it was found again by name: {name}"
             ),
+        }
+    }
+
+    #[doc = "이 장치는 버리는 출력으로 쓰고 있습니다. 다른 출력 장치를 고르거나 버리는 출력을 먼저 바꾸십시오."]
+    pub fn output_is_discard(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "이 장치는 버리는 출력으로 쓰고 있습니다. 다른 출력 장치를 고르거나 버리는 출력을 먼저 바꾸십시오."
+            }
+            Language::En => {
+                "This device is the discard output. Choose another output device or change the discard output first."
+            }
         }
     }
 
@@ -712,6 +893,18 @@ pub mod supervisor {
         }
     }
 
+    #[doc = "저장한 버리는 출력을 찾지 못했습니다({name}). 다른 장치를 고르십시오."]
+    pub fn stored_discard_missing(language: Language, name: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => {
+                format!("저장한 버리는 출력을 찾지 못했습니다({name}). 다른 장치를 고르십시오.")
+            }
+            Language::En => format!(
+                "The saved discard output could not be found ({name}). Choose another device."
+            ),
+        }
+    }
+
     #[doc = "저장된 출력 장치를 찾을 수 없습니다: {name}"]
     pub fn stored_output_missing(language: Language, name: impl core::fmt::Display) -> String {
         match language {
@@ -762,12 +955,30 @@ pub mod guard {
         }
     }
 
+    #[doc = "지난번에 앱이 예기치 않게 종료되어 앱들의 출력을 되돌렸습니다."]
+    pub fn marker_app_exited_apps(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "지난번에 앱이 예기치 않게 종료되어 앱들의 출력을 되돌렸습니다.",
+            Language::En => "The app exited unexpectedly. The apps' outputs have been restored.",
+        }
+    }
+
     #[doc = "다시 시작한 뒤에도 소리 처리가 멈춰 기본 오디오 장치를 되돌렸습니다."]
     pub fn marker_restart_failed(language: Language) -> &'static str {
         match language {
             Language::Ko => "다시 시작한 뒤에도 소리 처리가 멈춰 기본 오디오 장치를 되돌렸습니다.",
             Language::En => {
                 "Audio processing stopped responding after restarting. The default audio devices have been restored."
+            }
+        }
+    }
+
+    #[doc = "다시 시작한 뒤에도 소리 처리가 멈춰 앱들의 출력을 되돌렸습니다."]
+    pub fn marker_restart_failed_apps(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "다시 시작한 뒤에도 소리 처리가 멈춰 앱들의 출력을 되돌렸습니다.",
+            Language::En => {
+                "Audio processing stopped responding after restarting. The apps' outputs have been restored."
             }
         }
     }
@@ -788,6 +999,18 @@ pub mod guard {
             }
             Language::En => {
                 "The app stopped responding while it was the default audio device. The previous devices have been restored."
+            }
+        }
+    }
+
+    #[doc = "앱들의 출력을 바꾼 뒤 프로그램의 응답이 없어 이전 출력으로 되돌렸습니다."]
+    pub fn marker_stuck_apps(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "앱들의 출력을 바꾼 뒤 프로그램의 응답이 없어 이전 출력으로 되돌렸습니다."
+            }
+            Language::En => {
+                "The program stopped responding after changing the apps' outputs. Their previous outputs have been restored."
             }
         }
     }

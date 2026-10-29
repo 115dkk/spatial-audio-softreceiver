@@ -3,7 +3,7 @@
 // beside the output, and every other meter in one table below. Everything is
 // built once a frame; the 30 Hz meters only change text nodes and attributes.
 
-import type { AsioStatus, EndpointStatus, EndpointUpmixView, EngineStatus, Snapshot, UpmixerChoice } from '../../bindings';
+import type { AsioStatus, CaptureState, EndpointStatus, EndpointUpmixView, EngineStatus, Snapshot, UpmixerChoice } from '../../bindings';
 import { type Child, h, liveText, setAttr, svg } from '../../dom';
 import {
   chainErrorEntries,
@@ -21,6 +21,21 @@ import {
   oneDecimal,
 } from '../../format';
 import { ASIO_DEFAULTS } from '../../guard';
+import {
+  CAPTURE_LANES,
+  PASS_LANE,
+  appLabel,
+  appMode,
+  captureOf,
+  captureStateWord,
+  captureTone,
+  chooseApp,
+  laneName,
+  laneView,
+  pickerKey,
+  pickerOptions,
+  pickersLocked,
+} from '../../screens/entrance';
 import { bypassReason } from '../../screens/upmix';
 import { text } from '../../text';
 import { listening } from './health';
@@ -29,8 +44,11 @@ import {
   ASIO_LANE,
   type Build,
   type Tone,
+  badge,
+  choose,
   cls,
   entrance,
+  hint,
   laneMark,
   para,
   plain,
@@ -54,11 +72,26 @@ export interface Page {
   traces?(now: number): void;
 }
 
-/** The entrances on the map and in the table: the three endpoints, and the ASIO input while it is on. */
+/**
+ * The entrances on the map and in the table: the three endpoints, or the
+ * app-sound entrance's main and music lanes (ADR 0043), and the ASIO input
+ * while it is on.
+ */
 export function lanesOf(snapshot: Snapshot): number[] {
-  const lanes = [0, 1, 2];
+  const lanes = appMode(snapshot) ? [...CAPTURE_LANES] : [0, 1, 2];
   if ((snapshot.asio ?? ASIO_DEFAULTS).enabled) lanes.push(ASIO_LANE);
   return lanes;
+}
+
+/** An entrance's name: the endpoint's, or the app-sound lane's. */
+export function laneTitle(snapshot: Snapshot, lane: number): string {
+  return appMode(snapshot) && lane !== ASIO_LANE ? laneName(lane) : entrance(lane).name;
+}
+
+/** How the output opens: the app-sound entrance's shared or exclusive WASAPI, else the output path. */
+function outputWay(snapshot: Snapshot): string {
+  if (appMode(snapshot)) return captureOf(snapshot).exclusive ? text.meters.exclusive : text.meters.shared;
+  return snapshot.output_path === 'kernel_streaming' ? text.meters.kernelStreaming : text.settings.outputPathWasapi;
 }
 
 // The KPI strip (law 3: a number with its unit and its basis) --------------
@@ -196,11 +229,11 @@ export function upmixState(
   }
 }
 
-/** The formats coming in now, by name: PCM, direct, the codecs. */
-function formatNames(engine: EngineStatus): string {
+/** The formats coming in now on `lanes`, by name: PCM, direct, the codecs. */
+function formatNames(engine: EngineStatus, lanes: readonly number[]): string {
   const names = new Set<string>();
-  for (const endpoint of engine.endpoints.slice(0, SHOWN)) {
-    const format = endpoint.format;
+  for (const lane of lanes) {
+    const format = engine.endpoints[lane]?.format ?? null;
     if (format === null) continue;
     names.add(
       format.kind === 'pcm'
@@ -236,22 +269,30 @@ function flow(b: Build, running: boolean): Page {
   const c = text.console;
   const { snapshot } = b.ctx;
   const lanes = lanesOf(snapshot);
+  // The app-sound entrance's lanes name their app and its state (ADR 0043).
+  const apps = appMode(snapshot);
   const inputs = lanes.map((lane) => {
-    const line = liveText(text.status.engineOff);
+    const capture = apps && lane !== ASIO_LANE ? laneView(snapshot, lane) : null;
+    const fixed = apps && lane !== ASIO_LANE;
+    const line = liveText(
+      fixed ? (capture === null ? text.profile.none : `${appLabel(capture)} · ${captureStateWord(capture.state)}`) : text.status.engineOff,
+    );
     const stub = h('span', { class: `cn-stub cn-lane-${lane}`, 'aria-hidden': 'true' });
     const element = h(
       'li',
       { class: `cn-node cn-node-in`, 'data-lane': lane },
-      h('span', { class: 'cn-node-name' }, laneMark(lane), h('span', { class: 'cn-ellipsis' }, entrance(lane).name)),
-      h('span', { class: 'cn-node-line cn-ellipsis' }, line.node),
+      h('span', { class: 'cn-node-name' }, laneMark(lane), h('span', { class: 'cn-ellipsis' }, laneTitle(snapshot, lane))),
+      h('span', { class: cls('cn-node-line cn-ellipsis', capture === null && fixed && 'cn-muted') }, line.node),
       stub,
     );
-    return { lane, line, stub, element };
+    // A lane takes sound only with an app (ADR 0043); the driver's endpoints always can.
+    return { lane, line, stub, element, fixed, open: !fixed || capture !== null };
   });
+  const taking = inputs.filter((input) => input.lane !== ASIO_LANE && input.open).map((input) => input.lane);
 
   const formats = liveText(running ? text.status.noInput : text.status.engineOff);
   const upmixLines: Child[] = snapshot.upmix.endpoints
-    .filter((view) => view.effective !== 'off' && view.endpoint < SHOWN)
+    .filter((view) => view.effective !== 'off' && view.endpoint < SHOWN && (!apps || CAPTURE_LANES.includes(view.endpoint)))
     .map((view) => {
       const state = upmixState(snapshot, view);
       return h(
@@ -262,9 +303,7 @@ function flow(b: Build, running: boolean): Page {
       );
     });
   const directions = liveText(c.directions((running ? snapshot.engine?.directions : null)?.length ?? snapshot.profile.directions.length));
-  const mode = liveText(
-    snapshot.output_path === 'kernel_streaming' ? text.meters.kernelStreaming : text.settings.outputPathWasapi,
-  );
+  const mode = liveText(outputWay(snapshot));
   const outputFormat = liveText('');
   const formatLine = h('span', { class: 'cn-node-line cn-num', hidden: true }, outputFormat.node);
   const links = Array.from({ length: 3 }, () => h('span', { class: 'cn-link', 'aria-hidden': 'true' }));
@@ -280,8 +319,12 @@ function flow(b: Build, running: boolean): Page {
       h(
         'div',
         { class: 'cn-flow' },
-        h('span', { class: 'cn-flow-caption' }, text.status.entrances),
-        h('ul', { class: 'cn-flow-in', 'aria-label': text.status.entrances }, ...inputs.map((input) => input.element)),
+        h('span', { class: 'cn-flow-caption' }, apps ? text.entrance.appSound : text.status.entrances),
+        h(
+          'ul',
+          { class: 'cn-flow-in', 'aria-label': apps ? text.entrance.appSound : text.status.entrances },
+          ...inputs.map((input) => input.element),
+        ),
         bus,
         stage(
           c.decode,
@@ -310,7 +353,7 @@ function flow(b: Build, running: boolean): Page {
     fill(engine) {
       let any = false;
       for (const input of inputs) {
-        const on = sounding(engine, input.lane);
+        const on = input.open && sounding(engine, input.lane);
         any ||= on;
         input.stub.classList.toggle('is-flowing', on);
         if (input.lane === ASIO_LANE) {
@@ -322,13 +365,13 @@ function flow(b: Build, running: boolean): Page {
                 ? text.status.asioFailed
                 : asio.client_exe || '-',
           );
-        } else {
+        } else if (!input.fixed) {
           input.line.set(describeFormat(engine.endpoints[input.lane]?.format ?? null));
         }
       }
       for (const link of links) link.classList.toggle('is-flowing', any);
       bus.classList.toggle('is-flowing', any);
-      formats.set(formatNames(engine));
+      formats.set(formatNames(engine, taking));
       directions.set(text.console.directions(engine.directions.length));
       mode.set(describeOutputMode(engine));
       formatLine.hidden = false;
@@ -497,9 +540,89 @@ function asioRow(): EntranceRow {
   };
 }
 
+/**
+ * The app-sound entrance's lanes as a table (law 6, ADR 0043): the lane, its
+ * app with the picker (each app also a palette command "lane: app") and its
+ * state; the PASS lane said to be the driver's. Under it, why the pickers
+ * are locked while running and what happens to an app closed first.
+ */
+function captureTable(b: Build): Page {
+  const { ctx } = b;
+  const { snapshot } = ctx;
+  const e = text.entrance;
+  const locked = pickersLocked(snapshot);
+  const saved = b.group;
+  b.group = e.appsTitle;
+  const rows = [...CAPTURE_LANES, PASS_LANE].map((lane) => {
+    const name = h(
+      'th',
+      { scope: 'row', class: 'cn-cell-name' },
+      h('span', { class: 'cn-entrance' }, laneMark(lane), h('span', { id: `cn-capture-lane-${lane}` }, laneName(lane))),
+    );
+    if (lane === PASS_LANE) {
+      return h('tr', { 'data-lane': lane }, name, h('td', { class: 'cn-muted' }, '-'), h('td', { class: 'cn-muted' }, e.driverOnly));
+    }
+    const view = laneView(snapshot, lane);
+    const options = pickerOptions(snapshot, lane);
+    ctx.offer('choose_capture_app');
+    const picker = choose<string>(b, {
+      id: pickerKey(lane),
+      key: pickerKey(lane),
+      label: laneName(lane),
+      options: options.map((option) => [option.exe ?? '', option.label] as const),
+      current: view?.exe ?? (lane === 0 ? null : ''),
+      placeholder: e.chooseApp,
+      unavailable: new Map(options.flatMap((option) => (option.blocked === null ? [] : [[option.exe ?? '', option.blocked] as const]))),
+      locked,
+      busy: ctx.sending?.kind === 'choose_capture_app' && ctx.sending.value.lane === lane,
+      labelledBy: `cn-capture-lane-${lane} cn-capture-app-head`,
+      describedBy: locked === null ? 'cn-capture-closed' : 'cn-capture-locked cn-capture-closed',
+      onChoose: (exe) => ctx.send(chooseApp(lane, exe === '' ? null : exe)),
+    });
+    const state =
+      view === null
+        ? h('span', { class: 'cn-muted' }, '-')
+        : badge(captureBadge(view.state), captureStateWord(view.state));
+    return h('tr', { 'data-lane': lane }, name, h('td', { class: 'cn-cell-app' }, picker), h('td', { class: 'cn-cell-state' }, state));
+  });
+  b.group = saved;
+  const element = section(b, 'capture', e.appsTitle, [
+    h(
+      'div',
+      { class: 'cn-table-wrap' },
+      h(
+        'table',
+        { class: 'cn-table cn-capture-table', 'aria-labelledby': 'cn-sec-capture-title' },
+        h(
+          'thead',
+          null,
+          h(
+            'tr',
+            null,
+            h('th', { scope: 'col' }, e.lane),
+            h('th', { scope: 'col', id: 'cn-capture-app-head' }, text.settings.routingApp),
+            h('th', { scope: 'col' }, text.status.stateLabel),
+          ),
+        ),
+        h('tbody', null, ...rows),
+      ),
+    ),
+    locked === null ? null : hint(locked, 'cn-capture-locked', 'cn-measure'),
+    hint(e.closedApp, 'cn-capture-closed', 'cn-measure'),
+  ]);
+  return { element, fill: () => undefined };
+}
+
+/** A lane's state as a status tone (law 4): taking sound, waiting or missing, or ready. */
+function captureBadge(state: CaptureState): Tone {
+  const tone = captureTone(state);
+  return tone === 'on' ? 'good' : tone === 'warning' ? 'warn' : 'off';
+}
+
 function entrances(b: Build): Page {
   const s = text.status;
   const { snapshot } = b.ctx;
+  if (appMode(snapshot)) return captureTable(b);
   const rows: EntranceRow[] = lanesOf(snapshot).map((lane) => (lane === ASIO_LANE ? asioRow() : endpointRow(snapshot, lane)));
   const element = section(b, 'entrances', s.entrances, [
     table({
@@ -555,15 +678,16 @@ function outputSummary(b: Build): HTMLElement {
         : null,
     ]),
   );
-  rows.push(
-    row(text.settings.outputPath, [
-      h(
-        'span',
-        { class: 'cn-value' },
-        snapshot.output_path === 'kernel_streaming' ? text.meters.kernelStreaming : text.settings.outputPathWasapi,
-      ),
-    ]),
-  );
+  if (appMode(snapshot)) {
+    const { discard } = captureOf(snapshot);
+    rows.push(row(text.entrance.label, [h('span', { class: 'cn-value' }, text.entrance.appSound)]));
+    rows.push(
+      row(text.entrance.discard, [
+        h('span', { class: cls('cn-value', discard === null && 'cn-muted') }, discard?.name ?? text.entrance.noDiscard),
+      ]),
+    );
+  }
+  rows.push(row(text.settings.outputPath, [h('span', { class: 'cn-value' }, outputWay(snapshot))]));
   const list = ready && view.outputsOpen ? h('div', { id: 'cn-output-list', class: 'cn-output-pick' }, outputList(b, 'status-output')) : null;
   return section(
     b,
@@ -572,7 +696,7 @@ function outputSummary(b: Build): HTMLElement {
     [
       h('div', { class: 'cn-rows' }, ...rows),
       list,
-      snapshot.phase.kind === 'running' && snapshot.roles_taken ? h('p', { class: 'cn-hint' }, s.rolesTaken) : null,
+      snapshot.phase.kind === 'running' && snapshot.roles_taken && !appMode(snapshot) ? h('p', { class: 'cn-hint' }, s.rolesTaken) : null,
       h(
         'div',
         { class: 'cn-actions' },
@@ -651,15 +775,18 @@ function metrics(b: Build, running: boolean): Page {
       setters.push((engine) => value.set(read(engine)));
     }
   }
-  rows.push(
-    h(
-      'tr',
-      null,
-      h('th', { scope: 'row' }, c.roles),
-      h('td', { class: 'cn-cell-num' }, snapshot.roles_taken ? c.rolesYes : c.rolesNo),
-      h('td', null),
-    ),
-  );
+  // The default roles are the driver entrance's alone (ADR 0043).
+  if (!appMode(snapshot)) {
+    rows.push(
+      h(
+        'tr',
+        null,
+        h('th', { scope: 'row' }, c.roles),
+        h('td', { class: 'cn-cell-num' }, snapshot.roles_taken ? c.rolesYes : c.rolesNo),
+        h('td', null),
+      ),
+    );
+  }
   const element = section(b, 'metrics', text.status.meters, [
     table({ labelledBy: 'cn-sec-metrics-title', head: [c.metric, c.value, c.unit], rows, className: 'cn-metric-table' }),
   ]);
@@ -676,7 +803,9 @@ export function overview(b: Build, engineNow: EngineStatus | null, traces: Trace
   const past = history(b, snapshot.health, selection);
   const flowMap = flow(b, running && engine !== null);
   const table = entrances(b);
-  const map = sceneMap(engine?.directions ?? snapshot.profile.directions, engine !== null, lanesOf(snapshot));
+  const map = sceneMap(engine?.directions ?? snapshot.profile.directions, engine !== null, lanesOf(snapshot), (lane) =>
+    laneTitle(snapshot, lane),
+  );
   const mapSection = section(b, 'map', text.profile.mapTitle, [map.element], { className: 'cn-map-section' });
   const summary = outputSummary(b);
   const meters = metrics(b, engine !== null);

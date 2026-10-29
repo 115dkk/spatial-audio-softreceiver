@@ -7,13 +7,15 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ssr_sys::WindowsHost;
-use ssr_sys::host::RESTORE_POINT_FILE;
+use ssr_sys::host::{APP_OUTPUTS_FILE, RESTORE_POINT_FILE};
+use ssr_types::Host;
+use supervisor::app_outputs::{self, AppOutputs};
 use supervisor::guard::Guard;
 use supervisor::restore_point::{self, RestorePoint};
 
 use crate::language;
-use crate::marker::{self, Marker};
-use crate::runner::{self, AppProcess, Exit, Platform, Timeout};
+use crate::marker::{self, Marker, MarkerScope};
+use crate::runner::{self, AppProcess, Exit, Platform, Recovery, Timeout};
 use crate::show;
 
 /// The guard's lock in the state directory: one guard per state directory.
@@ -138,27 +140,33 @@ impl Platform for WindowsPlatform {
         Ok(Box::new(ChildProcess { child, output }))
     }
 
-    fn restore(&mut self, app: u32) -> Option<Vec<String>> {
+    fn restore(&mut self, app: u32) -> Option<Recovery> {
         let language = language::resolve_in(&self.state_dir, ssr_i18n::system_language());
         let path = self.state_dir.join(RESTORE_POINT_FILE);
-        let text = match fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
-            Err(error) => {
-                return Some(vec![ssr_i18n::guard::restore_point_read_failed(
-                    language, error,
-                )]);
+        if let Ok(text) = fs::read_to_string(&path) {
+            let point = match RestorePoint::from_json(&text) {
+                Ok(point) => point,
+                Err(error) => {
+                    return Some(Recovery {
+                        scope: MarkerScope::Roles,
+                        notes: vec![ssr_i18n::guard::restore_point_read_failed(language, error)],
+                    });
+                }
+            };
+            if runner::restore_allowed(point.app_pid, app) {
+                log(
+                    &self.state_dir,
+                    &format!("restore: giving the roles back (app pid {})", point.app_pid),
+                );
+                return Some(Recovery {
+                    scope: MarkerScope::Roles,
+                    notes: restore_point::restore_with_language(
+                        &point,
+                        &mut windows_host(&self.state_dir),
+                        language,
+                    ),
+                });
             }
-        };
-        let point = match RestorePoint::from_json(&text) {
-            Ok(point) => point,
-            Err(error) => {
-                return Some(vec![ssr_i18n::guard::restore_point_read_failed(
-                    language, error,
-                )]);
-            }
-        };
-        if !runner::restore_allowed(point.app_pid, app) {
             log(
                 &self.state_dir,
                 &format!(
@@ -166,24 +174,61 @@ impl Platform for WindowsPlatform {
                     point.app_pid
                 ),
             );
+        }
+
+        let app_path = self.state_dir.join(APP_OUTPUTS_FILE);
+        let text = fs::read_to_string(&app_path).ok()?;
+        let mut record = match AppOutputs::from_json(&text) {
+            Ok(record) => record,
+            Err(error) => {
+                log(&self.state_dir, &format!("restore: app outputs: {error}"));
+                return Some(Recovery {
+                    scope: MarkerScope::AppOutputs,
+                    notes: Vec::new(),
+                });
+            }
+        };
+        let owner = record.app_pid?;
+        if !app_outputs_owned_by(&record, app) {
+            log(
+                &self.state_dir,
+                &format!(
+                    "restore: the app-output record belongs to pid {owner}, not to the app this guard launched ({app}); left alone"
+                ),
+            );
             return None;
         }
-        log(
-            &self.state_dir,
-            &format!("restore: giving the roles back (app pid {})", point.app_pid),
-        );
-        Some(restore_point::restore_with_language(
-            &point,
-            &mut windows_host(&self.state_dir),
-            language,
-        ))
+        let mut host = windows_host(&self.state_dir);
+        let notes = app_outputs::undo(&mut record, &mut host)
+            .into_iter()
+            .map(|message| message.render(language))
+            .collect();
+        record.app_pid = None;
+        let result = if record.apps.is_empty() {
+            host.write_app_outputs(None)
+        } else {
+            host.write_app_outputs(Some(&record.to_json()))
+        };
+        if let Err(error) = result {
+            log(
+                &self.state_dir,
+                &format!("restore: app-output record write failed: {error}"),
+            );
+        }
+        Some(Recovery {
+            scope: MarkerScope::AppOutputs,
+            notes,
+        })
     }
 
-    fn restore_point_owner(&self) -> Option<u32> {
-        let text = fs::read_to_string(self.state_dir.join(RESTORE_POINT_FILE)).ok()?;
-        // An unreadable restore point still means the roles were taken; the
-        // restore reports what is wrong with it.
-        Some(RestorePoint::from_json(&text).map_or(0, |point| point.app_pid))
+    fn recovery_owner(&self) -> Option<u32> {
+        if let Ok(text) = fs::read_to_string(self.state_dir.join(RESTORE_POINT_FILE)) {
+            // An unreadable restore point still means the roles were taken; the
+            // restore reports what is wrong with it.
+            return Some(RestorePoint::from_json(&text).map_or(0, |point| point.app_pid));
+        }
+        let text = fs::read_to_string(self.state_dir.join(APP_OUTPUTS_FILE)).ok()?;
+        AppOutputs::from_json(&text).ok()?.app_pid
     }
 
     fn write_marker(&mut self, value: &Marker) {
@@ -246,6 +291,12 @@ pub fn run(platform: &mut WindowsPlatform) -> Exit {
     }
 }
 
+fn app_outputs_owned_by(record: &AppOutputs, app: u32) -> bool {
+    record
+        .app_pid
+        .is_some_and(|owner| runner::restore_allowed(owner, app))
+}
+
 fn windows_host(state_dir: &Path) -> WindowsHost {
     let exe_dir = std::env::current_exe()
         .ok()
@@ -276,4 +327,21 @@ pub fn log(state_dir: &Path, message: &str) {
         now.as_secs(),
         now.subsec_millis()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_launched_apps_owned_record_is_restored() {
+        let mut record = AppOutputs {
+            app_pid: Some(101),
+            apps: Vec::new(),
+        };
+        assert!(app_outputs_owned_by(&record, 101));
+        assert!(!app_outputs_owned_by(&record, 102));
+        record.app_pid = None;
+        assert!(!app_outputs_owned_by(&record, 101));
+    }
 }

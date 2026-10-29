@@ -47,8 +47,8 @@ use ssr_abi::setup_contract::{
 };
 use ssr_types::ports::PolicyState;
 use ssr_types::{
-    Arch, DefaultRoles, DeviceId, DeviceState, DriverState, Host, HostError, OutputDevice,
-    OutputLayout, Platform, Role, SecureBoot, SetupOutcome, SetupTask,
+    AppRoleOutputs, Arch, DefaultRoles, DeviceId, DeviceState, DriverState, Host, HostError,
+    OutputDevice, OutputLayout, Platform, Role, SecureBoot, SetupOutcome, SetupTask,
 };
 use windows::{
     Wdk::System::SystemInformation::{NtQuerySystemInformation, SystemCodeIntegrityInformation},
@@ -98,6 +98,8 @@ use crate::driver_ring::DriverRing;
 /// The restore point file in the state directory (`supervisor::restore_point`,
 /// read by `ssr-guard`).
 pub const RESTORE_POINT_FILE: &str = "restore-point.json";
+/// Applications temporarily routed to the app-capture discard output.
+pub const APP_OUTPUTS_FILE: &str = "app-outputs.json";
 
 /// `SW_HIDE`: `ssr-setup` is a console program; its window is not shown.
 const SW_HIDE: i32 = 0;
@@ -195,8 +197,20 @@ impl Host for WindowsHost {
         crate::app_routing::app_entrance(pid)
     }
 
+    fn app_entrance_roles(&mut self, pid: u32) -> Result<AppRoleOutputs, HostError> {
+        crate::app_routing::app_entrance_roles(pid)
+    }
+
     fn set_app_entrance(&mut self, pid: u32, device: Option<&DeviceId>) -> Result<(), HostError> {
         crate::app_routing::set_app_entrance(pid, device)
+    }
+
+    fn set_app_entrance_roles(
+        &mut self,
+        pid: u32,
+        roles: &AppRoleOutputs,
+    ) -> Result<(), HostError> {
+        crate::app_routing::set_app_entrance_roles(pid, roles)
     }
 
     fn default_roles(&mut self) -> DefaultRoles {
@@ -307,6 +321,24 @@ impl Host for WindowsHost {
             None => remove_if_present(&path),
         }
         .map_err(|error| io_failure(&path, error))
+    }
+
+    fn write_app_outputs(&mut self, json: Option<&str>) -> Result<(), HostError> {
+        let path = self.state_dir.join(APP_OUTPUTS_FILE);
+        match json {
+            Some(json) => replace_file(&path, json),
+            None => remove_if_present(&path),
+        }
+        .map_err(|error| io_failure(&path, error))
+    }
+
+    fn read_app_outputs(&mut self) -> Result<Option<String>, HostError> {
+        let path = self.state_dir.join(APP_OUTPUTS_FILE);
+        match fs::read_to_string(&path) {
+            Ok(text) => Ok(Some(text)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(io_failure(&path, error)),
+        }
     }
 }
 

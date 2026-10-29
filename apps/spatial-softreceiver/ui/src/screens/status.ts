@@ -7,6 +7,9 @@
 // three groups (stability, delay, output settings) with the internal
 // counters folded under "details". The rows and the measurements are built
 // once per snapshot and then only their text nodes change, 30 times a second.
+// With the app-sound entrance (ADR 0043) the summary names it and, off or
+// running, the lanes with their apps and pickers stand where the driver's
+// entrances would.
 
 import type { AsioStatus, EndpointStatus, EndpointUpmixView, EngineStatus, Snapshot } from '../bindings';
 import { h, liveText, setAttr } from '../dom';
@@ -27,7 +30,20 @@ import {
 import { ASIO_DEFAULTS } from '../guard';
 import { text } from '../text';
 import { bypassReason } from './upmix';
-import { type Context, type Drawn, type Live, button, intentButton } from './common';
+import { type Context, type Drawn, type Live, button, described, intentButton } from './common';
+import {
+  CAPTURE_LANES,
+  PASS_LANE,
+  appMode,
+  captureStateWord,
+  captureTone,
+  chooseApp,
+  laneName,
+  laneView,
+  pickerKey,
+  pickerOptions,
+  pickersLocked,
+} from './entrance';
 import { powerState } from './nav';
 import { outputList } from './wizard';
 
@@ -123,6 +139,10 @@ function summary(ctx: Context): Summary {
   );
 
   const kind = fact('summary-profile', text.profile.outputTitle, ...profileValue(snapshot));
+  // The app-sound entrance says so; the driver entrance's three entrances
+  // say themselves under the summary.
+  const apps = appMode(snapshot);
+  const entrance = apps ? fact('summary-entrance', text.entrance.label, text.entrance.appSound) : null;
 
   // Whether the sound has dropped out since the engine started: the count
   // the stability group lists first, said here in words.
@@ -133,8 +153,9 @@ function summary(ctx: Context): Summary {
   const element = h(
     'section',
     { class: 'panel summary' },
-    h('div', { class: 'summary-line' }, toggle, h('dl', { class: 'summary-facts' }, state, output, kind, health)),
-    running && snapshot.roles_taken ? h('p', { class: 'summary-note' }, s.rolesTaken) : null,
+    h('div', { class: 'summary-line' }, toggle, h('dl', { class: 'summary-facts' }, state, output, kind, entrance, health)),
+    // The default roles are the driver entrance's alone (ADR 0043).
+    running && snapshot.roles_taken && !apps ? h('p', { class: 'summary-note' }, s.rolesTaken) : null,
   );
   if (canChange && ctx.view.outputsOpen) element.append(h('div', { class: 'status-outputs' }, outputList(ctx, 'status-output')));
   return {
@@ -157,6 +178,105 @@ function entranceLine(): HTMLElement {
     list.append(h('span', { class: 'entrance-line-name' }, name));
   });
   return h('p', { class: 'entrance-line' }, h('span', { class: 'entrance-line-label' }, text.status.entrances), ' ', list);
+}
+
+/**
+ * A lane's app picker (ADR 0043): the apps with a sound session, the lane's
+ * own app when it is not running, and "none" on the music lane. Choosing one
+ * sends `choose_capture_app`; locked while the engine runs.
+ */
+function lanePicker(ctx: Context, lane: number, locked: string | null): HTMLSelectElement {
+  const current = laneView(ctx.snapshot, lane);
+  const select = h('select', {
+    id: pickerKey(lane),
+    'data-key': pickerKey(lane),
+    'data-intent': 'choose_capture_app',
+    disabled: locked !== null || ctx.busy,
+    'aria-busy': ctx.sending?.kind === 'choose_capture_app' && ctx.sending.value.lane === lane ? 'true' : null,
+    'aria-labelledby': `capture-lane-${lane} capture-app-head`,
+    'aria-describedby': described(locked !== null && 'capture-locked', 'capture-closed'),
+  });
+  ctx.offer('choose_capture_app');
+  if (current === null && lane === 0) {
+    select.append(h('option', { value: '', selected: true, disabled: true }, text.entrance.chooseApp));
+  }
+  for (const option of pickerOptions(ctx.snapshot, lane)) {
+    select.append(
+      h(
+        'option',
+        { value: option.exe ?? '', selected: option.exe === (current?.exe ?? null), disabled: option.blocked !== null },
+        option.label,
+      ),
+    );
+  }
+  select.addEventListener('change', () => {
+    const exe = select.value === '' ? null : select.value;
+    if (exe === (current?.exe ?? null)) return;
+    ctx.send(chooseApp(lane, exe));
+  });
+  return select;
+}
+
+/** A lane's state: a lamp and the word, or a dash with no app chosen. */
+function laneState(ctx: Context, lane: number): HTMLElement {
+  const view = laneView(ctx.snapshot, lane);
+  if (view === null) return h('span', { class: 'muted' }, '-');
+  return h(
+    'span',
+    { class: `capture-state tone-${captureTone(view.state)}` },
+    h('span', { class: 'lamp', 'aria-hidden': 'true' }),
+    captureStateWord(view.state),
+  );
+}
+
+/**
+ * The app-sound entrance's lanes (ADR 0043) in place of the driver's
+ * entrances: the main and music lanes with their app, its picker and its
+ * state, the PASS lane said to be the driver's, and under them what happens
+ * to an app closed before this program turns off.
+ */
+function captureLanes(ctx: Context): HTMLElement {
+  const e = text.entrance;
+  const locked = pickersLocked(ctx.snapshot);
+  const rows = [...CAPTURE_LANES, PASS_LANE].map((lane) =>
+    h(
+      'tr',
+      { 'data-lane': lane },
+      h(
+        'th',
+        { scope: 'row', class: 'capture-lane' },
+        h('span', { class: `lane-dot lane-${lane}`, 'aria-hidden': 'true' }),
+        h('span', { id: `capture-lane-${lane}` }, laneName(lane)),
+      ),
+      ...(lane === PASS_LANE
+        ? [h('td', { class: 'muted', colspan: 2 }, e.driverOnly)]
+        : [h('td', { class: 'capture-app' }, lanePicker(ctx, lane, locked)), h('td', null, laneState(ctx, lane))]),
+    ),
+  );
+  return h(
+    'section',
+    { class: 'panel capture-lanes', 'aria-labelledby': 'capture-title' },
+    h('h2', { id: 'capture-title', class: 'section-title' }, e.appsTitle),
+    h(
+      'table',
+      { class: 'routing-table capture-table', 'aria-labelledby': 'capture-title' },
+      h(
+        'thead',
+        null,
+        h(
+          'tr',
+          null,
+          h('th', { scope: 'col' }, e.lane),
+          h('th', { scope: 'col', id: 'capture-app-head' }, text.settings.routingApp),
+          h('th', { scope: 'col' }, text.status.stateLabel),
+        ),
+      ),
+      h('tbody', null, ...rows),
+    ),
+    // Why the pickers are locked comes first, next to them.
+    locked === null ? null : h('p', { id: 'capture-locked', class: 'hint capture-hint' }, locked),
+    h('p', { id: 'capture-closed', class: 'hint capture-hint' }, e.closedApp),
+  );
 }
 
 interface Card {
@@ -397,7 +517,7 @@ function meterRow(list: HTMLElement, [label, unit, read]: MeterRow): (engine: En
   return (engine) => value.set(read(engine));
 }
 
-function meterPanel(): { element: HTMLElement; update(engine: EngineStatus): void } {
+function meterPanel(apps: boolean): { element: HTMLElement; update(engine: EngineStatus): void } {
   const s = text.status;
   const m = text.meters;
   const setters: ((engine: EngineStatus) => void)[] = [];
@@ -417,8 +537,9 @@ function meterPanel(): { element: HTMLElement; update(engine: EngineStatus): voi
   const lost = h('dl', { class: 'meter-list' });
   setters.push(meterRow(lost, [m.lostBytes, m.bytes, (e) => count(e.lost_bytes)]));
   const epochs = h('dl', { class: 'meter-list', 'aria-labelledby': 'meter-epoch-title', 'aria-describedby': 'meter-epoch-hint' });
-  for (let index = 0; index < SHOWN_ENDPOINTS; index += 1) {
-    const name = text.endpoints[index]?.name ?? String(index);
+  // The app-sound entrance numbers its lanes like the endpoints; PASS is unused there.
+  for (const index of apps ? CAPTURE_LANES : [0, 1, 2]) {
+    const name = apps ? laneName(index) : (text.endpoints[index]?.name ?? String(index));
     const read = (e: EngineStatus) => {
       const endpoint = e.endpoints[index];
       return endpoint === undefined ? '-' : count(endpoint.epoch);
@@ -463,29 +584,37 @@ export function status(ctx: Context, engineNow: EngineStatus | null): Drawn {
   const running = ctx.snapshot.phase.kind === 'running';
   const head = summary(ctx);
 
+  // The app-sound entrance has lanes with apps, not the driver's endpoints.
+  const apps = appMode(ctx.snapshot);
+
   if (!running) {
     // Off or stopped there is nothing live to show: what would play where is
-    // the summary, and the entrances are names.
-    const element = h('div', { class: 'status is-off' }, head.element, entranceLine());
+    // the summary, and the entrances are names (or the lanes and their apps).
+    const element = h('div', { class: 'status is-off' }, head.element, apps ? captureLanes(ctx) : entranceLine());
     return { element };
   }
 
-  const cards = Array.from({ length: SHOWN_ENDPOINTS }, (_, index) =>
-    endpointCard(
-      index,
-      ctx.snapshot.upmix.endpoints.find((endpoint) => endpoint.endpoint === index),
-    ),
-  );
+  const cards = apps
+    ? []
+    : Array.from({ length: SHOWN_ENDPOINTS }, (_, index) =>
+        endpointCard(
+          index,
+          ctx.snapshot.upmix.endpoints.find((endpoint) => endpoint.endpoint === index),
+        ),
+      );
   // The ASIO row stands while the input is on and the engine runs.
   const asio = (ctx.snapshot.asio ?? ASIO_DEFAULTS).enabled ? asioLine() : null;
-  const entrances = h(
-    'section',
-    { class: 'panel entrances', 'aria-labelledby': 'entrances-title' },
-    h('h2', { id: 'entrances-title', class: 'section-title' }, s.entrances),
-    h('div', { class: 'entrance-cards' }, ...cards.map((card) => card.element)),
-    asio?.element ?? null,
-  );
-  const meters = meterPanel();
+  const entrances =
+    apps && asio === null
+      ? null
+      : h(
+          'section',
+          { class: 'panel entrances', 'aria-labelledby': 'entrances-title' },
+          h('h2', { id: 'entrances-title', class: 'section-title' }, s.entrances),
+          cards.length === 0 ? null : h('div', { class: 'entrance-cards' }, ...cards.map((card) => card.element)),
+          asio?.element ?? null,
+        );
+  const meters = meterPanel(apps);
   const live: Live = {
     update(engine) {
       head.update(engine);
@@ -500,6 +629,13 @@ export function status(ctx: Context, engineNow: EngineStatus | null): Drawn {
     asio?.update(null);
   }
 
-  const element = h('div', { class: 'status is-running' }, head.element, entrances, meters.element);
+  const element = h(
+    'div',
+    { class: 'status is-running' },
+    head.element,
+    apps ? captureLanes(ctx) : null,
+    entrances,
+    meters.element,
+  );
   return engineNow === null ? { element } : { element, live };
 }

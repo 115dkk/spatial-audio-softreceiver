@@ -54,6 +54,40 @@
     "value": "player.exe"
   },
   {
+    "kind": "choose_entrance",
+    "value": "driver"
+  },
+  {
+    "kind": "choose_entrance",
+    "value": "app_sound"
+  },
+  {
+    "kind": "choose_discard",
+    "value": "discard"
+  },
+  {
+    "kind": "choose_capture_app",
+    "value": {
+      "lane": 0,
+      "exe": "game.exe"
+    }
+  },
+  {
+    "kind": "choose_capture_app",
+    "value": {
+      "lane": 1,
+      "exe": null
+    }
+  },
+  {
+    "kind": "set_app_capture_exclusive",
+    "value": true
+  },
+  {
+    "kind": "set_app_capture_exclusive",
+    "value": false
+  },
+  {
     "kind": "begin_setup"
   },
   {

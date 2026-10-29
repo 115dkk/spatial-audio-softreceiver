@@ -75,6 +75,30 @@ pub(crate) fn supports_layout(device: &Device, layout: OutputLayout) -> bool {
     })
 }
 
+/// Reads only an endpoint's shared-mode mix format.
+pub fn mix_format(device_id: &ssr_types::DeviceId) -> Result<MixFormat, OutputError> {
+    let _com = ComGuard::new()?;
+    let enumerator = DeviceEnumerator::new().map_err(output_error)?;
+    let devices = enumerator
+        .get_device_collection(&Direction::Render)
+        .map_err(output_error)?;
+    for index in 0..devices.get_nbr_devices().map_err(output_error)? {
+        let device = devices.get_device_at_index(index).map_err(output_error)?;
+        if device.get_id().map_err(output_error)? == device_id.0 {
+            let wave = device
+                .get_iaudioclient()
+                .and_then(|client| client.get_mixformat())
+                .map_err(output_error)?;
+            return Ok(MixFormat {
+                rate: wave.get_samplespersec(),
+                channels: wave.get_nchannels(),
+                channel_mask: wave.get_dwchannelmask(),
+            });
+        }
+    }
+    Err(OutputError::NotFound)
+}
+
 pub fn render_endpoint_formats() -> Result<Vec<EndpointFormats>, OutputError> {
     let _com = ComGuard::new()?;
     let enumerator = DeviceEnumerator::new().map_err(output_error)?;

@@ -2,6 +2,26 @@
   "language": "en",
   "language_choice": null,
   "skin": "standard",
+  "entrance": "driver",
+  "app_capture": {
+    "supported": true,
+    "min_build": 20348,
+    "discard": null,
+    "discards": [
+      {
+        "id": "{0.0.0.00000000}.{3f2504e0-4f89-11d3-9a0c-0305e82c3301}",
+        "name": "Speakers (Realtek(R) Audio)"
+      },
+      {
+        "id": "{0.0.0.00000000}.{a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d}",
+        "name": "Headphones (USB Audio DAC)"
+      }
+    ],
+    "main": null,
+    "music": null,
+    "apps": [],
+    "exclusive": false
+  },
   "output_path": "kernel_streaming",
   "phase": {
     "kind": "ready"

@@ -45,6 +45,85 @@ pub enum Entrance {
     Pass,
 }
 
+/// How sound enters the engine.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum EntranceKind {
+    #[default]
+    Driver,
+    AppSound,
+}
+
+/// One application selected for an app-capture lane.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct CaptureApp {
+    /// ASCII-lowercase executable basename.
+    pub exe: String,
+    pub display_name: String,
+}
+
+/// Saved settings for the driverless app-sound entrance.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+#[serde(default)]
+pub struct AppCaptureSettings {
+    pub discard: Option<OutputChoice>,
+    pub main: Option<CaptureApp>,
+    pub music: Option<CaptureApp>,
+    /// Opens the output exclusively when true; shared is the default.
+    pub exclusive: bool,
+}
+
+/// [`Intent::ChooseCaptureApp`]. `None` clears the lane.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct CaptureAppChoice {
+    pub lane: u16,
+    pub exe: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureState {
+    NotRunning,
+    Running,
+    Capturing,
+    Waiting,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct CaptureLaneView {
+    pub exe: String,
+    pub display_name: String,
+    pub state: CaptureState,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+pub struct CaptureAppView {
+    pub exe: String,
+    pub display_name: String,
+    pub active: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(specta::Type))]
+#[serde(default)]
+pub struct AppCaptureView {
+    pub supported: bool,
+    pub min_build: u32,
+    pub discard: Option<OutputChoice>,
+    pub discards: Vec<OutputChoice>,
+    pub main: Option<CaptureLaneView>,
+    pub music: Option<CaptureLaneView>,
+    pub apps: Vec<CaptureAppView>,
+    pub exclusive: bool,
+}
+
 /// A saved application-to-entrance override. `exe` is normalized to an ASCII
 /// lowercase basename before it is kept. `entrance: None` turns a built-in rule
 /// off, so the app is treated like any app without a rule. An override equal
@@ -173,6 +252,10 @@ pub enum Intent {
     SetRoutingEnabled(bool),
     SetAppRule(AppRule),
     RemoveAppRule(String),
+    ChooseEntrance(EntranceKind),
+    ChooseDiscard(DeviceId),
+    ChooseCaptureApp(CaptureAppChoice),
+    SetAppCaptureExclusive(bool),
     BeginSetup,
     InstallDriver,
     /// Looks at the PC again after the user did something outside the app
@@ -234,6 +317,7 @@ pub enum SetupStep {
     Driver,
     RebootRequired,
     ChooseOutput,
+    ChooseDiscard,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -791,6 +875,10 @@ pub struct Snapshot {
     /// The saved choice of renderer. Older snapshots use the standard screen.
     #[serde(default)]
     pub skin: Skin,
+    #[serde(default)]
+    pub entrance: EntranceKind,
+    #[serde(default)]
+    pub app_capture: AppCaptureView,
     pub output_path: OutputPath,
     pub phase: Phase,
     pub profile: ProfileView,

@@ -120,23 +120,29 @@ type Signal = 'sound' | 'idle' | 'none';
  * Each input's state for its lamp: sound now (an object of its lane in the
  * last mixed block), a format but silent, or nothing. The ASIO input is lit
  * while a DAW plays into it and dim while its sound waits on a stand-in clock.
+ * With the app-sound entrance (ADR 0043) the lamps are its lanes: a lane
+ * without an app stays dark, and so does PASS, which only the driver feeds.
  */
-export function signals(engine: EngineStatus | null): Signal[] {
+export function signals(engine: EngineStatus | null, lit: readonly number[] = [0, 1, 2]): Signal[] {
   const states: Signal[] = ['none', 'none', 'none', 'none'];
   if (engine === null) return states;
   for (let lane = 0; lane < LANES; lane += 1) {
-    if (engine.endpoints[lane]?.format) states[lane] = 'idle';
+    if (lit.includes(lane) && engine.endpoints[lane]?.format) states[lane] = 'idle';
   }
   for (const object of engine.scene) {
-    if (object.lane < LANES) states[object.lane] = 'sound';
+    if (object.lane < LANES && lit.includes(object.lane)) states[object.lane] = 'sound';
   }
   const asio = engine.asio ?? null;
   if (asio !== null && asio.fault_reason === null) states[LANES] = asio.clock_fault ? 'idle' : 'sound';
   return states;
 }
 
-/** The input lamps: game, music, PASS and ASIO, each in its own colour. Output only. */
-export function signalLamps(): Part {
+/**
+ * The input lamps: game, music, PASS and ASIO, each in its own colour.
+ * Output only. `lit` are the lanes that can light (all three with the
+ * driver entrance).
+ */
+export function signalLamps(lit: readonly number[] = [0, 1, 2]): Part {
   const p = text.panel;
   const words: Record<Signal, string> = { sound: p.lampSound, idle: p.lampIdle, none: text.status.noInput };
   const lamps = p.lamps.map((name, lane) => {
@@ -163,7 +169,7 @@ export function signalLamps(): Part {
   return {
     element,
     update(engine) {
-      signals(engine).forEach((signal, lane) => {
+      signals(engine, lit).forEach((signal, lane) => {
         const lamp = lamps[lane];
         if (lamp === undefined) return;
         setAttr(lamp.element, 'data-signal', signal);

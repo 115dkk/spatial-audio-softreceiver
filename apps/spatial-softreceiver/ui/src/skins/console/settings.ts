@@ -1,17 +1,30 @@
-// The settings page: login autostart, language, skin, the output path, the
-// entrance per app (tables), the ASIO input, the update, diagnostic recording
-// and the PC and driver facts, each a section of label | control rows.
+// The settings page: login autostart, language, skin, the entrance sound
+// comes in through with the app-sound entrance's discard output (ADR 0043),
+// the output path, the entrance per app (tables), the ASIO input, the update,
+// diagnostic recording and the PC and driver facts, each a section of
+// label | control rows.
 
 import { toUserError } from '../../api';
-import type { AsioLayout, Entrance, Language, OutputPath, RoutedApp, RuleView, Skin } from '../../bindings';
+import type { AsioLayout, Entrance, EntranceKind, Language, OutputPath, RoutedApp, RuleView, Skin } from '../../bindings';
 import { type Child, h } from '../../dom';
 import { ASIO_ATTENUATION_MAX, ASIO_DEFAULTS, ASIO_LAYOUTS } from '../../guard';
 import { described } from '../../screens/common';
+import {
+  ENTRANCE_KINDS,
+  appMode,
+  appSoundBlocked,
+  captureOf,
+  entranceGets,
+  entranceName as kindName,
+  entranceNeeds,
+  entranceOf,
+} from '../../screens/entrance';
 import { driverRows, platformRows } from '../../screens/facts';
 import { text } from '../../text';
 import { SKINS, skinOf } from '../names';
 import { type Build, act, choose, cls, hint, para, plain, range, row, section, table, toggle } from './kit';
 import type { Page } from './overview';
+import { discardList } from './setup';
 
 const ENTRANCES: readonly Entrance[] = ['main', 'music', 'pass'];
 const entranceName = (entrance: Entrance) => text.endpoints[ENTRANCES.indexOf(entrance)]!.name;
@@ -99,31 +112,107 @@ function skin(b: Build): HTMLElement {
   );
 }
 
-function outputPath(b: Build): HTMLElement {
+/**
+ * The entrance sound comes in through (ADR 0043): a select whose options are
+ * also palette commands, the app-sound one listed with the supervisor's
+ * reason where the PC cannot run it, locked while the engine runs. What the
+ * chosen one receives and needs stands under it.
+ */
+function entranceRows(b: Build): HTMLElement[] {
+  const { ctx } = b;
+  const e = text.entrance;
+  const { snapshot } = ctx;
+  const current = entranceOf(snapshot);
+  const running = snapshot.phase.kind === 'running';
+  const blocked = appSoundBlocked(snapshot);
+  ctx.offer('choose_entrance');
+  const rows: HTMLElement[] = [
+    row(
+      e.label,
+      [
+        choose<EntranceKind>(b, {
+          id: 'entrance',
+          key: 'entrance',
+          label: e.label,
+          options: ENTRANCE_KINDS.map((kind) => [kind, kindName(kind)] as const),
+          current,
+          unavailable: new Map<EntranceKind, string>(blocked === null || current === 'app_sound' ? [] : [['app_sound', blocked]]),
+          locked: running ? e.locked : null,
+          busy: ctx.pending === 'choose_entrance',
+          describedBy: described(running && 'entrance-locked', blocked !== null && 'entrance-blocked', 'entrance-hint'),
+          onChoose: (value) => ctx.send({ kind: 'choose_entrance', value }),
+        }),
+        running ? hint(e.locked, 'entrance-locked') : null,
+        blocked === null ? null : hint(blocked, 'entrance-blocked', 'cn-measure tone-text-warn'),
+        hint([entranceGets(current), ...entranceNeeds(current, snapshot)].join(' '), 'entrance-hint', 'cn-measure'),
+      ],
+      { for: 'entrance' },
+    ),
+  ];
+  if (current === 'app_sound') {
+    rows.push(
+      row(e.discard, [
+        hint(e.discardHint, null, 'cn-measure'),
+        discardList(b, 'settings-discard', running ? text.settings.outputPathLocked : null),
+        running ? hint(text.settings.outputPathLocked, null, 'cn-measure') : null,
+      ]),
+    );
+  }
+  return rows;
+}
+
+function outputPath(b: Build): HTMLElement[] {
   const { ctx } = b;
   const t = text.settings;
+  const e = text.entrance;
+  const apps = appMode(ctx.snapshot);
   const running = ctx.snapshot.phase.kind === 'running';
-  return row(
-    t.outputPath,
-    [
-      choose<OutputPath>(b, {
-        id: 'output-path',
-        key: 'output-path',
-        label: t.outputPath,
-        options: [
-          ['wasapi', t.outputPathWasapi],
-          ['kernel_streaming', text.meters.kernelStreaming],
-        ],
-        current: ctx.snapshot.output_path,
-        locked: running ? t.outputPathLocked : null,
-        describedBy: described(running && 'output-path-locked', 'output-path-hint'),
-        onChoose: (value) => ctx.send({ kind: 'set_output_path', value }),
-      }),
-      running ? hint(t.outputPathLocked, 'output-path-locked') : null,
-      hint(t.outputPathHint, 'output-path-hint', 'cn-measure'),
-    ],
-    { for: 'output-path' },
-  );
+  const hintId = apps ? 'output-path-apps' : 'output-path-hint';
+  const current = ctx.snapshot.output_path;
+  const rows: HTMLElement[] = [
+    row(
+      t.outputPath,
+      [
+        choose<OutputPath>(b, {
+          id: 'output-path',
+          key: 'output-path',
+          label: t.outputPath,
+          options: [
+            ['wasapi', apps ? e.wasapi : t.outputPathWasapi],
+            ['kernel_streaming', text.meters.kernelStreaming],
+          ],
+          current,
+          // The app-sound entrance never opens kernel streaming (ADR 0043).
+          unavailable: new Map<OutputPath, string>(apps && current !== 'kernel_streaming' ? [['kernel_streaming', e.ksNotUsed]] : []),
+          locked: running ? t.outputPathLocked : null,
+          describedBy: described(running && 'output-path-locked', hintId),
+          onChoose: (value) => ctx.send({ kind: 'set_output_path', value }),
+        }),
+        running ? hint(t.outputPathLocked, 'output-path-locked') : null,
+        hint(apps ? e.ksNotUsed : t.outputPathHint, hintId, 'cn-measure'),
+      ],
+      { for: 'output-path' },
+    ),
+  ];
+  if (apps) {
+    const sending = ctx.sending?.kind === 'set_app_capture_exclusive' ? ctx.sending.value : null;
+    ctx.offer('set_app_capture_exclusive');
+    rows.push(
+      row(text.meters.outputMode, [
+        toggle(b, {
+          key: 'app-capture-exclusive',
+          label: e.exclusive,
+          on: sending ?? captureOf(ctx.snapshot).exclusive,
+          busy: sending !== null,
+          describedBy: described('app-capture-exclusive-hint', running && 'app-capture-exclusive-when'),
+          onToggle: (on) => ctx.send({ kind: 'set_app_capture_exclusive', value: on }),
+        }),
+        hint(e.exclusiveHint, 'app-capture-exclusive-hint', 'cn-measure'),
+        running ? hint(e.exclusiveWhen, 'app-capture-exclusive-when', 'cn-measure') : null,
+      ]),
+    );
+  }
+  return rows;
 }
 
 function appTable(b: Build, apps: RoutedApp[], locked: string | null): HTMLElement {
@@ -227,6 +316,8 @@ function ruleTable(b: Build, rules: RuleView[], locked: string | null): HTMLElem
 function routing(b: Build): Child[] {
   const { ctx } = b;
   const t = text.settings;
+  // The app-sound entrance has no endpoints to send apps to (ADR 0043).
+  if (appMode(ctx.snapshot)) return [para(text.entrance.driverOnly, 'cn-muted')];
   const view = ctx.snapshot.routing;
   const locked = view.available ? null : t.routingUnavailable;
   const playing = new Set(view.apps.map((app) => app.exe));
@@ -384,7 +475,8 @@ export function settingsPage(b: Build): Page {
     'div',
     { class: 'cn-page cn-settings' },
     s('general', text.console.general, [h('div', { class: 'cn-rows' }, autostart(b), language(b), skin(b))]),
-    s('output-path', text.status.output, [h('div', { class: 'cn-rows' }, outputPath(b))]),
+    s('entrance', text.entrance.label, [h('div', { class: 'cn-rows' }, ...entranceRows(b))]),
+    s('output-path', text.status.output, [h('div', { class: 'cn-rows' }, ...outputPath(b))]),
     s('routing', t.routing, routing(b)),
     s('asio', text.asio, [h('div', { class: 'cn-rows' }, ...asio(b))]),
     s('maintenance', text.console.maintenance, [
@@ -405,7 +497,13 @@ export function settingsPage(b: Build): Page {
         h('div', { class: cls('cn-rows', 'cn-rows-facts') }, ...(snapshot.platform === null ? [para(t.unknown, 'cn-muted')] : facts(platformRows(snapshot.platform)))),
       ]),
       s('driver', t.driver, [
-        h('div', { class: cls('cn-rows', 'cn-rows-facts') }, ...(snapshot.driver === null ? [para(t.unknown, 'cn-muted')] : facts(driverRows(snapshot.driver)))),
+        h(
+          'div',
+          { class: cls('cn-rows', 'cn-rows-facts') },
+          ...(snapshot.driver !== null
+            ? facts(driverRows(snapshot.driver))
+            : [para(appMode(snapshot) ? text.entrance.driverOnly : t.unknown, 'cn-muted')]),
+        ),
       ]),
     ),
   );

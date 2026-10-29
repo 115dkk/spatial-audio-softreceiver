@@ -421,7 +421,9 @@ impl<H: Host, L: Launcher, E: Emitter, S: SettingsStore> ControlThread<H, L, E, 
                     | Intent::ImportCorrection(_)
                     | Intent::ClearCorrection
                     | Intent::ChoosePlugin(_)
-            );
+            )
+            || (matches!(intent, Intent::Enable)
+                && self.supervisor.settings().entrance == ssr_types::app::EntranceKind::AppSound);
         if long_step || matches!(intent, Intent::Disable | Intent::Quit) {
             // Disable and Quit stop the engine and give the roles back in one
             // step, during which no heartbeat goes out: the guard must not
@@ -460,7 +462,14 @@ impl<H: Host, L: Launcher, E: Emitter, S: SettingsStore> ControlThread<H, L, E, 
 
     fn tick(&mut self, now: Instant) {
         let before = self.supervisor.phase().clone();
+        let capture_restart = self.supervisor.prepare_app_capture_tick(now);
+        if capture_restart {
+            self.idle_heartbeat();
+        }
         let mut notices = self.supervisor.tick(now);
+        if capture_restart {
+            self.heartbeat();
+        }
         if self.supervisor.needs_prepared() {
             // Only slow preparation is bracketed. If the change queue refused
             // an already prepared output, later ticks retry the handoff while
@@ -636,6 +645,8 @@ fn quit_snapshot(language: Language) -> Snapshot {
         language,
         language_choice: None,
         skin: Skin::Standard,
+        entrance: ssr_types::app::EntranceKind::Driver,
+        app_capture: Default::default(),
         phase: Phase::Quit,
         profile: supervisor::machine::default_profile_view_for(language),
         upmix: supervisor::default_upmix_view(),

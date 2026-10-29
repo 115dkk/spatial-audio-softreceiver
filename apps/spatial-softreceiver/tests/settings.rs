@@ -76,6 +76,21 @@ fn guard_rereads_the_apps_language_settings_for_each_notification() {
 }
 
 #[test]
+fn old_settings_default_to_the_driver_entrance() {
+    let value = serde_json::json!({
+        "output": null,
+        "profile": {},
+        "output_path": "wasapi",
+        "upmix": {},
+        "routing": {},
+        "asio": {}
+    });
+    let settings: Settings = serde_json::from_value(value).expect("old settings");
+    assert_eq!(settings.entrance, ssr_types::app::EntranceKind::Driver);
+    assert_eq!(settings.app_capture, Default::default());
+}
+
+#[test]
 fn settings_round_trip() {
     let scratch = Scratch::new("round-trip");
     // The directory does not exist yet: the first save makes it.

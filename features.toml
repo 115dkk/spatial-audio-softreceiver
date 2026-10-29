@@ -1471,6 +1471,34 @@ tests = [
 note = "ADR 0028 portable per-app entrance policy. Private IAudioPolicyConfigFactory; CI checks set/get on the runner; the test-signed PC checks real players."
 
 [[feature]]
+id = "supervisor.app_capture"
+kind = "app"
+milestone = "M4"
+status = "implemented"
+tests = [
+  "supervisor::app_entrance_choice_is_saved_even_when_the_build_is_unsupported",
+  "supervisor::app_capture_enable_records_before_routing_and_passes_targets_and_exclusive",
+  "supervisor::app_capture_record_failure_changes_no_application_output",
+  "supervisor::app_capture_launch_failure_restores_the_previous_output",
+  "supervisor::failed_preference_read_keeps_the_existing_recovery_record_authoritative",
+  "supervisor::enabling_an_app_undoes_its_pending_entry_before_recording_fresh_roles",
+  "supervisor::enabling_refuses_to_replace_a_pending_entry_that_cannot_be_undone",
+  "supervisor::unsupported_app_routing_getter_and_setter_still_start_in_manual_mode",
+  "supervisor::running_refuses_entrance_and_capture_app_changes",
+  "supervisor::app_capture_reattaches_once_to_a_new_active_pid_and_updates_the_record",
+  "supervisor::app_capture_restart_launches_only_lanes_with_live_processes",
+  "supervisor::pending_undo_retries_while_another_app_capture_is_running",
+  "supervisor::pending_undo_retries_while_the_driver_entrance_is_running",
+  "supervisor::ended_capture_reopens_the_same_pid_and_limits_restarts_to_five_seconds",
+  "supervisor::reattached_session_does_not_inherit_the_old_fault_deadline",
+  "supervisor::undo_restores_each_role_to_its_own_previous_output",
+  "supervisor::undo_restores_only_roles_that_still_point_to_the_discard",
+  "supervisor::undo_matches_the_full_image_path_not_only_the_basename",
+  "supervisor::undo_waits_for_the_same_image_and_uses_its_new_pid",
+]
+note = "ADR 0043 driverless process-loopback entrance, discard-output recovery, and supervisor lifecycle."
+
+[[feature]]
 id = "ring.streamring"
 kind = "pipeline"
 milestone = "M4"

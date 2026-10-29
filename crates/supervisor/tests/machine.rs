@@ -14,20 +14,22 @@ use std::time::{Duration, Instant};
 use engine::adapters::NullOpener;
 use engine::{LiveChange, MatrixUpmixer, OutputProfile, UpmixMonitor, UpmixStatus, Upmixer};
 use ssr_types::app::{
-    AppRule, AsioLayout, AsioSettings, Entrance, HealthPart, Intent, Language, MinuteState,
-    NextAction, OutputChoice, OutputPath, Phase, SetupStep, Skin, UserError,
+    AppCaptureSettings, AppRule, AsioLayout, AsioSettings, CaptureApp, CaptureAppChoice, Entrance,
+    EntranceKind, HealthPart, Intent, Language, MinuteState, NextAction, OutputChoice, OutputPath,
+    Phase, SetupStep, Skin, UserError,
 };
 use ssr_types::ports::PolicyState;
 use ssr_types::{
-    Arch, AudioApp, DefaultRoles, DeviceId, DeviceState, DirectionView, DriverState, EngineFault,
-    EngineStatus, Host, HostError, KsTarget, OutputDevice, OutputLayout, Platform, Role,
-    SecureBoot, SetupOutcome, SetupTask,
+    AppRoleOutputs, Arch, AudioApp, DefaultRoles, DeviceId, DeviceState, DirectionView,
+    DriverState, EngineFault, EngineStatus, Host, HostError, KsTarget, OutputDevice, OutputLayout,
+    Platform, Role, SecureBoot, SetupOutcome, SetupTask,
 };
 use supervisor::machine::Config;
 use supervisor::restore_point::{self, RestorePoint, RestorePointError};
 use supervisor::{
-    EngineHandle, LaunchOptions, Launcher, PluginClass, PluginEvent, PluginHost, PluginHostError,
-    PluginInstance, PluginSetting, Session, SessionError, SessionNotice, Settings, Supervisor,
+    EngineHandle, LaunchCapture, LaunchOptions, Launcher, PluginClass, PluginEvent, PluginHost,
+    PluginHostError, PluginInstance, PluginSetting, Session, SessionError, SessionNotice, Settings,
+    Supervisor,
 };
 
 const OURS: &str = "{ours-main}";
@@ -44,6 +46,8 @@ struct World {
     outputs: Vec<OutputDevice>,
     roles: DefaultRoles,
     restore_point: Option<String>,
+    app_outputs: Option<String>,
+    app_outputs_write_error: bool,
     /// Fail writes (`Some(true)`) or removals (`Some(false)`) of the restore point.
     restore_write_error: Option<bool>,
     /// `run_setup` results in order; an empty queue succeeds.
@@ -54,6 +58,7 @@ struct World {
     engine_polls: VecDeque<Result<Vec<SessionNotice>, SessionError>>,
     /// Every profile a launch received, described, in order.
     launched: Vec<String>,
+    launched_capture: Vec<String>,
     launched_asio: Vec<AsioSettings>,
     applied_asio: Vec<AsioSettings>,
     engine_asio: Option<ssr_types::AsioStatus>,
@@ -78,6 +83,7 @@ struct World {
     plugins: PluginScript,
     audio_apps: Vec<AudioApp>,
     app_entrances: HashMap<u32, Result<Option<DeviceId>, HostError>>,
+    app_role_entrances: HashMap<u32, Result<AppRoleOutputs, HostError>>,
     app_set_results: VecDeque<Result<(), HostError>>,
     routing_reads: Vec<String>,
     calls: Vec<String>,
@@ -179,6 +185,26 @@ impl Host for FakeHost {
             .unwrap_or(Err(HostError::Unsupported))
     }
 
+    fn app_entrance_roles(&mut self, pid: u32) -> Result<AppRoleOutputs, HostError> {
+        let mut world = self.0.get();
+        world.routing_reads.push(format!("get app roles {pid}"));
+        if pid != std::process::id() {
+            world.calls.push(format!("get app roles {pid}"));
+        }
+        if let Some(roles) = world.app_role_entrances.get(&pid) {
+            return roles.clone();
+        }
+        let entrance = world
+            .app_entrances
+            .get(&pid)
+            .cloned()
+            .unwrap_or(Err(HostError::Unsupported))?;
+        Ok(AppRoleOutputs {
+            console: entrance.clone(),
+            multimedia: entrance,
+        })
+    }
+
     fn set_app_entrance(&mut self, pid: u32, device: Option<&DeviceId>) -> Result<(), HostError> {
         let mut world = self.0.get();
         world.calls.push(format!(
@@ -188,6 +214,38 @@ impl Host for FakeHost {
         let result = world.app_set_results.pop_front().unwrap_or(Ok(()));
         if result.is_ok() {
             world.app_entrances.insert(pid, Ok(device.cloned()));
+            world.app_role_entrances.insert(
+                pid,
+                Ok(AppRoleOutputs {
+                    console: device.cloned(),
+                    multimedia: device.cloned(),
+                }),
+            );
+        }
+        result
+    }
+
+    fn set_app_entrance_roles(
+        &mut self,
+        pid: u32,
+        roles: &AppRoleOutputs,
+    ) -> Result<(), HostError> {
+        if roles.console == roles.multimedia {
+            return self.set_app_entrance(pid, roles.console.as_ref());
+        }
+        let mut world = self.0.get();
+        world.calls.push(format!(
+            "set app roles {pid} console={} multimedia={}",
+            roles.console.as_ref().map_or("default", |id| id.0.as_str()),
+            roles
+                .multimedia
+                .as_ref()
+                .map_or("default", |id| id.0.as_str())
+        ));
+        let result = world.app_set_results.pop_front().unwrap_or(Ok(()));
+        if result.is_ok() {
+            world.app_entrances.insert(pid, Ok(None));
+            world.app_role_entrances.insert(pid, Ok(roles.clone()));
         }
         result
     }
@@ -261,6 +319,26 @@ impl Host for FakeHost {
         world.restore_point = json.map(str::to_owned);
         Ok(())
     }
+
+    fn write_app_outputs(&mut self, json: Option<&str>) -> Result<(), HostError> {
+        let mut world = self.0.get();
+        world.calls.push(
+            match json {
+                Some(_) => "write app outputs",
+                None => "remove app outputs",
+            }
+            .into(),
+        );
+        if world.app_outputs_write_error {
+            return Err(HostError::Failed("app-output persistence scripted".into()));
+        }
+        world.app_outputs = json.map(str::to_owned);
+        Ok(())
+    }
+
+    fn read_app_outputs(&mut self) -> Result<Option<String>, HostError> {
+        Ok(self.0.get().app_outputs.clone())
+    }
 }
 
 struct FakeLauncher(Shared);
@@ -286,6 +364,21 @@ impl Launcher for FakeLauncher {
             None => format!("launch {}", output.id.0),
         });
         world.launched.push(describe(profile));
+        world.launched_capture.push(match options.capture {
+            LaunchCapture::Driver => "driver".into(),
+            LaunchCapture::Apps {
+                targets,
+                discard,
+                exclusive,
+            } => format!(
+                "apps {:?} discard={} exclusive={exclusive}",
+                targets
+                    .iter()
+                    .map(|target| (target.pid, target.lane))
+                    .collect::<Vec<_>>(),
+                discard.0
+            ),
+        });
         world.launched_asio.push(options.asio);
         if world.launch_fails {
             return Err(SessionError::Recorder("scripted failure".into()));
@@ -620,12 +713,15 @@ fn ready_pc() -> World {
         ],
         roles: previous_roles(),
         restore_point: None,
+        app_outputs: None,
+        app_outputs_write_error: false,
         restore_write_error: None,
         setup_results: VecDeque::new(),
         failing_role: None,
         launch_fails: false,
         engine_polls: VecDeque::new(),
         launched: Vec::new(),
+        launched_capture: Vec::new(),
         launched_asio: Vec::new(),
         applied_asio: Vec::new(),
         engine_asio: None,
@@ -649,6 +745,7 @@ fn ready_pc() -> World {
         },
         audio_apps: Vec::new(),
         app_entrances: HashMap::from([(std::process::id(), Ok(None))]),
+        app_role_entrances: HashMap::new(),
         app_set_results: VecDeque::new(),
         routing_reads: Vec::new(),
         calls: Vec::new(),
@@ -697,6 +794,7 @@ fn this_build() -> Config {
         default_language: Language::Ko,
         requires_test_signing: true,
         min_os_build: 19_041,
+        min_app_capture_build: Config::MIN_APP_CAPTURE_BUILD,
         arch: Arch::X64,
         fault_grace: Config::FAULT_GRACE,
         profile_file: None,
@@ -715,6 +813,8 @@ fn dac_settings() -> Settings {
         language: None,
         skin: Skin::Standard,
         output: Some(dac_choice()),
+        entrance: Default::default(),
+        app_capture: Default::default(),
         profile: Default::default(),
         output_path: Default::default(),
         upmix: Default::default(),
@@ -938,6 +1038,7 @@ fn audio_app(pid: u32, exe: &str, device: &str, active: bool) -> AudioApp {
     AudioApp {
         pid,
         exe: exe.into(),
+        path: format!(r"c:\apps\{exe}"),
         display_name: exe.trim_end_matches(".exe").into(),
         device: id(device),
         active,
@@ -1870,6 +1971,8 @@ fn a_changed_device_id_is_found_by_name_and_remembered() {
                 id: id("{dac-before-reboot}"),
                 name: DAC_NAME.into(),
             }),
+            entrance: Default::default(),
+            app_capture: Default::default(),
             profile: Default::default(),
             output_path: Default::default(),
             upmix: Default::default(),
@@ -2578,6 +2681,8 @@ fn new_starts_at_welcome_otherwise() {
             id: id("{old-dac}"),
             name: "Old DAC".into(),
         }),
+        entrance: Default::default(),
+        app_capture: Default::default(),
         profile: Default::default(),
         output_path: Default::default(),
         upmix: Default::default(),
@@ -4983,4 +5088,783 @@ fn a_profile_file_locks_no_upmix_intent() {
         take_applied(&shared),
         [stage(1, 48_000), "upmix apply false".to_owned()]
     );
+}
+
+fn app_capture_settings(exclusive: bool) -> Settings {
+    Settings {
+        output: Some(dac_choice()),
+        entrance: EntranceKind::AppSound,
+        app_capture: AppCaptureSettings {
+            discard: Some(OutputChoice {
+                id: id(REALTEK),
+                name: "Speakers (Realtek)".into(),
+            }),
+            main: Some(CaptureApp {
+                exe: "game.exe".into(),
+                display_name: "Game".into(),
+            }),
+            music: None,
+            exclusive,
+        },
+        ..Settings::default()
+    }
+}
+
+fn app_capture_pc() -> World {
+    let mut world = ready_pc();
+    world.platform.os_build = Config::MIN_APP_CAPTURE_BUILD;
+    world.audio_apps = vec![AudioApp {
+        pid: 42,
+        exe: "game.exe".into(),
+        path: r"c:\games\game.exe".into(),
+        display_name: "Game".into(),
+        device: id(DAC),
+        active: true,
+    }];
+    world.app_entrances.insert(42, Ok(None));
+    world
+}
+
+fn sent_app(
+    exe: &str,
+    path: &str,
+    pid: u32,
+    previous: Option<DeviceId>,
+) -> supervisor::app_outputs::SentApp {
+    supervisor::app_outputs::SentApp {
+        exe: exe.into(),
+        path: path.into(),
+        pid,
+        discard: id(REALTEK),
+        previous: AppRoleOutputs {
+            console: previous.clone(),
+            multimedia: previous,
+        },
+    }
+}
+
+fn recovery_record(apps: Vec<supervisor::app_outputs::SentApp>) -> String {
+    supervisor::app_outputs::AppOutputs {
+        app_pid: None,
+        apps,
+    }
+    .to_json()
+}
+
+#[test]
+fn app_entrance_choice_is_saved_even_when_the_build_is_unsupported() {
+    let (_, mut supervisor) = start(ready_pc(), Settings::default());
+    assert_eq!(supervisor.phase(), &Phase::Setup(SetupStep::Welcome));
+    supervisor
+        .handle(Intent::ChooseEntrance(EntranceKind::AppSound))
+        .unwrap();
+    assert_eq!(supervisor.settings().entrance, EntranceKind::AppSound);
+    assert_eq!(supervisor.phase(), &Phase::Setup(SetupStep::Unsupported));
+    assert!(
+        supervisor
+            .snapshot()
+            .error
+            .as_ref()
+            .is_some_and(|error| error.next == NextAction::None)
+    );
+}
+
+#[test]
+fn app_capture_enable_records_before_routing_and_passes_targets_and_exclusive() {
+    let (shared, mut supervisor) = start(app_capture_pc(), app_capture_settings(true));
+    assert_eq!(supervisor.phase(), &Phase::Ready);
+    shared.take_calls();
+    supervisor.handle(Intent::Enable).unwrap();
+    assert_eq!(supervisor.phase(), &Phase::Running);
+    let calls = shared.take_calls();
+    let write = calls
+        .iter()
+        .position(|call| call == "write app outputs")
+        .unwrap();
+    let set = calls
+        .iter()
+        .position(|call| call == "set app 42 {realtek}")
+        .unwrap();
+    assert!(write < set);
+    assert_eq!(
+        shared.get().launched_capture,
+        ["apps [(42, 0)] discard={realtek} exclusive=true"]
+    );
+    assert!(shared.get().restore_point.is_none());
+    assert_eq!(shared.get().roles, previous_roles());
+}
+
+#[test]
+fn app_capture_record_failure_changes_no_application_output() {
+    let mut world = app_capture_pc();
+    world.app_outputs_write_error = true;
+    let (shared, mut supervisor) = start(world, app_capture_settings(false));
+    shared.take_calls();
+    let error = supervisor.handle(Intent::Enable).unwrap_err();
+    assert!(error.message.contains("기록"));
+    assert!(
+        !shared
+            .take_calls()
+            .iter()
+            .any(|call| call.starts_with("set app"))
+    );
+}
+
+#[test]
+fn failed_preference_read_keeps_the_existing_recovery_record_authoritative() {
+    let mut world = app_capture_pc();
+    let old = recovery_record(vec![sent_app(
+        "other.exe",
+        r"c:\apps\other.exe",
+        90,
+        Some(id(DAC)),
+    )]);
+    world.app_outputs = Some(old.clone());
+    world.app_entrances.insert(
+        42,
+        Err(HostError::Failed("preference read scripted".into())),
+    );
+    let (shared, mut supervisor) = start(world, app_capture_settings(false));
+
+    assert!(supervisor.handle(Intent::Enable).is_err());
+    assert_eq!(shared.get().app_outputs.as_deref(), Some(old.as_str()));
+
+    shared.get().app_entrances.insert(42, Ok(None));
+    supervisor.handle(Intent::Enable).unwrap();
+    let saved = supervisor::app_outputs::AppOutputs::from_json(
+        shared
+            .get()
+            .app_outputs
+            .as_deref()
+            .expect("recovery record"),
+    )
+    .unwrap();
+    assert!(saved.apps.iter().any(|sent| sent.exe == "other.exe"));
+    assert!(saved.apps.iter().any(|sent| sent.exe == "game.exe"));
+}
+
+#[test]
+fn enabling_an_app_undoes_its_pending_entry_before_recording_fresh_roles() {
+    let (shared, mut supervisor) = start(app_capture_pc(), app_capture_settings(false));
+    supervisor.handle(Intent::Enable).unwrap();
+    shared.get().audio_apps.clear();
+    supervisor.handle(Intent::Disable).unwrap();
+
+    {
+        let mut world = shared.get();
+        world.audio_apps.push(AudioApp {
+            pid: 43,
+            exe: "game.exe".into(),
+            path: r"c:\games\game.exe".into(),
+            display_name: "Game".into(),
+            device: id(REALTEK),
+            active: true,
+        });
+        world.app_entrances.insert(43, Ok(Some(id(REALTEK))));
+        world.app_role_entrances.insert(
+            43,
+            Ok(AppRoleOutputs {
+                console: Some(id(REALTEK)),
+                multimedia: Some(id(REALTEK)),
+            }),
+        );
+    }
+    shared.take_calls();
+    supervisor.handle(Intent::Enable).unwrap();
+    let calls = shared.take_calls();
+    let restore = calls
+        .iter()
+        .position(|call| call == "set app 43 default")
+        .expect("the pending entry is undone");
+    let route = calls
+        .iter()
+        .position(|call| call == "set app 43 {realtek}")
+        .expect("the fresh capture is routed");
+    assert!(restore < route);
+    let saved = supervisor::app_outputs::AppOutputs::from_json(
+        shared
+            .get()
+            .app_outputs
+            .as_deref()
+            .expect("recovery record"),
+    )
+    .unwrap();
+    assert_eq!(saved.apps[0].pid, 43);
+    assert_eq!(saved.apps[0].previous, AppRoleOutputs::default());
+}
+
+#[test]
+fn enabling_refuses_to_replace_a_pending_entry_that_cannot_be_undone() {
+    let (shared, mut supervisor) = start(app_capture_pc(), app_capture_settings(false));
+    supervisor.handle(Intent::Enable).unwrap();
+    shared.get().audio_apps.clear();
+    supervisor.handle(Intent::Disable).unwrap();
+    {
+        let mut world = shared.get();
+        world.audio_apps.push(AudioApp {
+            pid: 43,
+            exe: "game.exe".into(),
+            path: r"c:\games\game.exe".into(),
+            display_name: "Game".into(),
+            device: id(REALTEK),
+            active: true,
+        });
+        world.app_entrances.insert(43, Ok(Some(id(REALTEK))));
+        world.app_role_entrances.insert(
+            43,
+            Ok(AppRoleOutputs {
+                console: Some(id(REALTEK)),
+                multimedia: Some(id(REALTEK)),
+            }),
+        );
+        world
+            .app_set_results
+            .push_back(Err(HostError::Failed("undo scripted".into())));
+    }
+
+    let error = supervisor.handle(Intent::Enable).unwrap_err();
+    assert!(error.message.contains("되돌리지"));
+    assert_eq!(shared.get().launched_capture.len(), 1);
+    let saved = supervisor::app_outputs::AppOutputs::from_json(
+        shared
+            .get()
+            .app_outputs
+            .as_deref()
+            .expect("pending recovery record"),
+    )
+    .unwrap();
+    assert_eq!(saved.apps.len(), 1);
+    assert_eq!(saved.apps[0].pid, 42);
+}
+
+#[test]
+fn app_capture_launch_failure_restores_the_previous_output() {
+    let mut world = app_capture_pc();
+    world.launch_fails = true;
+    let (shared, mut supervisor) = start(world, app_capture_settings(false));
+    let error = supervisor.handle(Intent::Enable).unwrap_err();
+    assert!(error.message.contains("엔진"));
+    assert_eq!(shared.get().app_entrances.get(&42), Some(&Ok(None)));
+    assert!(shared.get().app_outputs.is_none());
+}
+
+#[test]
+fn unsupported_app_routing_getter_and_setter_still_start_in_manual_mode() {
+    let mut world = app_capture_pc();
+    world.app_entrances.insert(42, Err(HostError::Unsupported));
+    world.app_set_results.push_back(Err(HostError::Unsupported));
+    let (shared, mut supervisor) = start(world, app_capture_settings(false));
+    supervisor.handle(Intent::Enable).unwrap();
+    assert_eq!(supervisor.phase(), &Phase::Running);
+    assert!(shared.get().app_outputs.is_none());
+    assert!(
+        !shared
+            .get()
+            .calls
+            .iter()
+            .any(|call| call.starts_with("set app"))
+    );
+    let notes = supervisor.snapshot().notes;
+    assert!(
+        notes.iter().any(|note| note.contains("Windows 소리 설정")),
+        "{notes:?}"
+    );
+}
+
+#[test]
+fn capture_ended_reopens_the_selected_lane_when_its_process_is_still_live() {
+    let (shared, mut supervisor) = start(app_capture_pc(), app_capture_settings(false));
+    supervisor.handle(Intent::Enable).unwrap();
+    shared
+        .get()
+        .engine_polls
+        .push_back(Ok(vec![SessionNotice::CaptureEnded]));
+    supervisor.tick(Instant::now());
+    assert_eq!(
+        supervisor
+            .snapshot()
+            .app_capture
+            .main
+            .expect("main lane")
+            .state,
+        ssr_types::app::CaptureState::Capturing
+    );
+    assert_eq!(shared.get().launched_capture.len(), 2);
+}
+
+#[test]
+fn inactive_captured_app_becomes_waiting_once() {
+    let (shared, mut supervisor) = start(app_capture_pc(), app_capture_settings(false));
+    supervisor.handle(Intent::Enable).unwrap();
+    shared.get().audio_apps[0].active = false;
+    let now = Instant::now() + Duration::from_secs(1);
+    supervisor.tick(now);
+    let snapshot = supervisor.snapshot();
+    assert_eq!(
+        snapshot.app_capture.main.expect("main lane").state,
+        ssr_types::app::CaptureState::Waiting
+    );
+    let waiting =
+        supervisor::text::Message::AppCaptureWaiting { app: "Game".into() }.render(Language::Ko);
+    assert_eq!(
+        snapshot
+            .notes
+            .iter()
+            .filter(|note| **note == waiting)
+            .count(),
+        1
+    );
+    supervisor.tick(now + Duration::from_secs(1));
+    assert_eq!(
+        supervisor
+            .snapshot()
+            .notes
+            .iter()
+            .filter(|note| **note == waiting)
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn running_refuses_entrance_and_capture_app_changes() {
+    let (_, mut supervisor) = start(app_capture_pc(), app_capture_settings(false));
+    supervisor.handle(Intent::Enable).unwrap();
+    assert!(
+        supervisor
+            .handle(Intent::ChooseEntrance(EntranceKind::Driver))
+            .is_err()
+    );
+    assert!(
+        supervisor
+            .handle(Intent::ChooseCaptureApp(CaptureAppChoice {
+                lane: 0,
+                exe: None,
+            }))
+            .is_err()
+    );
+    assert_eq!(supervisor.phase(), &Phase::Running);
+}
+
+#[test]
+fn app_capture_reattaches_once_to_a_new_active_pid_and_updates_the_record() {
+    let (shared, mut supervisor) = start(app_capture_pc(), app_capture_settings(false));
+    supervisor.handle(Intent::Enable).unwrap();
+    {
+        let mut world = shared.get();
+        world.audio_apps = vec![AudioApp {
+            pid: 43,
+            exe: "game.exe".into(),
+            path: r"c:\games\game.exe".into(),
+            display_name: "Game".into(),
+            device: id(REALTEK),
+            active: true,
+        }];
+    }
+    let start = Instant::now();
+    supervisor.tick(start + Duration::from_secs(1));
+    assert_eq!(
+        shared.get().launched_capture,
+        [
+            "apps [(42, 0)] discard={realtek} exclusive=false",
+            "apps [(43, 0)] discard={realtek} exclusive=false"
+        ]
+    );
+    let record = supervisor::app_outputs::AppOutputs::from_json(
+        shared
+            .get()
+            .app_outputs
+            .as_deref()
+            .expect("recovery record"),
+    )
+    .unwrap();
+    assert_eq!(record.apps[0].pid, 43);
+    supervisor.tick(start + Duration::from_secs(2));
+    assert_eq!(shared.get().launched_capture.len(), 2);
+    let unchanged = supervisor::app_outputs::AppOutputs::from_json(
+        shared
+            .get()
+            .app_outputs
+            .as_deref()
+            .expect("recovery record"),
+    )
+    .unwrap();
+    assert_eq!(unchanged, record);
+}
+
+#[test]
+fn app_capture_restart_launches_only_lanes_with_live_processes() {
+    let mut settings = app_capture_settings(false);
+    settings.app_capture.music = Some(CaptureApp {
+        exe: "music.exe".into(),
+        display_name: "Music".into(),
+    });
+    let mut world = app_capture_pc();
+    world.audio_apps.push(AudioApp {
+        pid: 52,
+        exe: "music.exe".into(),
+        path: r"c:\music\music.exe".into(),
+        display_name: "Music".into(),
+        device: id(DAC),
+        active: true,
+    });
+    world.app_entrances.insert(52, Ok(None));
+    let (shared, mut supervisor) = start(world, settings);
+    supervisor.handle(Intent::Enable).unwrap();
+    shared.get().audio_apps = vec![AudioApp {
+        pid: 43,
+        exe: "game.exe".into(),
+        path: r"c:\games\game.exe".into(),
+        display_name: "Game".into(),
+        device: id(REALTEK),
+        active: true,
+    }];
+
+    supervisor.tick(Instant::now() + Duration::from_secs(1));
+    assert_eq!(
+        shared.get().launched_capture.last().map(String::as_str),
+        Some("apps [(43, 0)] discard={realtek} exclusive=false")
+    );
+    let snapshot = supervisor.snapshot();
+    assert_eq!(
+        snapshot.app_capture.music.expect("music lane").state,
+        ssr_types::app::CaptureState::Waiting
+    );
+}
+
+#[test]
+fn ended_capture_reopens_the_same_pid_and_limits_restarts_to_five_seconds() {
+    let (shared, mut supervisor) = start(app_capture_pc(), app_capture_settings(false));
+    supervisor.handle(Intent::Enable).unwrap();
+    let start = Instant::now();
+    shared
+        .get()
+        .engine_polls
+        .push_back(Ok(vec![SessionNotice::CaptureEnded]));
+    supervisor.tick(start + Duration::from_secs(1));
+    assert_eq!(shared.get().launched_capture.len(), 2);
+
+    shared
+        .get()
+        .engine_polls
+        .push_back(Ok(vec![SessionNotice::CaptureEnded]));
+    supervisor.tick(start + Duration::from_secs(2));
+    assert_eq!(shared.get().launched_capture.len(), 2);
+    supervisor.tick(start + Duration::from_secs(6));
+    assert_eq!(shared.get().launched_capture.len(), 3);
+}
+
+#[test]
+fn reattached_session_does_not_inherit_the_old_fault_deadline() {
+    let (shared, mut supervisor) = start(app_capture_pc(), app_capture_settings(false));
+    supervisor.handle(Intent::Enable).unwrap();
+    shared.get().audio_apps = vec![AudioApp {
+        pid: 43,
+        exe: "game.exe".into(),
+        path: r"c:\games\game.exe".into(),
+        display_name: "Game".into(),
+        device: id(REALTEK),
+        active: true,
+    }];
+    shared
+        .get()
+        .engine_polls
+        .push_back(Ok(vec![SessionNotice::Fault(EngineFault::CaptureLost(
+            "old capture".into(),
+        ))]));
+    let start = Instant::now();
+    supervisor.tick(start + Duration::from_secs(1));
+    assert_eq!(shared.get().launched_capture.len(), 2);
+
+    supervisor.tick(start + Config::FAULT_GRACE + Duration::from_secs(2));
+    assert_eq!(supervisor.phase(), &Phase::Running);
+}
+
+#[test]
+fn app_capture_discard_wizard_reports_empty_and_missing_choices() {
+    let mut settings = app_capture_settings(false);
+    settings.app_capture.discard = None;
+    let mut world = app_capture_pc();
+    world
+        .outputs
+        .retain(|output| output.endpoint.is_some() || output.id == id(DAC));
+    let (_, mut supervisor) = start(world, settings);
+    let error = supervisor.handle(Intent::BeginSetup).unwrap_err();
+    assert_eq!(supervisor.phase(), &Phase::Setup(SetupStep::ChooseDiscard));
+    assert_eq!(error.next, NextAction::Retry);
+    assert_eq!(
+        error.message,
+        supervisor::text::Message::NoDiscardOutput.render(Language::Ko)
+    );
+
+    let mut settings = app_capture_settings(false);
+    settings.app_capture.discard = Some(OutputChoice {
+        id: id("{gone}"),
+        name: "Gone output".into(),
+    });
+    let (_, mut supervisor) = start(app_capture_pc(), settings);
+    let error = supervisor.handle(Intent::BeginSetup).unwrap_err();
+    assert_eq!(supervisor.phase(), &Phase::Setup(SetupStep::ChooseDiscard));
+    assert_eq!(error.next, NextAction::Retry);
+    assert!(error.message.contains("Gone output"));
+}
+
+#[test]
+fn app_capture_refuses_using_one_device_as_output_and_discard() {
+    let mut settings = app_capture_settings(false);
+    settings.app_capture.discard = None;
+    let (_, mut supervisor) = start(app_capture_pc(), settings);
+    supervisor.handle(Intent::BeginSetup).unwrap();
+    assert_eq!(supervisor.phase(), &Phase::Setup(SetupStep::ChooseDiscard));
+    let error = supervisor
+        .handle(Intent::ChooseDiscard(id(DAC)))
+        .unwrap_err();
+    assert!(error.message.contains("버리는 출력"));
+
+    supervisor
+        .handle(Intent::ChooseDiscard(id(REALTEK)))
+        .unwrap();
+    let error = supervisor
+        .handle(Intent::ChooseOutput(id(REALTEK)))
+        .unwrap_err();
+    assert_eq!(
+        error.message,
+        supervisor::text::Message::OutputIsDiscard.render(Language::Ko)
+    );
+    assert_eq!(supervisor.settings().output, Some(dac_choice()));
+}
+
+#[test]
+fn parked_app_output_is_retried_on_a_tick_and_adopted_after_restart() {
+    let mut world = app_capture_pc();
+    world.audio_apps.clear();
+    world.app_outputs = Some(
+        supervisor::app_outputs::AppOutputs {
+            app_pid: None,
+            apps: vec![supervisor::app_outputs::SentApp {
+                exe: "game.exe".into(),
+                path: r"c:\games\game.exe".into(),
+                pid: 42,
+                discard: id(REALTEK),
+                previous: AppRoleOutputs {
+                    console: Some(id(DAC)),
+                    multimedia: Some(id(DAC)),
+                },
+            }],
+        }
+        .to_json(),
+    );
+    let (shared, mut supervisor) = start(world, app_capture_settings(false));
+    let saved = supervisor::app_outputs::AppOutputs::from_json(
+        shared.get().app_outputs.as_deref().expect("parked record"),
+    )
+    .unwrap();
+    assert_eq!(saved.app_pid, None);
+    assert_eq!(saved.apps.len(), 1);
+    assert_eq!(
+        supervisor.snapshot().error.expect("pending undo").next,
+        NextAction::None
+    );
+
+    {
+        let mut world = shared.get();
+        world.audio_apps.push(AudioApp {
+            pid: 77,
+            exe: "game.exe".into(),
+            path: r"c:\games\game.exe".into(),
+            display_name: "Game".into(),
+            device: id(REALTEK),
+            active: true,
+        });
+        world.app_entrances.insert(77, Ok(Some(id(REALTEK))));
+    }
+    supervisor.tick(Instant::now());
+    assert_eq!(
+        shared.get().app_entrances.get(&77),
+        Some(&Ok(Some(id(DAC))))
+    );
+    assert!(shared.get().app_outputs.is_none());
+    assert!(supervisor.snapshot().error.is_none());
+}
+
+#[test]
+fn pending_undo_retries_while_another_app_capture_is_running() {
+    let mut world = app_capture_pc();
+    world.app_outputs = Some(recovery_record(vec![sent_app(
+        "other.exe",
+        r"c:\apps\other.exe",
+        77,
+        Some(id(DAC)),
+    )]));
+    let (shared, mut supervisor) = start(world, app_capture_settings(false));
+    supervisor.handle(Intent::Enable).unwrap();
+    {
+        let mut world = shared.get();
+        world.audio_apps.push(AudioApp {
+            pid: 77,
+            exe: "other.exe".into(),
+            path: r"c:\apps\other.exe".into(),
+            display_name: "Other".into(),
+            device: id(REALTEK),
+            active: true,
+        });
+        world.app_role_entrances.insert(
+            77,
+            Ok(AppRoleOutputs {
+                console: Some(id(REALTEK)),
+                multimedia: Some(id(REALTEK)),
+            }),
+        );
+    }
+
+    supervisor.tick(Instant::now() + Duration::from_secs(1));
+    assert_eq!(
+        shared.get().app_role_entrances.get(&77),
+        Some(&Ok(AppRoleOutputs {
+            console: Some(id(DAC)),
+            multimedia: Some(id(DAC)),
+        }))
+    );
+    let saved = supervisor::app_outputs::AppOutputs::from_json(
+        shared.get().app_outputs.as_deref().expect("active record"),
+    )
+    .unwrap();
+    assert_eq!(saved.apps.len(), 1);
+    assert_eq!(saved.apps[0].exe, "game.exe");
+}
+
+#[test]
+fn pending_undo_retries_while_the_driver_entrance_is_running() {
+    let mut world = ready_pc();
+    world.app_outputs = Some(recovery_record(vec![sent_app(
+        "other.exe",
+        r"c:\apps\other.exe",
+        77,
+        Some(id(DAC)),
+    )]));
+    let (shared, mut supervisor) = start(world, dac_settings());
+    supervisor.handle(Intent::Enable).unwrap();
+    {
+        let mut world = shared.get();
+        world.audio_apps.push(AudioApp {
+            pid: 77,
+            exe: "other.exe".into(),
+            path: r"c:\apps\other.exe".into(),
+            display_name: "Other".into(),
+            device: id(REALTEK),
+            active: true,
+        });
+        world.app_role_entrances.insert(
+            77,
+            Ok(AppRoleOutputs {
+                console: Some(id(REALTEK)),
+                multimedia: Some(id(REALTEK)),
+            }),
+        );
+    }
+
+    supervisor.tick(Instant::now() + Duration::from_secs(1));
+    assert!(shared.get().app_outputs.is_none());
+    assert_eq!(
+        shared.get().app_role_entrances.get(&77),
+        Some(&Ok(AppRoleOutputs {
+            console: Some(id(DAC)),
+            multimedia: Some(id(DAC)),
+        }))
+    );
+}
+
+#[test]
+fn disable_shows_a_pending_undo_without_an_action_and_tick_retries_the_same_path() {
+    let (shared, mut supervisor) = start(app_capture_pc(), app_capture_settings(false));
+    supervisor.handle(Intent::Enable).unwrap();
+    shared.get().audio_apps.clear();
+    supervisor.handle(Intent::Disable).unwrap();
+    let saved = supervisor::app_outputs::AppOutputs::from_json(
+        shared.get().app_outputs.as_deref().expect("parked record"),
+    )
+    .unwrap();
+    assert_eq!(saved.app_pid, None);
+    assert_eq!(saved.apps.len(), 1);
+    assert_eq!(supervisor.phase(), &Phase::Ready);
+    let error = supervisor.snapshot().error.expect("pending undo");
+    assert_eq!(
+        error.message,
+        supervisor::text::Message::AppOutputUndoPending {
+            app: "game.exe".into()
+        }
+        .render(Language::Ko)
+    );
+    assert_eq!(error.next, NextAction::None);
+
+    {
+        let mut world = shared.get();
+        world.audio_apps.extend([
+            AudioApp {
+                pid: 77,
+                exe: "game.exe".into(),
+                path: r"d:\other\game.exe".into(),
+                display_name: "Other Game".into(),
+                device: id(REALTEK),
+                active: true,
+            },
+            AudioApp {
+                pid: 78,
+                exe: "game.exe".into(),
+                path: r"c:\games\game.exe".into(),
+                display_name: "Game".into(),
+                device: id(REALTEK),
+                active: true,
+            },
+        ]);
+        world.app_role_entrances.insert(
+            78,
+            Ok(AppRoleOutputs {
+                console: Some(id(REALTEK)),
+                multimedia: Some(id(REALTEK)),
+            }),
+        );
+    }
+
+    supervisor.tick(Instant::now() + Duration::from_secs(1));
+    assert_eq!(
+        shared.get().app_role_entrances.get(&78),
+        Some(&Ok(AppRoleOutputs::default()))
+    );
+    assert!(shared.get().app_outputs.is_none());
+    assert!(supervisor.snapshot().error.is_none());
+}
+
+#[test]
+fn app_capture_ignores_kernel_streaming_and_preflights_reattach() {
+    let mut settings = app_capture_settings(false);
+    settings.output_path = OutputPath::KernelStreaming;
+    let (shared, mut supervisor) = start(app_capture_pc(), settings);
+    supervisor.handle(Intent::Enable).unwrap();
+    assert!(
+        supervisor
+            .snapshot()
+            .notes
+            .contains(&supervisor::text::Message::KsNotForAppCapture.render(Language::Ko))
+    );
+    assert!(
+        !shared
+            .get()
+            .calls
+            .iter()
+            .any(|call| call.starts_with("kernel target"))
+    );
+
+    shared.get().audio_apps = vec![AudioApp {
+        pid: 43,
+        exe: "game.exe".into(),
+        path: r"c:\games\game.exe".into(),
+        display_name: "Game".into(),
+        device: id(REALTEK),
+        active: true,
+    }];
+    let now = Instant::now() + Duration::from_secs(1);
+    assert!(supervisor.prepare_app_capture_tick(now));
+    supervisor.tick(now);
+    assert_eq!(shared.get().launched_capture.len(), 2);
 }

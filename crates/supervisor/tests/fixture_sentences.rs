@@ -10,6 +10,15 @@ use supervisor::text::Message;
 
 const NAMES: &[&str] = &[
     "setup-welcome",
+    "setup-apps-unsupported",
+    "setup-choose-discard",
+    "setup-choose-discard-empty",
+    "ready-apps",
+    "ready-apps-no-app",
+    "ready-apps-not-running",
+    "running-apps",
+    "running-apps-exclusive",
+    "running-apps-waiting",
     "setup-unsupported",
     "setup-not-test-signing",
     "setup-driver-not-installed",
@@ -72,6 +81,10 @@ fn expected(name: &str, output_name: &str) -> Expected {
     };
     match name {
         "setup-welcome"
+        | "setup-choose-discard"
+        | "ready-apps"
+        | "running-apps"
+        | "running-apps-exclusive"
         | "setup-driver-not-installed"
         | "setup-choose-output"
         | "setup-choose-output-empty"
@@ -81,6 +94,34 @@ fn expected(name: &str, output_name: &str) -> Expected {
         | "ready-asio-off"
         | "ready-asio-24-1-10"
         | "quit" => none(),
+        "setup-apps-unsupported" => Expected {
+            error: Some((
+                Message::AppCaptureOsRequirement {
+                    min_build: Config::MIN_APP_CAPTURE_BUILD,
+                },
+                NextAction::None,
+            )),
+            ..none()
+        },
+        "setup-choose-discard-empty" => Expected {
+            error: Some((Message::NoDiscardOutput, NextAction::Retry)),
+            ..none()
+        },
+        "ready-apps-no-app" => Expected {
+            error: Some((Message::CaptureAppFirst, NextAction::None)),
+            ..none()
+        },
+        "ready-apps-not-running" => Expected {
+            error: Some((
+                Message::CaptureAppNotRunning { app: "Game".into() },
+                NextAction::Retry,
+            )),
+            ..none()
+        },
+        "running-apps-waiting" => Expected {
+            notes: vec![Message::AppCaptureWaiting { app: "Game".into() }],
+            ..none()
+        },
         "setup-unsupported" => Expected {
             error: Some((
                 Message::OsRequirement {

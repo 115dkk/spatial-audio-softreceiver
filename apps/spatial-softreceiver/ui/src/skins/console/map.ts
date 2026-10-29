@@ -81,9 +81,15 @@ export interface SceneMap {
 
 /**
  * The map's drawing, legend and status line. `lanes` are the entrances the
- * legend names (the ASIO input only while it is on).
+ * legend names (the ASIO input only while it is on), by `name` (the
+ * app-sound entrance names its lanes, ADR 0043).
  */
-export function sceneMap(directions: readonly DirectionView[], running: boolean, lanes: readonly number[]): SceneMap {
+export function sceneMap(
+  directions: readonly DirectionView[],
+  running: boolean,
+  lanes: readonly number[],
+  name: (lane: number) => string = (lane) => entrance(lane).name,
+): SceneMap {
   const p = text.profile;
   const points = svg('g', { class: 'cn-map-directions' });
   const names = svg('g', { class: 'cn-map-names' });
@@ -143,7 +149,7 @@ export function sceneMap(directions: readonly DirectionView[], running: boolean,
     h(
       'div',
       { class: 'cn-map-legend', role: 'group', 'aria-label': p.legendLabel },
-      h('ul', null, ...lanes.map((lane) => legendItem(laneMark(lane), entrance(lane).name))),
+      h('ul', null, ...lanes.map((lane) => legendItem(laneMark(lane), name(lane)))),
       h(
         'ul',
         null,

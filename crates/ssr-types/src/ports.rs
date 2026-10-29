@@ -248,9 +248,18 @@ pub struct AudioApp {
     pub pid: u32,
     /// ASCII-lowercase executable basename.
     pub exe: String,
+    /// ASCII-lowercase full executable image path.
+    pub path: String,
     pub display_name: String,
     pub device: DeviceId,
     pub active: bool,
+}
+
+/// The executable-scoped render preferences used by process-loopback capture.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AppRoleOutputs {
+    pub console: Option<DeviceId>,
+    pub multimedia: Option<DeviceId>,
 }
 
 /// The operating system's identifier of a render endpoint (the `IMMDevice`
@@ -448,10 +457,32 @@ pub trait Host {
         Err(HostError::Unsupported)
     }
 
+    /// Reads the executable-scoped console and multimedia preferences separately.
+    fn app_entrance_roles(&mut self, pid: u32) -> Result<AppRoleOutputs, HostError> {
+        let entrance = self.app_entrance(pid)?;
+        Ok(AppRoleOutputs {
+            console: entrance.clone(),
+            multimedia: entrance,
+        })
+    }
+
     /// Persists the executable-scoped console and multimedia render device, or
     /// clears both with `None`; the communications role is left untouched.
     fn set_app_entrance(&mut self, _pid: u32, _device: Option<&DeviceId>) -> Result<(), HostError> {
         Err(HostError::Unsupported)
+    }
+
+    /// Persists the executable-scoped console and multimedia preferences separately.
+    fn set_app_entrance_roles(
+        &mut self,
+        pid: u32,
+        roles: &AppRoleOutputs,
+    ) -> Result<(), HostError> {
+        if roles.console == roles.multimedia {
+            self.set_app_entrance(pid, roles.console.as_ref())
+        } else {
+            Err(HostError::Unsupported)
+        }
     }
 
     /// Finds the kernel-streaming filter and render pin behind `output`.
@@ -483,6 +514,16 @@ pub trait Host {
     /// Writes (`Some`) or removes (`None`) the restore point `ssr-guard`
     /// reads (`supervisor::restore_point`).
     fn write_restore_point(&mut self, json: Option<&str>) -> Result<(), HostError>;
+
+    /// Writes (`Some`) or removes (`None`) the app-output recovery record.
+    fn write_app_outputs(&mut self, _json: Option<&str>) -> Result<(), HostError> {
+        Ok(())
+    }
+
+    /// Reads the app-output recovery record when one exists.
+    fn read_app_outputs(&mut self) -> Result<Option<String>, HostError> {
+        Ok(None)
+    }
 }
 
 /// The longest a capture read may wait before the engine checks for a stop

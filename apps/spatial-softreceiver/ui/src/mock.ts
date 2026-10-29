@@ -8,6 +8,7 @@
 import type { Api, Shell, Unlisten, UpdateState } from './api';
 import type {
   AppRule,
+  CaptureAppChoice,
   Arch,
   CorrectionView,
   DirectionView,
@@ -84,6 +85,17 @@ const archName = (arch: Arch): Message =>
 /** The Messages the mock can meet, by their names in text.rs. */
 const say = {
   notAllowed: message(catalogKo.supervisor.not_allowed, catalogEn.supervisor.not_allowed),
+  appCaptureOsRequirement: (minBuild: number): Message =>
+    message(catalogKo.supervisor.app_capture_os_requirement(minBuild), catalogEn.supervisor.app_capture_os_requirement(minBuild)),
+  disableBeforeChangingEntrance: message(catalogKo.supervisor.disable_before_changing_entrance, catalogEn.supervisor.disable_before_changing_entrance),
+  disableBeforeChangingApps: message(catalogKo.supervisor.disable_before_changing_apps, catalogEn.supervisor.disable_before_changing_apps),
+  discardIsOutput: message(catalogKo.supervisor.discard_is_output, catalogEn.supervisor.discard_is_output),
+  outputIsDiscard: message(catalogKo.supervisor.output_is_discard, catalogEn.supervisor.output_is_discard),
+  noDiscardOutput: message(catalogKo.supervisor.no_discard_output, catalogEn.supervisor.no_discard_output),
+  captureAppFirst: message(catalogKo.supervisor.capture_app_first, catalogEn.supervisor.capture_app_first),
+  captureSameApp: message(catalogKo.supervisor.capture_same_app, catalogEn.supervisor.capture_same_app),
+  captureAppNotRunning: (app: string): Message =>
+    message(catalogKo.supervisor.capture_app_not_running(app), catalogEn.supervisor.capture_app_not_running(app)),
   appEntranceMoved: (app: string): Message =>
     message(catalogKo.supervisor.app_entrance_moved(app), catalogEn.supervisor.app_entrance_moved(app)),
   entranceRoutingUnavailable: message(
@@ -204,6 +216,7 @@ const refused = (message: Message = say.notAllowed): Outcome => ({ kind: 'refuse
 
 /** machine.rs Config: Windows 10 2004 or newer, an x64 build, test signed. */
 const MIN_OS_BUILD = 19041;
+const MIN_APP_CAPTURE_BUILD = 20348;
 const BUILD_ARCH: Arch = 'x64';
 const GOOD_PLATFORM: Platform = { os_build: 26100, arch: 'x64', test_signing: true, secure_boot: 'disabled' };
 const GOOD_DRIVER: DriverState = {
@@ -468,6 +481,17 @@ function brirName(path: string): string {
 
 export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
   let state: Snapshot = structuredClone(start);
+  state.entrance ??= 'driver';
+  const capture = state.app_capture ??= {
+    supported: (start.platform?.os_build ?? 0) >= MIN_APP_CAPTURE_BUILD,
+    min_build: MIN_APP_CAPTURE_BUILD,
+    discard: null,
+    discards: start.outputs.filter((output) => output.id !== start.chosen_output?.id),
+    main: null,
+    music: null,
+    apps: [],
+    exclusive: false,
+  };
   // The fixtures the mock borrows from are read in the language it starts in,
   // and that language stands for the Windows display language (what
   // `set_language` with null, automatic, follows).
@@ -736,7 +760,7 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
       .sort((left, right) => left < right ? -1 : left > right ? 1 : 0)
       .map((exe) => ({ exe, entrance: rules.get(exe) ?? null, built_in: builtInRule(exe) }))
       .filter((row) => row.entrance !== null || row.built_in !== null);
-    const running = state.phase.kind === 'running' && state.routing.enabled;
+    const running = state.phase.kind === 'running' && state.entrance === 'driver' && state.routing.enabled;
     if (running && !state.routing.available && !routingUnavailableNoted) {
       notes = [...(notes ?? []), say.entranceRoutingUnavailable];
       routingUnavailableNoted = true;
@@ -910,6 +934,17 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
   /** The wizard's checks in order (machine.rs evaluate). */
   function evaluate(): Outcome {
     state.platform = structuredClone(host.platform);
+    capture.min_build = MIN_APP_CAPTURE_BUILD;
+    capture.supported = host.platform.os_build >= capture.min_build;
+    if (state.entrance === 'app_sound') {
+      state.driver = null;
+      if (!capture.supported) {
+        setupStep('unsupported');
+        return failed(say.appCaptureOsRequirement(capture.min_build), 'none');
+      }
+      setupStep('choose_output');
+      return resumeOutput();
+    }
     if (host.platform.os_build < MIN_OS_BUILD) {
       setupStep('unsupported');
       return failed(say.osRequirement(MIN_OS_BUILD), 'none');
@@ -982,6 +1017,7 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
   function resumeOutput(): Outcome {
     if (state.chosen_output === null) return done;
     if (findOutput() === null) return failed(say.storedOutputMissing(state.chosen_output.name), 'open_settings');
+    if (state.entrance === 'app_sound') return resumeDiscard();
     state.phase = { kind: 'ready' };
     return done;
   }
@@ -989,9 +1025,60 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
   function chooseOutput(id: string): Outcome {
     const found = host.outputs.find((output) => output.id === id);
     if (found === undefined) return failed(say.chosenOutputMissing, 'none');
+    if (state.entrance === 'app_sound' && capture.discard?.id === id) return failed(say.outputIsDiscard, 'none');
     state.chosen_output = { ...found };
+    if (state.entrance === 'app_sound') return resumeDiscard();
     state.phase = { kind: 'ready' };
     return done;
+  }
+
+  function refreshDiscards() {
+    capture.discards = host.outputs
+      .filter((output) => output.id !== state.chosen_output?.id)
+      .map((output) => ({ ...output }));
+  }
+
+  function resumeDiscard(): Outcome {
+    refreshDiscards();
+    setupStep('choose_discard');
+    if (capture.discards.length === 0) return failed(say.noDiscardOutput, 'retry');
+    if (capture.discards.some((output) => output.id === capture.discard?.id)) state.phase = { kind: 'ready' };
+    return done;
+  }
+
+  function chooseDiscard(id: string): Outcome {
+    if (id === state.chosen_output?.id) return failed(say.discardIsOutput, 'none');
+    const found = host.outputs.find((output) => output.id === id);
+    if (found === undefined) return failed(say.chosenOutputMissing, 'none');
+    capture.discard = { ...found };
+    if (state.phase.kind === 'setup' && state.phase.value === 'choose_discard') state.phase = { kind: 'ready' };
+    return done;
+  }
+
+  function chooseCaptureApp({ lane, exe }: CaptureAppChoice): Outcome {
+    if (lane !== 0 && lane !== 1) return refused();
+    const key = lane === 0 ? 'main' : 'music';
+    if (exe === null) {
+      capture[key] = null;
+      return done;
+    }
+    if (!isAppExecutable(exe)) return refused();
+    const normalized = exe.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+    const app = capture.apps.find((candidate) => candidate.exe === normalized);
+    if (app === undefined) return failed(say.captureAppNotRunning(normalized), 'none');
+    if (capture[lane === 0 ? 'music' : 'main']?.exe === normalized) return failed(say.captureSameApp, 'none');
+    capture[key] = { exe: normalized, display_name: app.display_name || normalized, state: 'running' };
+    return done;
+  }
+
+  function refreshCaptureLanes() {
+    for (const lane of [capture.main, capture.music]) {
+      if (lane === null) continue;
+      const present = capture.apps.some((app) => app.exe === lane.exe);
+      lane.state = state.entrance === 'app_sound' && state.phase.kind === 'running'
+        ? present ? 'capturing' : 'waiting'
+        : present ? 'running' : 'not_running';
+    }
   }
 
   /** machine.rs enable: the notes start over; the engine runs the profile's layout. */
@@ -1001,11 +1088,30 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
       setupStep('choose_output');
       return failed(say.storedOutputMissing(state.chosen_output?.name ?? ''), 'open_settings');
     }
+    if (state.entrance === 'app_sound') {
+      refreshDiscards();
+      if (!capture.discards.some((output) => output.id === capture.discard?.id)) {
+        setupStep('choose_discard');
+        return failed(say.noDiscardOutput, 'retry');
+      }
+      if (capture.main === null) return failed(say.captureAppFirst, 'none');
+      for (const lane of [capture.main, capture.music]) {
+        if (lane !== null && !capture.apps.some((app) => app.exe === lane.exe)) {
+          return failed(say.captureAppNotRunning(lane.exe), 'none');
+        }
+      }
+    }
     state.engine = structuredClone(engineTemplate);
     state.engine.fault = null;
     state.engine.directions = structuredClone(state.profile.directions);
-    state.roles_taken = true;
+    state.roles_taken = state.entrance === 'driver';
+    if (state.entrance === 'app_sound') {
+      state.engine.clock = 'asrc';
+      state.engine.trim_available = false;
+      state.engine.output_mode = capture.exclusive ? 'exclusive' : 'shared';
+    }
     state.phase = { kind: 'running' };
+    refreshCaptureLanes();
     return done;
   }
 
@@ -1034,6 +1140,29 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
         if (phase.kind === 'running') return failed(say.disableBeforeChangingOutput, 'none');
         if (phase.kind !== 'ready' && phase.kind !== 'faulted') return refused();
         state.output_path = intent.value;
+        return done;
+      case 'choose_entrance': {
+        if (phase.kind === 'running') return failed(say.disableBeforeChangingEntrance, 'none');
+        state.entrance = intent.value;
+        notes = [];
+        kept = null;
+        state.error = null;
+        const outcome = evaluate();
+        // An unsupported entrance is still saved, with its explanation kept.
+        if (outcome.kind === 'failed' && state.phase.kind === 'setup' && state.phase.value === 'unsupported') {
+          kept = { message: outcome.message, next: outcome.next };
+          return done;
+        }
+        return outcome;
+      }
+      case 'choose_discard':
+        return phase.kind === 'ready' || phase.kind === 'faulted' || (phase.kind === 'setup' && phase.value === 'choose_discard')
+          ? chooseDiscard(intent.value) : refused();
+      case 'choose_capture_app':
+        if (phase.kind === 'running') return failed(say.disableBeforeChangingApps, 'none');
+        return profileOpen ? chooseCaptureApp(intent.value) : refused();
+      case 'set_app_capture_exclusive':
+        capture.exclusive = intent.value;
         return done;
       case 'set_routing_enabled':
         return profileOpen ? setRoutingEnabled(intent.value) : refused();
@@ -1119,10 +1248,12 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
         if (phase.kind !== 'running') return refused();
         stop();
         state.phase = { kind: 'ready' };
+        refreshCaptureLanes();
         return done;
       case 'quit':
         stop();
         state.phase = { kind: 'quit' };
+        refreshCaptureLanes();
         return done;
     }
   }
@@ -1148,8 +1279,11 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
       publishUpmix();
       // Like the supervisor, a snapshot lists the host's outputs afresh; a
       // refusal changed nothing, so its snapshot stays the same.
-      if (outcome.kind !== 'refused') state.outputs = structuredClone(host.outputs);
-      if (outcome.kind === 'done' && intent.kind !== 'set_language' && intent.kind !== 'set_skin') {
+      if (outcome.kind !== 'refused') {
+        state.outputs = structuredClone(host.outputs);
+        refreshDiscards();
+      }
+      if (outcome.kind === 'done' && intent.kind !== 'set_language' && intent.kind !== 'set_skin' && intent.kind !== 'choose_entrance') {
         kept = null;
         state.error = null;
       }

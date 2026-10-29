@@ -1,19 +1,31 @@
 // The settings page in the display, as a receiver's setup menu: login
-// autostart, the language, the skin, the output path, the input each app
+// autostart, the language, the skin, the entrance sound comes in through and
+// the app-sound entrance's discard output, the output path, the input each app
 // plays into, the ASIO input, the app's update, diagnostic recording, and
 // what the supervisor knows about the PC and the driver. Each setting is a
 // list whose chosen row is marked; Rust decides whether a change is taken.
 
 import { toUserError } from '../../api';
-import type { AsioLayout, Entrance, Language, OutputPath, RoutedApp, RuleView } from '../../bindings';
+import type { AsioLayout, Entrance, EntranceKind, Language, OutputPath, RoutedApp, RuleView } from '../../bindings';
 import { type Child, h } from '../../dom';
 import { ASIO_ATTENUATION_MAX, ASIO_DEFAULTS, ASIO_LAYOUTS } from '../../guard';
 import { text } from '../../text';
 import { type Context, type Drawn, described } from '../../screens/common';
+import {
+  ENTRANCE_KINDS,
+  appMode,
+  appSoundBlocked,
+  captureOf,
+  entranceGets,
+  entranceKey,
+  entranceName,
+  entranceNeeds,
+  entranceOf,
+} from '../../screens/entrance';
 import { driverRows, platformRows } from '../../screens/facts';
 import { SKINS, skinOf } from '../names';
 import type { Scope } from './scope';
-import { type Choice, choices, facts, hint, intentRow, layoutFamilies, level, line, row, section, toggle } from './ui';
+import { type Choice, choices, discardRows, facts, hint, intentRow, layoutFamilies, level, line, row, section, toggle } from './ui';
 
 const ENTRANCES: readonly Entrance[] = ['main', 'music', 'pass'];
 const ASIO_LAYOUT_LIST = Object.keys(ASIO_LAYOUTS) as AsioLayout[];
@@ -105,29 +117,108 @@ function skin(ctx: Context): Child[] {
   ];
 }
 
-/** WASAPI exclusive or kernel streaming (ADR 0028); taken only while the engine is off. */
-function outputPath(ctx: Context): Child[] {
-  const t = text.settings;
-  const running = ctx.snapshot.phase.kind === 'running';
-  ctx.offer('set_output_path');
-  const options: Choice<OutputPath>[] = [
-    { value: 'wasapi', label: t.outputPathWasapi, key: 'output-path-wasapi' },
-    { value: 'kernel_streaming', label: text.meters.kernelStreaming, key: 'output-path-kernel_streaming' },
-  ];
+/**
+ * The entrance sound comes in through (ADR 0043), a row each with what it
+ * receives; taken only while the engine is off, and the app-sound one dark
+ * beside the reason where the PC cannot run it. What the chosen one needs
+ * stands under the list.
+ */
+function entrance(ctx: Context): Child[] {
+  const e = text.entrance;
+  const { snapshot } = ctx;
+  const current = entranceOf(snapshot);
+  const running = snapshot.phase.kind === 'running';
+  const blocked = appSoundBlocked(snapshot);
+  ctx.offer('choose_entrance');
+  const options: Choice<EntranceKind>[] = ENTRANCE_KINDS.map((kind) => ({
+    value: kind,
+    label: entranceName(kind),
+    key: entranceKey(kind),
+    detail: entranceGets(kind),
+    tag: kind === 'app_sound' && blocked !== null ? e.unavailable : undefined,
+    disabled: kind !== current && kind === 'app_sound' && blocked !== null,
+    describedBy: kind === 'app_sound' && blocked !== null ? 'entrance-blocked' : null,
+  }));
   return [
     choices({
-      labelledBy: 'pn-output-path-title',
-      describedBy: described(running && 'output-path-locked', 'output-path-hint'),
+      labelledBy: 'pn-entrance-title',
+      describedBy: described(running && 'entrance-locked', 'entrance-hint'),
       options,
-      chosen: ctx.snapshot.output_path,
+      chosen: current,
+      disabled: running || ctx.busy,
+      busy: ctx.pending === 'choose_entrance',
+      intent: 'choose_entrance',
+      choose: (value) => ctx.send({ kind: 'choose_entrance', value }),
+    }),
+    running ? hint(e.locked, 'entrance-locked') : null,
+    blocked === null ? null : hint(blocked, 'entrance-blocked'),
+    hint(entranceNeeds(current, snapshot).join(' '), 'entrance-hint'),
+  ];
+}
+
+/** The app-sound entrance's discard output (ADR 0043); taken while the engine is off. */
+function discard(ctx: Context): Child[] {
+  const locked = ctx.snapshot.phase.kind === 'running' ? text.settings.outputPathLocked : null;
+  return [hint(text.entrance.discardHint), discardRows(ctx, 'settings-discard', locked)];
+}
+
+/**
+ * WASAPI exclusive or kernel streaming (ADR 0028); taken only while the
+ * engine is off. The app-sound entrance opens WASAPI, shared unless its row
+ * below says exclusive, and never kernel streaming (ADR 0043): that row stays
+ * dark beside the reason.
+ */
+function outputPath(ctx: Context): Child[] {
+  const t = text.settings;
+  const e = text.entrance;
+  const apps = appMode(ctx.snapshot);
+  const running = ctx.snapshot.phase.kind === 'running';
+  ctx.offer('set_output_path');
+  const current = ctx.snapshot.output_path;
+  const hintId = apps ? 'output-path-apps' : 'output-path-hint';
+  const options: Choice<OutputPath>[] = [
+    { value: 'wasapi', label: apps ? e.wasapi : t.outputPathWasapi, key: 'output-path-wasapi' },
+    {
+      value: 'kernel_streaming',
+      label: text.meters.kernelStreaming,
+      key: 'output-path-kernel_streaming',
+      tag: apps ? e.unavailable : undefined,
+      disabled: apps && current !== 'kernel_streaming',
+      describedBy: apps ? hintId : null,
+    },
+  ];
+  const children: Child[] = [
+    choices({
+      labelledBy: 'pn-output-path-title',
+      describedBy: described(running && 'output-path-locked', hintId),
+      options,
+      chosen: current,
       disabled: running || ctx.busy,
       busy: ctx.pending === 'set_output_path',
       intent: 'set_output_path',
       choose: (value) => ctx.send({ kind: 'set_output_path', value }),
     }),
     running ? hint(t.outputPathLocked, 'output-path-locked') : null,
-    hint(t.outputPathHint, 'output-path-hint'),
+    hint(apps ? e.ksNotUsed : t.outputPathHint, hintId),
   ];
+  if (apps) {
+    const sending = ctx.sending?.kind === 'set_app_capture_exclusive' ? ctx.sending.value : null;
+    ctx.offer('set_app_capture_exclusive');
+    children.push(
+      toggle({
+        key: 'app-capture-exclusive',
+        label: e.exclusive,
+        on: sending ?? captureOf(ctx.snapshot).exclusive,
+        disabled: ctx.busy,
+        busy: sending !== null,
+        describedBy: described('app-capture-exclusive-hint', running && 'app-capture-exclusive-when'),
+        toggle: (on) => ctx.send({ kind: 'set_app_capture_exclusive', value: on }),
+      }),
+      hint(e.exclusiveHint, 'app-capture-exclusive-hint'),
+      running ? hint(e.exclusiveWhen, 'app-capture-exclusive-when') : null,
+    );
+  }
+  return children;
 }
 
 /** An app with sound now: where it plays, and the input to send it to. */
@@ -191,6 +282,8 @@ function otherRule(ctx: Context, rule: RuleView, index: number, locked: boolean)
 /** Which input each app plays into (ADR 0028); locked beside the reason where Windows cannot do it. */
 function routing(ctx: Context): Child[] {
   const t = text.settings;
+  // The app-sound entrance has no endpoints to send apps to (ADR 0043).
+  if (appMode(ctx.snapshot)) return [hint(text.entrance.driverOnly)];
   const view = ctx.snapshot.routing;
   const locked = ctx.busy || !view.available;
   ctx.offer('set_routing_enabled');
@@ -326,6 +419,8 @@ export function settingsPage(scope: Scope): Drawn {
     setting('pn-startup', t.startup, autostart(ctx)),
     setting('pn-language', t.language, language(ctx)),
     setting('pn-skin', text.skins.label, skin(ctx)),
+    setting('pn-entrance', text.entrance.label, entrance(ctx)),
+    appMode(ctx.snapshot) ? setting('pn-discard', text.entrance.discard, discard(ctx)) : null,
     setting('pn-output-path', t.outputPath, outputPath(ctx)),
     setting('pn-routing', t.routing, routing(ctx)),
     setting('pn-asio', text.asio, asio(ctx)),
@@ -335,7 +430,9 @@ export function settingsPage(scope: Scope): Drawn {
       intentRow(ctx, t.record, { kind: 'start_diagnostic_recording' }, { key: 'record' }),
     ]),
     setting('pn-platform', t.platform, [platform === null ? hint(t.unknown) : facts(platformRows(platform))]),
-    setting('pn-driver', t.driver, [driver === null ? hint(t.unknown) : facts(driverRows(driver))]),
+    setting('pn-driver', t.driver, [
+      driver !== null ? facts(driverRows(driver)) : hint(appMode(ctx.snapshot) ? text.entrance.driverOnly : t.unknown),
+    ]),
   );
   return { element };
 }

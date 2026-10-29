@@ -16,11 +16,12 @@ use std::path::{Path, PathBuf};
 use specta::TypeCollection;
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use ssr_types::app::{
-    AppRule, AsioLayout, AsioSettings, CorrectionView, EndpointUpmixView, Entrance, HeadphonesView,
-    HealthHistory, HealthIncident, HealthMinute, HealthPart, Intent, Language, MinuteState,
-    NextAction, OutputChoice, Phase, PluginChoice, PluginFormat, PluginView, ProfileKind,
-    ProfileView, RoutedApp, RoutingSettings, RoutingView, RuleView, SetupStep, Skin, Snapshot,
-    SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply, UpmixBypass, UpmixState,
+    AppCaptureView, AppRule, AsioLayout, AsioSettings, CaptureAppChoice, CaptureAppView,
+    CaptureLaneView, CaptureState, CorrectionView, EndpointUpmixView, Entrance, EntranceKind,
+    HeadphonesView, HealthHistory, HealthIncident, HealthMinute, HealthPart, Intent, Language,
+    MinuteState, NextAction, OutputChoice, Phase, PluginChoice, PluginFormat, PluginView,
+    ProfileKind, ProfileView, RoutedApp, RoutingSettings, RoutingView, RuleView, SetupStep, Skin,
+    Snapshot, SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply, UpmixBypass, UpmixState,
     UpmixView, UpmixerChoice, UpmixerSetting, UserError,
 };
 use ssr_types::ports::PolicyState;
@@ -479,6 +480,12 @@ fn blank(language: Language, phase: Phase) -> Snapshot {
         language,
         language_choice: None,
         skin: Skin::Standard,
+        entrance: ssr_types::app::EntranceKind::Driver,
+        app_capture: AppCaptureView {
+            supported: true,
+            min_build: 20_348,
+            ..AppCaptureView::default()
+        },
         output_path: ssr_types::app::OutputPath::Wasapi,
         phase,
         profile: stereo_profile(language),
@@ -634,6 +641,14 @@ fn fixture_health(name: &str, phase: &Phase) -> HealthHistory {
         ]);
     }
 
+    if name.starts_with("running-apps") {
+        for minute in &mut minutes {
+            if minute.driver != MinuteState::NoRecord {
+                minute.driver = MinuteState::Idle;
+            }
+        }
+    }
+
     HealthHistory { minutes, incidents }
 }
 
@@ -676,6 +691,28 @@ fn eac3(channels: u32) -> SourceFormat {
         encoded_rate: 48_000,
         encoded_channels: channels,
     })
+}
+
+fn app_engine_status(
+    language: Language,
+    captured_lanes: &[usize],
+    exclusive: bool,
+) -> EngineStatus {
+    let mut engine = engine_status(language);
+    for (lane, endpoint) in engine.endpoints.iter_mut().enumerate() {
+        if !captured_lanes.contains(&lane) {
+            *endpoint = EndpointStatus::default();
+        }
+    }
+    engine
+        .scene
+        .retain(|object| captured_lanes.contains(&usize::from(object.lane)));
+    engine.output_mode = if exclusive {
+        OutputMode::Exclusive
+    } else {
+        OutputMode::Shared
+    };
+    engine
 }
 
 fn engine_status(language: Language) -> EngineStatus {
@@ -888,6 +925,31 @@ fn rules_with_overrides() -> Vec<RuleView> {
     rules
 }
 
+fn app_capture_view(
+    discard: Option<OutputChoice>,
+    discards: Vec<OutputChoice>,
+    state: Option<CaptureState>,
+) -> AppCaptureView {
+    AppCaptureView {
+        supported: true,
+        min_build: 20_348,
+        discard,
+        discards,
+        main: state.map(|state| CaptureLaneView {
+            exe: "game.exe".into(),
+            display_name: "Game".into(),
+            state,
+        }),
+        music: None,
+        apps: vec![CaptureAppView {
+            exe: "game.exe".into(),
+            display_name: "Game".into(),
+            active: state.is_some_and(|state| state != CaptureState::NotRunning),
+        }],
+        exclusive: false,
+    }
+}
+
 /// One snapshot per screen state the wizard, the status screen and the error
 /// banner must draw. The messages are the supervisor's own sentences.
 fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
@@ -968,6 +1030,177 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
         (
             "setup-welcome",
             blank(language, Phase::Setup(SetupStep::Welcome)),
+        ),
+        (
+            "setup-apps-unsupported",
+            Snapshot {
+                entrance: EntranceKind::AppSound,
+                app_capture: AppCaptureView {
+                    supported: false,
+                    min_build: 20_348,
+                    ..AppCaptureView::default()
+                },
+                platform: Some(Platform {
+                    os_build: 19_045,
+                    ..platform(false, SecureBoot::Enabled)
+                }),
+                error: Some(error(
+                    text(
+                        "앱 소리 입구는 Windows 빌드 20348 이상이 필요합니다. 이 PC는 그보다 이전 버전이므로 드라이버 입구만 쓸 수 있습니다.",
+                        "The app-sound entrance requires Windows build 20348 or newer. This PC has an older version, so only the driver entrance is available.",
+                    ),
+                    NextAction::None,
+                )),
+                ..blank(language, Phase::Setup(SetupStep::Unsupported))
+            },
+        ),
+        (
+            "setup-choose-discard",
+            Snapshot {
+                entrance: EntranceKind::AppSound,
+                app_capture: app_capture_view(
+                    None,
+                    vec![output_choices[0].clone(), output_choices[2].clone()],
+                    None,
+                ),
+                outputs: output_choices.clone(),
+                chosen_output: Some(output_choices[1].clone()),
+                platform: Some(platform(true, SecureBoot::Disabled)),
+                ..blank(language, Phase::Setup(SetupStep::ChooseDiscard))
+            },
+        ),
+        (
+            "setup-choose-discard-empty",
+            Snapshot {
+                entrance: EntranceKind::AppSound,
+                app_capture: app_capture_view(None, Vec::new(), None),
+                outputs: vec![output_choices[1].clone()],
+                chosen_output: Some(output_choices[1].clone()),
+                platform: Some(platform(true, SecureBoot::Disabled)),
+                error: Some(error(
+                    text(
+                        "고른 출력 외에는 앱의 원래 소리를 보낼 장치가 없습니다. 쓰지 않는 HDMI 출력이나 가상 케이블을 연결하거나 켠 뒤 다시 확인하십시오.",
+                        "There is no device other than the selected output to receive the apps' original sound. Connect or enable an unused HDMI output or a virtual cable, then check again.",
+                    ),
+                    NextAction::Retry,
+                )),
+                ..blank(language, Phase::Setup(SetupStep::ChooseDiscard))
+            },
+        ),
+        (
+            "ready-apps",
+            Snapshot {
+                entrance: EntranceKind::AppSound,
+                app_capture: app_capture_view(
+                    Some(output_choices[0].clone()),
+                    vec![output_choices[0].clone(), output_choices[2].clone()],
+                    Some(CaptureState::Running),
+                ),
+                outputs: output_choices.clone(),
+                chosen_output: Some(output_choices[1].clone()),
+                platform: Some(platform(true, SecureBoot::Disabled)),
+                ..blank(language, Phase::Ready)
+            },
+        ),
+        (
+            "ready-apps-no-app",
+            Snapshot {
+                entrance: EntranceKind::AppSound,
+                app_capture: app_capture_view(
+                    Some(output_choices[0].clone()),
+                    vec![output_choices[0].clone(), output_choices[2].clone()],
+                    None,
+                ),
+                outputs: output_choices.clone(),
+                chosen_output: Some(output_choices[1].clone()),
+                platform: Some(platform(true, SecureBoot::Disabled)),
+                error: Some(error(
+                    text(
+                        "켜기 전에 소리를 받을 앱을 고르십시오.",
+                        "Choose an app to capture before turning it on.",
+                    ),
+                    NextAction::None,
+                )),
+                ..blank(language, Phase::Ready)
+            },
+        ),
+        (
+            "ready-apps-not-running",
+            Snapshot {
+                entrance: EntranceKind::AppSound,
+                app_capture: app_capture_view(
+                    Some(output_choices[0].clone()),
+                    vec![output_choices[0].clone(), output_choices[2].clone()],
+                    Some(CaptureState::NotRunning),
+                ),
+                outputs: output_choices.clone(),
+                chosen_output: Some(output_choices[1].clone()),
+                platform: Some(platform(true, SecureBoot::Disabled)),
+                error: Some(error(
+                    text(
+                        "앱의 소리 세션이 없습니다. 이 앱을 실행하고 소리를 재생한 뒤 켜십시오: Game",
+                        "The app has no audio session. Start it and play some sound, then turn it on: Game",
+                    ),
+                    NextAction::Retry,
+                )),
+                ..blank(language, Phase::Ready)
+            },
+        ),
+        (
+            "running-apps",
+            Snapshot {
+                entrance: EntranceKind::AppSound,
+                app_capture: app_capture_view(
+                    Some(output_choices[0].clone()),
+                    vec![output_choices[0].clone(), output_choices[2].clone()],
+                    Some(CaptureState::Capturing),
+                ),
+                engine: Some(app_engine_status(language, &[0], false)),
+                outputs: output_choices.clone(),
+                chosen_output: Some(output_choices[1].clone()),
+                platform: Some(platform(true, SecureBoot::Disabled)),
+                ..blank(language, Phase::Running)
+            },
+        ),
+        (
+            "running-apps-exclusive",
+            Snapshot {
+                entrance: EntranceKind::AppSound,
+                app_capture: AppCaptureView {
+                    exclusive: true,
+                    ..app_capture_view(
+                        Some(output_choices[0].clone()),
+                        vec![output_choices[0].clone(), output_choices[2].clone()],
+                        Some(CaptureState::Capturing),
+                    )
+                },
+                engine: Some(app_engine_status(language, &[0], true)),
+                outputs: output_choices.clone(),
+                chosen_output: Some(output_choices[1].clone()),
+                platform: Some(platform(true, SecureBoot::Disabled)),
+                ..blank(language, Phase::Running)
+            },
+        ),
+        (
+            "running-apps-waiting",
+            Snapshot {
+                entrance: EntranceKind::AppSound,
+                app_capture: app_capture_view(
+                    Some(output_choices[0].clone()),
+                    vec![output_choices[0].clone(), output_choices[2].clone()],
+                    Some(CaptureState::Waiting),
+                ),
+                engine: Some(app_engine_status(language, &[0], false)),
+                outputs: output_choices.clone(),
+                chosen_output: Some(output_choices[1].clone()),
+                platform: Some(platform(true, SecureBoot::Disabled)),
+                notes: vec![text(
+                    "앱의 소리 재생 대기 중: Game",
+                    "Waiting for the app to play sound: Game",
+                )
+                .into()],
+                ..blank(language, Phase::Running)
+            },
         ),
         (
             "setup-unsupported",
@@ -1436,6 +1669,18 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
         ("quit", with_phase(ready, Phase::Quit)),
     ];
     for (name, snapshot) in &mut fixtures {
+        snapshot.app_capture.min_build = 20_348;
+        if let Some(platform) = &snapshot.platform {
+            snapshot.app_capture.supported = platform.os_build >= 20_348;
+        }
+        snapshot.app_capture.discards = snapshot
+            .outputs
+            .iter()
+            .filter(|output| {
+                snapshot.chosen_output.as_ref().map(|chosen| &chosen.id) != Some(&output.id)
+            })
+            .cloned()
+            .collect();
         snapshot.health = fixture_health(name, &snapshot.phase);
     }
     fixtures
@@ -1462,6 +1707,16 @@ fn intents() -> Vec<Intent> {
             entrance: None,
         }),
         Intent::RemoveAppRule("player.exe".into()),
+        Intent::ChooseEntrance(EntranceKind::Driver),
+        Intent::ChooseEntrance(EntranceKind::AppSound),
+        Intent::ChooseDiscard(DeviceId("discard".into())),
+        Intent::ChooseCaptureApp(CaptureAppChoice {
+            lane: 0,
+            exe: Some("game.exe".into()),
+        }),
+        Intent::ChooseCaptureApp(CaptureAppChoice { lane: 1, exe: None }),
+        Intent::SetAppCaptureExclusive(true),
+        Intent::SetAppCaptureExclusive(false),
         Intent::BeginSetup,
         Intent::InstallDriver,
         Intent::Recheck,

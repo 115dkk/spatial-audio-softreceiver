@@ -38,9 +38,10 @@ use std::time::{Duration, Instant};
 
 use ssr_guard::language;
 use ssr_sys::WindowsHost;
-use ssr_sys::host::RESTORE_POINT_FILE;
-use ssr_types::EngineStatus;
+use ssr_sys::host::{APP_OUTPUTS_FILE, RESTORE_POINT_FILE};
 use ssr_types::app::{Heartbeat, Intent, Phase, Snapshot, UserError};
+use ssr_types::{EngineStatus, Host};
+use supervisor::app_outputs::{self, AppOutputs};
 use supervisor::machine::Config;
 use supervisor::restore_point::{self, RestorePoint};
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -620,39 +621,81 @@ pub(crate) fn last_resort_restore(state_dir: &Path) -> Vec<Note> {
 }
 
 fn restore_notes(state_dir: &Path) -> Vec<Note> {
+    let mut notes = Vec::new();
+    let mut host = windows_host(state_dir);
     let path = state_dir.join(RESTORE_POINT_FILE);
-    let text = match fs::read_to_string(&path) {
-        Ok(text) => text,
+    match fs::read_to_string(&path) {
+        Ok(text) => match RestorePoint::from_json(&text) {
+            Ok(point) => {
+                notes.extend(
+                    restore_point::restore_messages(&point, &mut host)
+                        .into_iter()
+                        .map(Note::Supervisor),
+                );
+                if path.try_exists().unwrap_or(true) {
+                    log::line("shell: last resort: recovery incomplete; retained restore point");
+                } else {
+                    log::line(
+                        "shell: last resort: restored endpoints and roles from the restore point",
+                    );
+                }
+            }
+            Err(error) => {
+                log::line(&format!("shell: last resort: {}: {error}", path.display()));
+                notes.push(Note::RestoreReadFailed {
+                    detail: error.to_string(),
+                });
+            }
+        },
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             log::line("shell: last resort: there is no restore point; the roles are not ours");
-            return Vec::new();
         }
         Err(error) => {
             log::line(&format!(
                 "shell: last resort: {} cannot be read: {error}",
                 path.display()
             ));
-            return vec![Note::RestoreReadFailed {
+            notes.push(Note::RestoreReadFailed {
                 detail: error.to_string(),
-            }];
+            });
         }
-    };
-    let point = match RestorePoint::from_json(&text) {
-        Ok(point) => point,
-        Err(error) => {
-            log::line(&format!("shell: last resort: {}: {error}", path.display()));
-            return vec![Note::RestoreReadFailed {
-                detail: error.to_string(),
-            }];
-        }
-    };
-    let notes = restore_point::restore_messages(&point, &mut windows_host(state_dir));
-    if path.try_exists().unwrap_or(true) {
-        log::line("shell: last resort: recovery incomplete; retained restore point");
-    } else {
-        log::line("shell: last resort: restored endpoints and roles from the restore point");
     }
-    notes.into_iter().map(Note::Supervisor).collect()
+
+    let app_path = state_dir.join(APP_OUTPUTS_FILE);
+    match host.read_app_outputs() {
+        Ok(Some(text)) => match AppOutputs::from_json(&text) {
+            Ok(mut record) if record.app_pid == Some(std::process::id()) => {
+                notes.extend(
+                    app_outputs::undo(&mut record, &mut host)
+                        .into_iter()
+                        .map(Note::Supervisor),
+                );
+                record.app_pid = None;
+                let write = if record.apps.is_empty() {
+                    host.write_app_outputs(None)
+                } else {
+                    host.write_app_outputs(Some(&record.to_json()))
+                };
+                if let Err(error) = write {
+                    log::line(&format!(
+                        "shell: last resort: {} cannot be updated: {error}",
+                        app_path.display()
+                    ));
+                }
+            }
+            Ok(_) => {}
+            Err(error) => log::line(&format!(
+                "shell: last resort: {}: {error}",
+                app_path.display()
+            )),
+        },
+        Ok(None) => {}
+        Err(error) => log::line(&format!(
+            "shell: last resort: {} cannot be read: {error}",
+            app_path.display()
+        )),
+    }
+    notes
 }
 
 fn consume_guard_marker(state_dir: &Path) -> Option<ssr_guard::marker::Marker> {

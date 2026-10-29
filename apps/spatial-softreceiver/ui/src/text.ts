@@ -7,7 +7,7 @@ import { en as catalogEn, ko as catalogKo, type Catalog } from './catalog';
 type Screen = Catalog['screen'];
 type Common = Catalog['common'];
 type Supervisor = Catalog['supervisor'];
-type Text = Omit<Screen, 'endpoints' | 'chainErrorKinds' | 'status' | 'profile' | 'upmix' | 'settings'> & {
+type Text = Omit<Screen, 'endpoints' | 'chainErrorKinds' | 'status' | 'profile' | 'upmix' | 'settings' | 'entrance'> & {
   product: Catalog['names']['product'];
   endpoints: (Screen['endpoints'][number] & { name: string })[];
   chainErrorKinds: Screen['chainErrorKinds'] & Record<string, string | undefined>;
@@ -22,6 +22,14 @@ type Text = Omit<Screen, 'endpoints' | 'chainErrorKinds' | 'status' | 'profile' 
     outputPathLocked: Supervisor['disable_before_changing_output'];
     routingUnavailable: Supervisor['entrance_routing_unavailable'];
     asioDevice: Catalog['names']['product'];
+  };
+  entrance: Screen['entrance'] & {
+    osRequirement: Supervisor['app_capture_os_requirement'];
+    locked: Supervisor['disable_before_changing_entrance'];
+    appsLocked: Supervisor['disable_before_changing_apps'];
+    sameApp: Supervisor['capture_same_app'];
+    ksNotUsed: Supervisor['ks_not_for_app_capture'];
+    noDiscards: Supervisor['no_discard_output'];
   };
 };
 
@@ -54,6 +62,23 @@ function project(catalog: Catalog): Text {
       // (apps/ssr-asio, ssr_i18n::names::product(Language::En)), so the
       // screen names that device the way the DAW lists it in both languages.
       asioDevice: catalogEn.names.product,
+    },
+    // The entrances (ADR 0043): what the supervisor says when it refuses a
+    // choice, said beside the control before it is pressed.
+    entrance: {
+      ...screen.entrance,
+      // Why the app-sound entrance cannot be chosen on an older build.
+      osRequirement: supervisor.app_capture_os_requirement,
+      // A running engine refuses choose_entrance and choose_capture_app in
+      // these sentences; the screen says them beside the locked controls.
+      locked: supervisor.disable_before_changing_entrance,
+      appsLocked: supervisor.disable_before_changing_apps,
+      // The app the other lane already captures cannot be chosen twice.
+      sameApp: supervisor.capture_same_app,
+      // The app-sound entrance does not use kernel streaming.
+      ksNotUsed: supervisor.ks_not_for_app_capture,
+      // No render device is left to take the apps' original sound.
+      noDiscards: supervisor.no_discard_output,
     },
     endpoints: [
       { ...screen.endpoints[0]!, name: names.endpoint_main },

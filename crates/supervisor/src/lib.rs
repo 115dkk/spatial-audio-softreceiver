@@ -11,6 +11,8 @@
 //! * [`upmix`]: each endpoint's upmixer, the [`PluginHost`] port that runs
 //!   the VST upmixers' hosts, and their settings (ADR 0035).
 
+mod app_capture;
+pub mod app_outputs;
 pub mod driver_stats;
 pub mod guard;
 pub mod health;
@@ -26,8 +28,8 @@ pub mod upmix;
 
 pub use driver_stats::{DriverStatsSource, DriverStatsTotals};
 pub use machine::{
-    EngineHandle, LaunchOptions, Launcher, ProfileSettings, Settings, Supervisor, default_profile,
-    default_profile_view,
+    CaptureTarget, EngineHandle, LaunchCapture, LaunchOptions, Launcher, ProfileSettings, Settings,
+    Supervisor, default_profile, default_profile_view,
 };
 pub use recorder::{Recorder, RecorderConfig, TeeCapture};
 pub use report::{DirectLayoutField, RequestFields, RunFigures, SessionReport, chain_errors_json};
