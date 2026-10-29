@@ -53,8 +53,11 @@ try {
     if ($MmDeviceId) {
         $result.mmdevice_id = $MmDeviceId
     } else {
-        $endpoints = @(& (Join-Path $PSScriptRoot 'endpoints.ps1') | ConvertFrom-Json)
-        $ours = $endpoints | Where-Object { $_.endpoint -eq $Endpoint } | Select-Object -First 1
+        # The helper's objects, not its JSON: Windows PowerShell's
+        # ConvertFrom-Json hands an array over as one object, and a filter on
+        # endpoint 0 then reads as false.
+        . (Join-Path $PSScriptRoot 'endpoints.ps1')
+        $ours = @(Get-SpatialEndpoints) | Where-Object { $_.endpoint -eq $Endpoint } | Select-Object -First 1
         if (-not $ours) { throw "endpoint $Endpoint of our driver is not present" }
         $result.mmdevice_id = $ours.id
     }
