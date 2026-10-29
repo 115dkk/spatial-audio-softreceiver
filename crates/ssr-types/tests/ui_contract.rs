@@ -481,7 +481,11 @@ fn blank(language: Language, phase: Phase) -> Snapshot {
         language_choice: None,
         skin: Skin::Standard,
         entrance: ssr_types::app::EntranceKind::Driver,
-        app_capture: Default::default(),
+        app_capture: AppCaptureView {
+            supported: true,
+            min_build: 20_348,
+            ..AppCaptureView::default()
+        },
         output_path: ssr_types::app::OutputPath::Wasapi,
         phase,
         profile: stereo_profile(language),
@@ -637,6 +641,14 @@ fn fixture_health(name: &str, phase: &Phase) -> HealthHistory {
         ]);
     }
 
+    if name.starts_with("running-apps") {
+        for minute in &mut minutes {
+            if minute.driver != MinuteState::NoRecord {
+                minute.driver = MinuteState::Idle;
+            }
+        }
+    }
+
     HealthHistory { minutes, incidents }
 }
 
@@ -679,6 +691,28 @@ fn eac3(channels: u32) -> SourceFormat {
         encoded_rate: 48_000,
         encoded_channels: channels,
     })
+}
+
+fn app_engine_status(
+    language: Language,
+    captured_lanes: &[usize],
+    exclusive: bool,
+) -> EngineStatus {
+    let mut engine = engine_status(language);
+    for (lane, endpoint) in engine.endpoints.iter_mut().enumerate() {
+        if !captured_lanes.contains(&lane) {
+            *endpoint = EndpointStatus::default();
+        }
+    }
+    engine
+        .scene
+        .retain(|object| captured_lanes.contains(&usize::from(object.lane)));
+    engine.output_mode = if exclusive {
+        OutputMode::Exclusive
+    } else {
+        OutputMode::Shared
+    };
+    engine
 }
 
 fn engine_status(language: Language) -> EngineStatus {
@@ -1121,7 +1155,26 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
                     vec![output_choices[0].clone(), output_choices[2].clone()],
                     Some(CaptureState::Capturing),
                 ),
-                engine: Some(engine_status(language)),
+                engine: Some(app_engine_status(language, &[0], false)),
+                outputs: output_choices.clone(),
+                chosen_output: Some(output_choices[1].clone()),
+                platform: Some(platform(true, SecureBoot::Disabled)),
+                ..blank(language, Phase::Running)
+            },
+        ),
+        (
+            "running-apps-exclusive",
+            Snapshot {
+                entrance: EntranceKind::AppSound,
+                app_capture: AppCaptureView {
+                    exclusive: true,
+                    ..app_capture_view(
+                        Some(output_choices[0].clone()),
+                        vec![output_choices[0].clone(), output_choices[2].clone()],
+                        Some(CaptureState::Capturing),
+                    )
+                },
+                engine: Some(app_engine_status(language, &[0], true)),
                 outputs: output_choices.clone(),
                 chosen_output: Some(output_choices[1].clone()),
                 platform: Some(platform(true, SecureBoot::Disabled)),
@@ -1137,7 +1190,7 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
                     vec![output_choices[0].clone(), output_choices[2].clone()],
                     Some(CaptureState::Waiting),
                 ),
-                engine: Some(engine_status(language)),
+                engine: Some(app_engine_status(language, &[0], false)),
                 outputs: output_choices.clone(),
                 chosen_output: Some(output_choices[1].clone()),
                 platform: Some(platform(true, SecureBoot::Disabled)),
@@ -1616,6 +1669,18 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
         ("quit", with_phase(ready, Phase::Quit)),
     ];
     for (name, snapshot) in &mut fixtures {
+        snapshot.app_capture.min_build = 20_348;
+        if let Some(platform) = &snapshot.platform {
+            snapshot.app_capture.supported = platform.os_build >= 20_348;
+        }
+        snapshot.app_capture.discards = snapshot
+            .outputs
+            .iter()
+            .filter(|output| {
+                snapshot.chosen_output.as_ref().map(|chosen| &chosen.id) != Some(&output.id)
+            })
+            .cloned()
+            .collect();
         snapshot.health = fixture_health(name, &snapshot.phase);
     }
     fixtures

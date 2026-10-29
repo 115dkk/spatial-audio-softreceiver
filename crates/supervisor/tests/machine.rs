@@ -5663,7 +5663,7 @@ fn parked_app_output_is_retried_on_a_tick_and_adopted_after_restart() {
     assert_eq!(saved.apps.len(), 1);
     assert_eq!(
         supervisor.snapshot().error.expect("pending undo").next,
-        NextAction::Retry
+        NextAction::None
     );
 
     {
@@ -5775,7 +5775,7 @@ fn pending_undo_retries_while_the_driver_entrance_is_running() {
 }
 
 #[test]
-fn disable_parks_an_app_output_that_cannot_yet_be_undone() {
+fn disable_shows_a_pending_undo_without_an_action_and_tick_retries_the_same_path() {
     let (shared, mut supervisor) = start(app_capture_pc(), app_capture_settings(false));
     supervisor.handle(Intent::Enable).unwrap();
     shared.get().audio_apps.clear();
@@ -5787,10 +5787,52 @@ fn disable_parks_an_app_output_that_cannot_yet_be_undone() {
     assert_eq!(saved.app_pid, None);
     assert_eq!(saved.apps.len(), 1);
     assert_eq!(supervisor.phase(), &Phase::Ready);
+    let error = supervisor.snapshot().error.expect("pending undo");
     assert_eq!(
-        supervisor.snapshot().error.expect("pending undo").next,
-        NextAction::Retry
+        error.message,
+        supervisor::text::Message::AppOutputUndoPending {
+            app: "game.exe".into()
+        }
+        .render(Language::Ko)
     );
+    assert_eq!(error.next, NextAction::None);
+
+    {
+        let mut world = shared.get();
+        world.audio_apps.extend([
+            AudioApp {
+                pid: 77,
+                exe: "game.exe".into(),
+                path: r"d:\other\game.exe".into(),
+                display_name: "Other Game".into(),
+                device: id(REALTEK),
+                active: true,
+            },
+            AudioApp {
+                pid: 78,
+                exe: "game.exe".into(),
+                path: r"c:\games\game.exe".into(),
+                display_name: "Game".into(),
+                device: id(REALTEK),
+                active: true,
+            },
+        ]);
+        world.app_role_entrances.insert(
+            78,
+            Ok(AppRoleOutputs {
+                console: Some(id(REALTEK)),
+                multimedia: Some(id(REALTEK)),
+            }),
+        );
+    }
+
+    supervisor.tick(Instant::now() + Duration::from_secs(1));
+    assert_eq!(
+        shared.get().app_role_entrances.get(&78),
+        Some(&Ok(AppRoleOutputs::default()))
+    );
+    assert!(shared.get().app_outputs.is_none());
+    assert!(supervisor.snapshot().error.is_none());
 }
 
 #[test]

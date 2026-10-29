@@ -17,6 +17,7 @@ const NAMES: &[&str] = &[
     "ready-apps-no-app",
     "ready-apps-not-running",
     "running-apps",
+    "running-apps-exclusive",
     "running-apps-waiting",
     "setup-unsupported",
     "setup-not-test-signing",
@@ -83,6 +84,7 @@ fn expected(name: &str, output_name: &str) -> Expected {
         | "setup-choose-discard"
         | "ready-apps"
         | "running-apps"
+        | "running-apps-exclusive"
         | "setup-driver-not-installed"
         | "setup-choose-output"
         | "setup-choose-output-empty"

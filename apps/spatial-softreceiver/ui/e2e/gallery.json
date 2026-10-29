@@ -83,6 +83,8 @@
     { "name": "ready-apps-not-running", "group": "apps", "title": "고른 앱이 실행 중이 아님", "fixture": "ready-apps-not-running", "tab": "status" },
     { "name": "running-apps", "group": "apps", "title": "켜짐, 앱의 소리를 받는 중(고르기 잠김)", "fixture": "running-apps", "tab": "status" },
     { "name": "running-apps-waiting", "group": "apps", "title": "받던 앱이 끝나 다시 실행되기를 기다림", "fixture": "running-apps-waiting", "tab": "status" },
+    { "name": "running-apps-exclusive", "group": "apps", "title": "켜짐, 출력 장치를 독점으로 엶", "fixture": "running-apps-exclusive", "tab": "status" },
+    { "name": "running-apps-exclusive-settings", "group": "apps", "title": "켜짐, 독점 켜짐(다음에 켤 때 바뀜)", "fixture": "running-apps-exclusive", "tab": "settings" },
     { "name": "ready-apps-settings", "group": "apps", "title": "설정: 입구, 버리는 출력, 독점 켜기, 커널 스트리밍 없음", "fixture": "ready-apps", "tab": "settings" },
     { "name": "running-apps-settings", "group": "apps", "title": "켜짐, 입구와 버리는 출력은 끈 뒤에 바꿈", "fixture": "running-apps", "tab": "settings" },
 

@@ -179,14 +179,14 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "앱이 실행 중이 아니라 출력을 아직 되돌리지 못했습니다. 이 앱을 실행한 뒤 '다시 시도'를 누르십시오: {app}"]
+    #[doc = "앱이 실행 중이 아니어서 출력이 버리는 출력으로 남아 있습니다. 되돌리려면 이 프로그램을 열어 둔 채 해당 앱을 한 번 실행하십시오: {app}"]
     pub fn app_output_undo_pending(language: Language, app: impl core::fmt::Display) -> String {
         match language {
             Language::Ko => format!(
-                "앱이 실행 중이 아니라 출력을 아직 되돌리지 못했습니다. 이 앱을 실행한 뒤 '다시 시도'를 누르십시오: {app}"
+                "앱이 실행 중이 아니어서 출력이 버리는 출력으로 남아 있습니다. 되돌리려면 이 프로그램을 열어 둔 채 해당 앱을 한 번 실행하십시오: {app}"
             ),
             Language::En => format!(
-                "The app is not running, so its output could not be restored yet. Start the app, then press Retry: {app}"
+                "The app is not running, so its output is still set to the discard output. To restore it, run the app once while this program is open: {app}"
             ),
         }
     }

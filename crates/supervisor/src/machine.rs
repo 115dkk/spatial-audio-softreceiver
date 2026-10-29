@@ -533,7 +533,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             supervisor
                 .notes
                 .retain(|message| !matches!(message, Message::AppOutputUndoPending { .. }));
-            let error = supervisor.message_error(pending, NextAction::Retry);
+            let error = supervisor.message_error(pending, NextAction::None);
             supervisor.error = Some(error);
         }
         supervisor
@@ -1957,7 +1957,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         self.persist_app_outputs();
         if self.phase == Phase::Ready {
             if let Some(message) = pending {
-                self.error = Some(self.message_error(message, NextAction::Retry));
+                self.error = Some(self.message_error(message, NextAction::None));
             } else if self
                 .error_message
                 .as_ref()
@@ -2007,7 +2007,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         self.persist_app_outputs();
         if self.phase == Phase::Ready {
             if let Some(message) = pending {
-                self.error = Some(self.message_error(message, NextAction::Retry));
+                self.error = Some(self.message_error(message, NextAction::None));
             } else if self
                 .error_message
                 .as_ref()

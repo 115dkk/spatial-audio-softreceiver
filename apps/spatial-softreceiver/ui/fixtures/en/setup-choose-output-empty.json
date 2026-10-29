@@ -4,8 +4,8 @@
   "skin": "standard",
   "entrance": "driver",
   "app_capture": {
-    "supported": false,
-    "min_build": 0,
+    "supported": true,
+    "min_build": 20348,
     "discard": null,
     "discards": [],
     "main": null,
