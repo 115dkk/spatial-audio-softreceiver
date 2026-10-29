@@ -200,6 +200,26 @@ jobs:
           $analyze = Invoke-Logged 'mat-analyze' 'target/release/ssr-replay.exe' @('mat-analyze', $dump, $truth, '--json', $analysis)
           if ($analyze -ne 0) { exit 1 }
 
+      # Page heap ended mat-probe with 0xC0000421 (a verifier stop), which
+      # only a debugger sees: no WER dump is written. So mat-probe runs once
+      # more under cdb, which breaks at the stop and prints its report and
+      # every thread's stack.
+      - name: mat-probe again under cdb (the page heap stop and its stacks)
+        if: ${{ !cancelled() && steps.probe.outcome == 'failure' }}
+        shell: pwsh
+        env:
+          SSR_LANG: en
+        run: |
+          $cdb = Get-ChildItem -Path (Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\Debuggers') -Recurse -Filter cdb.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.Directory.Name -eq 'x64' } | Select-Object -First 1
+          if (-not $cdb) { throw 'cdb.exe not found' }
+          $out = Join-Path $env:RUNNER_TEMP 'mat'
+          $symbols = "$((Resolve-Path target/release).Path);srv*$(Join-Path $env:RUNNER_TEMP 'symbols')*https://msdl.microsoft.com/download/symbols"
+          & $cdb.FullName -g -lines -y $symbols -c '.symopt+ 0x40; !avrf; .exr -1; .ecxr; kpn 60; ~*kn 30; q' `
+            target/release/ssr-live.exe mat-probe --endpoint 0 --seconds 12 `
+            --out (Join-Path $out 'cdb.ssrdump') --truth (Join-Path $out 'cdb.truth.json') 2>&1 |
+            Tee-Object (Join-Path $out 'cdb.log')
+
       - name: Crash stacks (cdb on any dump)
         if: ${{ !cancelled() }}
         shell: pwsh
