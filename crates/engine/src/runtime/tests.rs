@@ -1292,6 +1292,17 @@ fn asrc_keeps_channels_apart_with_twelve_channels() {
 }
 
 #[test]
+fn crossing_ring_holds_its_capacity_up_to_32_channels_and_less_beyond() {
+    let capacity = capacity_frames(320.0, crate::MIX_RATE);
+    let (_producer, consumer) = crossing::channel(capacity, CROSSING_RING_CHANNELS);
+    assert_eq!(consumer.capacity_frames_for(2), capacity);
+    assert_eq!(consumer.capacity_frames_for(32), capacity);
+    assert_eq!(consumer.capacity_frames_for(35), capacity * 32 / 35);
+    assert_eq!(consumer.capacity_frames_for(64), capacity / 2);
+    assert_eq!(consumer.capacity_frames_for(0), capacity);
+}
+
+#[test]
 fn multichannel_blocks_enter_the_crossing_ring_with_their_layout() {
     let shared = Arc::new(Shared::new());
     shared.dropped_frames.store(7, Ordering::Release);

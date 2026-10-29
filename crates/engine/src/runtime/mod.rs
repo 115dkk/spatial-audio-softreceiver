@@ -75,6 +75,12 @@ const EVENT_QUEUE_CAPACITY: usize = 256;
 const CHANGE_QUEUE_CAPACITY: usize = 16;
 const RETIRED_QUEUE_CAPACITY: usize = CHANGE_QUEUE_CAPACITY + 1;
 const TIMING_QUEUE_CAPACITY: usize = 256;
+/// The crossing ring holds `capacity_ms` of this many channels: the whole
+/// capacity for outputs up to 32 channels, `capacity_ms * 32 / channels` for
+/// wider ones (ADR 0042 allows 64). v0.26.0 sized it for 64 and the exclusive
+/// soaks on windows-2025 then lost cadence and let latency grow to seconds;
+/// with the v0.25.1 size they hold (ADR 0042, 2026-10-29 note).
+const CROSSING_RING_CHANNELS: usize = 32;
 const LATENCY_SAMPLES: usize = 1_024;
 const MUTE_RAMP_MS: f64 = 5.0;
 const BOUNDARY_FADE_MS: f64 = 2.0;
@@ -527,7 +533,7 @@ where
     let (retired_producer, retired) = RingBuffer::new(RETIRED_QUEUE_CAPACITY);
     let ring_capacity_frames = capacity_frames(config.capacity_ms, crate::MIX_RATE);
     ring_capacity_frames
-        .checked_mul(MAX_OUTPUT_CHANNELS)
+        .checked_mul(CROSSING_RING_CHANNELS)
         .ok_or(StartError::Config("crossing-ring capacity overflows usize"))?;
     // One whole decoder delivery must fit above the level the controller
     // holds, or every burst drops blocks.
@@ -539,7 +545,7 @@ where
         ));
     }
     let (crossing_producer, crossing_consumer) =
-        crossing::channel(ring_capacity_frames, MAX_OUTPUT_CHANNELS);
+        crossing::channel(ring_capacity_frames, CROSSING_RING_CHANNELS);
     let (start_sender, start_receiver) = std::sync::mpsc::sync_channel(0);
     let (clock_sender, clock_receiver) = std::sync::mpsc::sync_channel(0);
     let (asio_sender, asio_receiver) = std::sync::mpsc::sync_channel(1);

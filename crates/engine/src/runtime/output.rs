@@ -578,7 +578,7 @@ impl OutputState {
         let target_frames = self.target_ms * rate / 1_000.0;
         let take = take as f64;
         let threshold = (target_frames + block_frames + take)
-            .min(self.crossing.capacity_frames as f64 - block_frames);
+            .min(self.crossing.capacity_frames_for(self.channels) as f64 - block_frames);
         let level = self.period_ring_level_frames as f64;
         if level < threshold {
             return None;
@@ -608,7 +608,7 @@ impl OutputState {
             take_frames,
             self.delivery_frames(scene_rate),
             self.shared.stall_reserve_frames.load(Ordering::Acquire) as f64,
-            self.crossing.capacity_frames as f64,
+            self.crossing.capacity_frames_for(self.channels) as f64,
         ) * 1_000.0
             / rate
     }
