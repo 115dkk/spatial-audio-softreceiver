@@ -31,6 +31,14 @@ function uiOnly(snapshot: Snapshot): Snapshot {
   clean.notes = clean.notes.map((_, index) => `SOURCE_NOTE_${index}`);
   clean.outputs.forEach((output, index) => { output.name = `SOURCE_OUTPUT_${index}`; });
   if (clean.chosen_output !== null) clean.chosen_output.name = 'SOURCE_CHOSEN_OUTPUT';
+  // The app-sound entrance's devices and apps are Windows' names (ADR 0043).
+  const capture = clean.app_capture;
+  if (capture !== undefined) {
+    capture.discards.forEach((output, index) => { output.name = `SOURCE_DISCARD_${index}`; });
+    if (capture.discard !== null) capture.discard.name = 'SOURCE_CHOSEN_DISCARD';
+    capture.apps.forEach((app, index) => { app.display_name = `SOURCE_APP_${index}`; });
+    for (const lane of [capture.main, capture.music]) if (lane !== null) lane.display_name = 'SOURCE_LANE_APP';
+  }
   clean.profile.name = 'SOURCE_PROFILE';
   if (clean.profile.headphones.brir !== null) clean.profile.headphones.brir = 'C:\\SOURCE_BRIR';
   const { speakers } = clean.profile;
@@ -112,6 +120,8 @@ describe('i18n catalog contract', () => {
       'settings.routingHint': [['Spatial SoftReceiver PASS', 'Spatial SoftReceiver']],
       'settings.routingBuiltInWas': [['Spatial SoftReceiver PASS']],
       'settings.asioHint': [['Spatial SoftReceiver']],
+      'entrance.appSoundBuild': [[20348]],
+      'entrance.osRequirement': [[20348]],
       'console.goTo': [['Profile']],
       'console.healthPlan': [['Headphones (BRIR living-room)', 'DENON AVR']],
       'console.healthPlaying': [['Speakers 7.1', 'DENON AVR']],
@@ -149,7 +159,7 @@ describe('i18n catalog contract', () => {
     [ko, catalogKo],
     [en, catalogEn],
   ])('projects generated screen leaves and sources shared names only from names', (projected, catalog) => {
-    const { endpoints, status, profile, upmix, settings, ...screen } = catalog.screen;
+    const { endpoints, status, profile, upmix, settings, entrance, ...screen } = catalog.screen;
     const {
       product,
       endpoints: named,
@@ -157,6 +167,7 @@ describe('i18n catalog contract', () => {
       profile: projectedProfile,
       upmix: projectedUpmix,
       settings: projectedSettings,
+      entrance: projectedEntrance,
       ...rest
     } = projected;
     expect(rest).toEqual(screen);
@@ -182,6 +193,19 @@ describe('i18n catalog contract', () => {
       asioDevice: catalogEn.names.product,
     });
     for (const key of ['outputPathLocked', 'routingUnavailable', 'asioDevice']) expect(settings).not.toHaveProperty(key);
+    // The entrances' refusals are the supervisor's sentences (ADR 0043).
+    expect(projectedEntrance).toEqual({
+      ...entrance,
+      osRequirement: catalog.supervisor.app_capture_os_requirement,
+      locked: catalog.supervisor.disable_before_changing_entrance,
+      appsLocked: catalog.supervisor.disable_before_changing_apps,
+      sameApp: catalog.supervisor.capture_same_app,
+      ksNotUsed: catalog.supervisor.ks_not_for_app_capture,
+      noDiscards: catalog.supervisor.no_discard_output,
+    });
+    for (const key of ['osRequirement', 'locked', 'appsLocked', 'sameApp', 'ksNotUsed', 'noDiscards']) {
+      expect(entrance).not.toHaveProperty(key);
+    }
     for (const key of ['powerOn', 'powerOff']) expect(status).not.toHaveProperty(key);
     for (const key of ['fromFile', 'testOff', 'needsBrir']) expect(profile).not.toHaveProperty(key);
     expect(product).toBe(catalog.names.product);

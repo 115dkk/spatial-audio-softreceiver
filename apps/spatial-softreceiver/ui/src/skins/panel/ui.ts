@@ -9,6 +9,7 @@ import { type Child, h, svg } from '../../dom';
 import { text } from '../../text';
 import { type Band, bannerAction } from '../../screens/banner';
 import type { Context } from '../../screens/common';
+import { captureOf } from '../../screens/entrance';
 import type { Frame } from '../controller';
 
 /** A section with its small title, parted from the one before by a hairline. */
@@ -475,6 +476,41 @@ export function outputRows(ctx: Context, keyPrefix: string): HTMLElement {
   });
   group.setAttribute('data-region', 'output-list');
   return group;
+}
+
+/**
+ * The devices that can take the apps' original sound (ADR 0043), the one in
+ * use marked; shared by the wizard's discard step and the settings menu.
+ * With none, the wizard's band carries the supervisor's sentence and this is
+ * the recheck row; elsewhere the sentence stands here. `locked` says why the
+ * rows are dark (a running engine).
+ */
+export function discardRows(ctx: Context, keyPrefix: string, locked: string | null = null): HTMLElement {
+  const { discards, discard } = captureOf(ctx.snapshot);
+  if (discards.length === 0) {
+    return ctx.snapshot.phase.kind === 'setup'
+      ? h('div', { class: 'pn-outputs-empty' }, intentRow(ctx, text.banner.recheck, { kind: 'recheck' }, { key: `${keyPrefix}-recheck` }))
+      : hint(text.entrance.noDiscards);
+  }
+  ctx.offer('choose_discard');
+  const lockedId = `${keyPrefix}-locked`;
+  const group = choices({
+    label: text.wizard.discardsLabel,
+    describedBy: locked === null ? null : lockedId,
+    options: discards.map((output, index) => ({
+      value: output.id,
+      label: output.name,
+      key: `${keyPrefix}-${index}`,
+      detail: output.id === discard?.id ? text.status.currentOutput : undefined,
+    })),
+    chosen: discard?.id ?? null,
+    disabled: ctx.busy || locked !== null,
+    busy: ctx.pending === 'choose_discard',
+    intent: 'choose_discard',
+    choose: (id) => ctx.send({ kind: 'choose_discard', value: id }),
+  });
+  group.setAttribute('data-region', 'discard-list');
+  return locked === null ? group : h('div', null, group, hint(locked, lockedId));
 }
 
 /** The output kind as a small line drawing: a headband or a speaker cone. */

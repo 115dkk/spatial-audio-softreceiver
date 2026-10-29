@@ -9,6 +9,7 @@
 import type { HealthHistory, HealthIncident, HealthMinute, HealthPart, MinuteState } from '../../bindings';
 import { h, liveText } from '../../dom';
 import { count, oneDecimal } from '../../format';
+import { appMode } from '../../screens/entrance';
 import { text } from '../../text';
 import { type Build, type Tone, badge, cls, section, table, toneGlyph } from './kit';
 
@@ -16,11 +17,15 @@ export const PARTS: readonly HealthPart[] = ['driver', 'engine', 'output', 'plug
 /** Bars per row: one per minute of the window. */
 export const SLOTS = 90;
 
-export function partName(part: HealthPart): string {
+/**
+ * A part by its name. With the app-sound entrance (`apps`) the driver is not
+ * in use (ADR 0043), and its row says so rather than read as idle or down.
+ */
+export function partName(part: HealthPart, apps = false): string {
   const c = text.console;
   switch (part) {
     case 'driver':
-      return c.partDriver;
+      return apps ? c.partDriverUnused : c.partDriver;
     case 'engine':
       return c.engine;
     case 'output':
@@ -73,7 +78,7 @@ export function at(ago: number, now: number): string {
 }
 
 /** The overall line, from the minute in progress: every part in use good, or the worst one. */
-function summary(minutes: readonly HealthMinute[]): { tone: Tone; sentence: string } {
+function summary(minutes: readonly HealthMinute[], apps: boolean): { tone: Tone; sentence: string } {
   const c = text.console;
   const last = minutes.at(-1);
   if (last === undefined) return { tone: 'off', sentence: c.historyEmpty };
@@ -82,7 +87,7 @@ function summary(minutes: readonly HealthMinute[]): { tone: Tone; sentence: stri
   const worst = used.reduce((a, b) => (SEVERITY[last[b]] > SEVERITY[last[a]] ? b : a));
   const state = last[worst];
   if (state === 'good') return { tone: 'good', sentence: c.historyGood };
-  return { tone: stateTone(state), sentence: c.partState(partName(worst), stateWord(state)) };
+  return { tone: stateTone(state), sentence: c.partState(partName(worst, apps), stateWord(state)) };
 }
 
 export interface HistorySelection {
@@ -97,7 +102,12 @@ export interface SelectionStore {
   set(selection: HistorySelection): void;
 }
 
-function incidentRows(minutes: readonly HealthMinute[], incidents: readonly HealthIncident[], now: number): HTMLTableRowElement[] {
+function incidentRows(
+  minutes: readonly HealthMinute[],
+  incidents: readonly HealthIncident[],
+  now: number,
+  apps: boolean,
+): HTMLTableRowElement[] {
   const c = text.console;
   const agoOf = (index: number) => minutes.length - 1 - index;
   return [...incidents]
@@ -110,7 +120,7 @@ function incidentRows(minutes: readonly HealthMinute[], incidents: readonly Heal
       return h(
         'tr',
         { class: incident.open ? 'is-open' : null },
-        h('th', { scope: 'row' }, badge(stateTone(incident.worst), c.partState(partName(incident.part), stateWord(incident.worst)))),
+        h('th', { scope: 'row' }, badge(stateTone(incident.worst), c.partState(partName(incident.part, apps), stateWord(incident.worst)))),
         h('td', null, incident.open ? badge(stateTone(incident.worst), c.incidentOpen) : badge('good', c.incidentClosed)),
         h('td', { class: 'cn-num' }, at(agoOf(incident.first), now)),
         h('td', { class: 'cn-num' }, incident.open ? c.checkNow : at(agoOf(incident.last), now)),
@@ -122,6 +132,7 @@ function incidentRows(minutes: readonly HealthMinute[], incidents: readonly Heal
 
 export function history(b: Build, health: HealthHistory | undefined, store: SelectionStore): HTMLElement {
   const c = text.console;
+  const apps = appMode(b.ctx.snapshot);
   const minutes = health?.minutes.slice(-SLOTS) ?? [];
   const shift = (health?.minutes.length ?? 0) - minutes.length;
   const incidents = (health?.incidents ?? [])
@@ -140,7 +151,7 @@ export function history(b: Build, health: HealthHistory | undefined, store: Sele
     const slot = SLOTS - 1 - selection.ago;
     const minute = minuteAt(slot);
     const state = minute?.[selection.part] ?? 'no_record';
-    const line = c.readoutState(at(selection.ago, now), partName(selection.part), stateWord(state));
+    const line = c.readoutState(at(selection.ago, now), partName(selection.part, apps), stateWord(state));
     return minute === null ? line : `${line} ${c.readoutCounts(count(minute.underruns), count(minute.output_recoveries))}`;
   }
 
@@ -182,13 +193,13 @@ export function history(b: Build, health: HealthHistory | undefined, store: Sele
         tabindex: 0,
         'data-key': `history-${part}`,
         'data-part': part,
-        'aria-label': c.rowLabel(partName(part), stateWord(current), shareText, degraded, down),
+        'aria-label': c.rowLabel(partName(part, apps), stateWord(current), shareText, degraded, down),
         'aria-describedby': readoutId,
       },
       h(
         'div',
         { class: 'cn-history-head' },
-        h('span', { class: 'cn-history-name' }, partName(part)),
+        h('span', { class: 'cn-history-name' }, partName(part, apps)),
         badge(stateTone(current), stateWord(current)),
         h('span', { class: 'cn-history-uptime' }, c.uptime, ' ', h('span', { class: 'cn-num' }, shareText)),
       ),
@@ -216,14 +227,14 @@ export function history(b: Build, health: HealthHistory | undefined, store: Sele
   const kept = store.get();
   if (kept !== null) select(kept);
 
-  const top = summary(minutes);
+  const top = summary(minutes, apps);
   const incidentTable =
     incidents.length === 0
       ? h('p', { class: 'cn-muted' }, c.incidentsNone)
       : table({
           labelledBy: 'cn-incidents-title',
           head: [c.incidentPart, text.status.stateLabel, c.colStart, c.colEnd, c.colLength, c.colCounts],
-          rows: incidentRows(minutes, incidents, now),
+          rows: incidentRows(minutes, incidents, now, apps),
           className: 'cn-incident-table',
         });
   return section(

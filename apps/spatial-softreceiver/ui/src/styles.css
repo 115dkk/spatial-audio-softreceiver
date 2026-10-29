@@ -863,6 +863,91 @@ select:disabled {
   margin-top: 14px;
 }
 
+/* The two entrances at the first step (ADR 0043), side by side and stacked
+   in a narrow window: the name, what each receives and needs as label-over-
+   value lines, and its button at the foot. One the PC cannot run keeps its
+   place, its tag dashed, the reason under its facts. */
+.entrance-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.entrance-choice {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.entrance-choice-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: var(--size-value);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.entrance-choice-facts {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+  font-size: var(--size-ui);
+}
+
+.entrance-choice-facts dt {
+  color: var(--text-muted);
+}
+
+.entrance-choice-facts dd {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.entrance-need {
+  display: block;
+}
+
+.entrance-blocked {
+  margin-top: 10px;
+}
+
+/* The button stands at the card's foot, level across both cards. */
+.entrance-choice .actions {
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.entrance-choice.is-blocked .entrance-choice-title {
+  color: var(--text-muted);
+}
+
+.entrance-switch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.wizard-other {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.wizard-other + .actions {
+  margin-top: 10px;
+}
+
+.discard-locked {
+  margin-top: 8px;
+}
+
 /* ---- Status ---------------------------------------------------------- */
 
 .status {
@@ -1005,6 +1090,73 @@ select:disabled {
 
 .entrance-line-sep {
   color: var(--text-muted);
+}
+
+/* The app-sound entrance's lanes (ADR 0043): the per-app table's rows, the
+   lane's colour dot by its name as on the object map, the picker in the
+   middle and the state with its lamp at the end; the notes under them. */
+.capture-lanes .section-title {
+  margin-bottom: 8px;
+}
+
+.capture-lane {
+  white-space: nowrap;
+}
+
+.capture-lane > span {
+  vertical-align: middle;
+}
+
+.lane-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+}
+
+.lane-dot.lane-0 {
+  background: var(--lane-0);
+}
+
+.lane-dot.lane-1 {
+  background: var(--lane-1);
+}
+
+/* PASS takes nothing with the app-sound entrance: a ring, like a lamp off. */
+.capture-table .lane-dot.lane-2 {
+  border: 1.5px solid var(--control-edge);
+  background: transparent;
+}
+
+.capture-app {
+  width: 50%;
+}
+
+.capture-app select {
+  width: 100%;
+  max-width: 360px;
+  min-height: 34px;
+  font-size: var(--size-ui);
+}
+
+.capture-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.capture-hint {
+  margin-top: 10px;
+}
+
+.capture-hint + .capture-hint {
+  margin-top: 4px;
+}
+
+.exclusive-check {
+  margin-top: 18px;
 }
 
 /* The entrances as rows: name and purpose on the left, what comes in on

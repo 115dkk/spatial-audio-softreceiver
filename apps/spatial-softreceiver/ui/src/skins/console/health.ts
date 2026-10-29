@@ -1,6 +1,7 @@
 // The health line (law 1): the engine, the driver and the output device in
 // one sentence and one status colour, with the next action when there is a
-// problem. Derived from the snapshot, the meters and the error bands alone;
+// problem. With the app-sound entrance (ADR 0043) no driver is in use, so
+// none is reported; its lanes with an app stand where the endpoints would. Derived from the snapshot, the meters and the error bands alone;
 // the supervisor decides, this only names what it says (ADR 0001).
 
 import type { EngineStatus, Intent, Snapshot } from '../../bindings';
@@ -8,6 +9,7 @@ import { describeOutputMode, describeUnsupported } from '../../format';
 import { ASIO_DEFAULTS } from '../../guard';
 import { bannerAction } from '../../screens/banner';
 import type { Tab } from '../../screens/common';
+import { CAPTURE_LANES, appLabel, appMode, captureStateWord, laneName, laneView } from '../../screens/entrance';
 import { text } from '../../text';
 import type { Frame } from '../controller';
 import { type Tone, basename, entrance } from './kit';
@@ -63,19 +65,33 @@ export function issues(snapshot: Snapshot, engine: EngineStatus | null): Issue[]
       found.push({ title: `${text.asio}: ${text.console.clockStandIn}`, detail: text.status.asioClockFault, go: null });
     }
   }
+  // The app-sound entrance takes sound on its lanes with an app (ADR 0043);
+  // the driver entrance on all three endpoints.
+  const apps = appMode(snapshot);
+  const lanes = apps ? CAPTURE_LANES.filter((lane) => laneView(snapshot, lane) !== null) : [0, 1, 2];
   if (running && engine !== null) {
-    engine.endpoints.slice(0, 3).forEach((endpoint, lane) => {
-      if (endpoint.unsupported !== null) {
+    for (const lane of lanes) {
+      const endpoint = engine.endpoints[lane];
+      if (endpoint !== undefined && endpoint.unsupported !== null) {
         found.push({
-          title: text.console.issueUnsupported(entrance(lane).name),
+          title: text.console.issueUnsupported(apps ? laneName(lane) : entrance(lane).name),
           detail: describeUnsupported(endpoint.unsupported),
           go: null,
         });
       }
-    });
+    }
+  }
+  // A lane whose app ended waits, silent, for it to play again.
+  if (running && apps) {
+    for (const lane of CAPTURE_LANES) {
+      const view = laneView(snapshot, lane);
+      if (view !== null && (view.state === 'waiting' || view.state === 'not_running')) {
+        found.push({ title: `${laneName(lane)}: ${captureStateWord(view.state)}`, detail: appLabel(view), go: null });
+      }
+    }
   }
   for (const view of snapshot.upmix.endpoints) {
-    const name = entrance(view.endpoint).name;
+    const name = apps && view.endpoint < 3 ? laneName(view.endpoint) : entrance(view.endpoint).name;
     if (view.state.kind === 'fallback') {
       found.push({ title: `${name}: ${text.upmix.stateFallback}`, detail: null, go: { tab: 'upmix', section: null } });
     } else if (view.state.kind === 'failed') {
@@ -128,7 +144,7 @@ function setupHealth(frame: Frame): Health {
     case 'welcome':
       return { tone: 'off', title: c.setupWelcome, detail: c.setupWelcomeDetail, action: null };
     case 'unsupported':
-      return { tone: 'crit', title: w.unsupportedTitle, detail: null, action: null };
+      return { tone: 'crit', title: appMode(snapshot) ? w.appUnsupportedTitle : w.unsupportedTitle, detail: null, action: null };
     case 'not_test_signing':
       return { tone: 'crit', title: w.testSigningTitle, detail: null, action: null };
     case 'driver':
@@ -142,6 +158,8 @@ function setupHealth(frame: Frame): Health {
       return { tone: 'warn', title: w.rebootTitle, detail: null, action: null };
     case 'choose_output':
       return { tone: failed ? 'crit' : 'warn', title: w.outputTitle, detail: null, action: null };
+    case 'choose_discard':
+      return { tone: failed ? 'crit' : 'warn', title: w.discardTitle, detail: null, action: null };
   }
 }
 

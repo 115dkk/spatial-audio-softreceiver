@@ -1223,6 +1223,53 @@ body {
   background: var(--cn-raised);
 }
 
+/* The two entrances at the first step and the app-sound lanes (ADR 0043):
+   tables like the others (law 6); what an entrance needs is a line each. */
+.cn-entrance-choice {
+  min-width: 640px;
+}
+
+.cn-entrance-choice td {
+  max-width: 22em;
+}
+
+.cn-cell-line {
+  display: block;
+}
+
+.cn-cell-line + .cn-cell-line {
+  margin-top: 4px;
+}
+
+.cn-cell-badge {
+  margin-top: 6px;
+}
+
+.cn-cell-name .cn-cell-badge {
+  display: flex;
+  width: fit-content;
+}
+
+.cn-capture-table {
+  min-width: 520px;
+}
+
+.cn-capture-table th,
+.cn-capture-table td {
+  vertical-align: middle;
+}
+
+.cn-cell-app .cn-select {
+  width: 100%;
+  max-width: 320px;
+}
+
+.cn-step-other {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--cn-line);
+}
+
 .cn-check-table .cn-cell-value {
   color: var(--cn-text-2);
 }

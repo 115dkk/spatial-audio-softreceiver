@@ -16,10 +16,21 @@ export interface GainReadouts {
   follow(set: (db: number) => void): void;
 }
 
+/**
+ * Which lane's app list stands open under its row (ADR 0043): seen only,
+ * like the encoder's turn, and gone on reload.
+ */
+export interface PickerHold {
+  readonly open: number | null;
+  /** Opens a lane's list (null closes it) and redraws. */
+  set(lane: number | null): void;
+}
+
 export interface Scope {
   readonly ctx: Context;
   readonly frame: Frame;
   readonly gain: GainReadouts;
+  readonly picker: PickerHold;
   /** Shows a short line on the display for a moment. */
   osd(line: string): void;
 }

@@ -2362,6 +2362,53 @@ button.pn-map-point:disabled {
   padding-top: 40px;
 }
 
+/* The two entrances at the first step (ADR 0043): a block each, parted by a
+   hairline like the sections, its name, what it receives and needs as facts,
+   and the row that chooses it. No box: the display's grammar only. */
+.pn-entrances {
+  margin: 12px 0 0;
+}
+
+.pn-entrance {
+  padding: 4px 0 8px;
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-entrance-name {
+  margin-top: 8px;
+  color: var(--pn-d-hi);
+}
+
+.pn-entrance.is-blocked .pn-entrance-name {
+  color: var(--pn-d-text-2);
+}
+
+.pn-wizard .pn-entrance .pn-facts {
+  margin: 4px 0 8px;
+}
+
+.pn-need {
+  display: block;
+}
+
+.pn-other {
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--pn-d-line);
+}
+
+/* An app-sound lane's app row stands under the lane's name, like the
+   output list's toggle under the standby device. */
+.pn-lane .pn-row {
+  margin-top: 4px;
+  border-top: 1px solid var(--pn-d-line);
+}
+
+.pn-inputs > .pn-input + .pn-row,
+.pn-inputs > .pn-row + .pn-sublist {
+  margin-bottom: 8px;
+}
+
 /* ---------- smaller windows ---------- */
 
 /* Under about 1040 px the display goes on top and the parts sit in a row under it. */

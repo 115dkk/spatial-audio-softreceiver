@@ -3,7 +3,9 @@
 // sound is healthy in a strip under them, and every other measurement in the
 // details below. Off: a dim standby that says where and how it will play, the
 // output list, and that the power button turns it on. Stopped: the reason
-// stands in the band above, with the recheck row.
+// stands in the band above, with the recheck row. With the app-sound entrance
+// (ADR 0043) the inputs are its lanes, each with its app's row that opens the
+// list of apps under it, and PASS stands dark.
 
 import type { AsioStatus, EndpointUpmixView, EngineStatus } from '../../bindings';
 import { type Child, h, liveText, setAttr } from '../../dom';
@@ -23,10 +25,23 @@ import {
 import { ASIO_DEFAULTS } from '../../guard';
 import { text } from '../../text';
 import type { Drawn, Live } from '../../screens/common';
+import {
+  CAPTURE_LANES,
+  PASS_LANE,
+  appLabel,
+  appMode,
+  captureStateWord,
+  chooseApp,
+  laneName,
+  laneView,
+  pickerKey,
+  pickerOptions,
+  pickersLocked,
+} from '../../screens/entrance';
 import { bypassReason } from '../../screens/upmix';
 import { soundMap } from './map';
 import { LANES, type Scope, signed } from './scope';
-import { dot, facts, hint, kindIcon, outputRows, row, section } from './ui';
+import { choices, dot, facts, hint, kindIcon, outputRows, row, section } from './ui';
 
 /** Levels at or under the floor show an empty bar. */
 const FLOOR_DB = -60;
@@ -79,11 +94,15 @@ function upmixLine(upmix: EndpointUpmixView | undefined): HTMLElement | null {
   );
 }
 
-/** One input in the column: name, volume, format, a level bar from its loudest object, and what went wrong. */
-function inputRow(scope: Scope, lane: number): InputRow {
+/**
+ * One input in the column: name, volume, format, a level bar from its loudest
+ * object, and what went wrong. `label` names an app-sound lane and its app in
+ * place of the lamp's name and the driver's endpoint (ADR 0043).
+ */
+function inputRow(scope: Scope, lane: number, label?: { name: string; sub: string }): InputRow {
   const s = text.status;
-  const name = text.panel.lamps[lane] ?? String(lane);
-  const endpoint = text.endpoints[lane];
+  const name = label?.name ?? text.panel.lamps[lane] ?? String(lane);
+  const endpoint = label === undefined ? text.endpoints[lane] : { name: label.sub };
   const format = liveText();
   const carrier = liveText();
   const volume = liveText();
@@ -162,6 +181,87 @@ function inputRow(scope: Scope, lane: number): InputRow {
       }
     },
   };
+}
+
+/**
+ * A lane's app picker (ADR 0043) as the display's grammar has it: a row that
+ * names the app and its state and opens the list of apps under it, like the
+ * output list; choosing a row sends `choose_capture_app` and closes the list.
+ * Dark while the engine runs, beside the reason.
+ */
+function lanePicker(scope: Scope, lane: number): Child[] {
+  const { ctx, picker } = scope;
+  const e = text.entrance;
+  const s = text.status;
+  const view = laneView(ctx.snapshot, lane);
+  const locked = pickersLocked(ctx.snapshot);
+  const open = picker.open === lane && locked === null;
+  ctx.offer('choose_capture_app');
+  const sending = ctx.sending?.kind === 'choose_capture_app' && ctx.sending.value.lane === lane;
+  const toggle = row(
+    {
+      key: pickerKey(lane),
+      label: view === null ? (lane === 0 ? e.chooseApp : text.profile.none) : appLabel(view),
+      detail: view === null ? undefined : captureStateWord(view.state),
+      // A dark row offers nothing, so it names no action.
+      value: locked !== null ? undefined : open ? s.closeOutputs : view === null ? s.choose : s.change,
+      expanded: open,
+      disabled: ctx.busy || locked !== null,
+      busy: sending,
+      describedBy: locked === null ? 'capture-closed' : 'capture-locked capture-closed',
+      intent: 'choose_capture_app',
+    },
+    () => picker.set(open ? null : lane),
+  );
+  if (!open) return [toggle];
+  const list = choices<string | null>({
+    label: laneName(lane),
+    options: pickerOptions(ctx.snapshot, lane).map((option, index) => ({
+      value: option.exe,
+      label: option.label,
+      key: `${pickerKey(lane)}-${index}`,
+      disabled: option.blocked !== null,
+      detail: option.blocked ?? undefined,
+    })),
+    chosen: view?.exe ?? null,
+    disabled: ctx.busy,
+    busy: sending,
+    intent: 'choose_capture_app',
+    choose: (exe) => {
+      ctx.send(chooseApp(lane, exe));
+      picker.set(null);
+    },
+  });
+  list.setAttribute('data-region', `capture-apps-${lane}`);
+  return [toggle, h('div', { class: 'pn-sublist' }, list)];
+}
+
+/** An app-sound lane without live numbers: its name, and its app's row. */
+function laneStandby(scope: Scope, lane: number): HTMLElement {
+  return h(
+    'div',
+    { class: 'pn-input is-standby pn-lane', 'data-lane': lane, 'data-signal': 'none' },
+    h('span', { class: 'pn-input-tick', 'aria-hidden': 'true' }),
+    h('div', { class: 'pn-input-head' }, h('h3', { class: 'pn-input-name' }, laneName(lane))),
+    ...lanePicker(scope, lane),
+  );
+}
+
+/** The PASS lane with the app-sound entrance: the driver's alone, so dark. */
+function passLane(): HTMLElement {
+  return h(
+    'div',
+    { class: 'pn-input is-standby pn-lane', 'data-lane': PASS_LANE, 'data-signal': 'none' },
+    h('span', { class: 'pn-input-tick', 'aria-hidden': 'true' }),
+    h('div', { class: 'pn-input-head' }, h('h3', { class: 'pn-input-name' }, laneName(PASS_LANE))),
+    h('p', { class: 'pn-input-sub' }, text.entrance.driverOnly),
+  );
+}
+
+/** Why the pickers are dark (running), and what happens to an app closed first. */
+function laneHints(scope: Scope): HTMLElement[] {
+  const locked = pickersLocked(scope.ctx.snapshot);
+  return [...(locked === null ? [] : [hint(locked, 'capture-locked')]), hint(text.entrance.closedApp, 'capture-closed')];
 }
 
 /** The ASIO input while it is on and the engine runs: the DAW, its rate, buffer, layout and underruns, or why not. */
@@ -252,7 +352,23 @@ function running(scope: Scope, engineNow: EngineStatus | null, docked: boolean):
   const { snapshot } = ctx;
   const m = text.meters;
   const s = text.status;
-  const inputs = Array.from({ length: LANES }, (_, lane) => inputRow(scope, lane));
+  // The app-sound entrance's lanes with an app take sound; the others stand dark (ADR 0043).
+  const apps = appMode(snapshot);
+  const inputs = apps
+    ? CAPTURE_LANES.flatMap((lane) => {
+        const view = laneView(snapshot, lane);
+        return view === null ? [] : [inputRow(scope, lane, { name: laneName(lane), sub: appLabel(view) })];
+      })
+    : Array.from({ length: LANES }, (_, lane) => inputRow(scope, lane));
+  const laneColumn: Child[] = apps
+    ? [
+        ...CAPTURE_LANES.flatMap((lane) => {
+          const input = inputs.find((candidate) => candidate.element.dataset.lane === String(lane));
+          return input === undefined ? [laneStandby(scope, lane)] : [input.element, ...lanePicker(scope, lane)];
+        }),
+        passLane(),
+      ]
+    : inputs.map((input) => input.element);
   const asio = (snapshot.asio ?? ASIO_DEFAULTS).enabled ? asioRow() : null;
   const map = soundMap(ctx, engineNow?.directions ?? snapshot.profile.directions, true, 'map-direction');
 
@@ -271,7 +387,7 @@ function running(scope: Scope, engineNow: EngineStatus | null, docked: boolean):
         [m.output, outputFormat.node],
         [m.outputMode, outputMode.node],
       ]),
-      snapshot.roles_taken ? hint(s.rolesTaken) : null,
+      snapshot.roles_taken && !apps ? hint(s.rolesTaken) : null,
     ],
     'pn-col pn-output',
   );
@@ -299,7 +415,12 @@ function running(scope: Scope, engineNow: EngineStatus | null, docked: boolean):
     h(
       'div',
       { class: 'pn-status-main' },
-      section('pn-inputs', s.entrances, [...inputs.map((input) => input.element), asio?.element ?? null], 'pn-col pn-inputs'),
+      section(
+        'pn-inputs',
+        apps ? text.entrance.appsTitle : s.entrances,
+        [...laneColumn, asio?.element ?? null, ...(apps ? laneHints(scope) : [])],
+        'pn-col pn-inputs',
+      ),
       section('pn-map', text.profile.mapTitle, [map.element, hint(text.panel.mapTest)], 'pn-col pn-mapcol'),
       output,
     ),
@@ -366,20 +487,26 @@ function standby(scope: Scope): Drawn {
         gainNumeral(scope, 'pn-gain-standby'),
         facts([[profileLabel, profileName]]),
       ]),
-      section(
-        'pn-standby-inputs',
-        s.entrances,
-        text.endpoints.map((endpoint, lane) =>
-          h(
-            'div',
-            { class: 'pn-input is-standby', 'data-lane': lane, 'data-signal': 'none' },
-            h('span', { class: 'pn-input-tick', 'aria-hidden': 'true' }),
-            h('div', { class: 'pn-input-head' }, h('h3', { class: 'pn-input-name' }, text.panel.lamps[lane] ?? endpoint.name)),
-            h('p', { class: 'pn-input-endpoint' }, endpoint.name),
-            h('p', { class: 'pn-input-sub' }, endpoint.purpose),
+      appMode(snapshot)
+        ? section('pn-standby-inputs', text.entrance.appsTitle, [
+            ...CAPTURE_LANES.map((lane) => laneStandby(scope, lane)),
+            passLane(),
+            ...laneHints(scope),
+          ])
+        : section(
+            'pn-standby-inputs',
+            s.entrances,
+            text.endpoints.map((endpoint, lane) =>
+              h(
+                'div',
+                { class: 'pn-input is-standby', 'data-lane': lane, 'data-signal': 'none' },
+                h('span', { class: 'pn-input-tick', 'aria-hidden': 'true' }),
+                h('div', { class: 'pn-input-head' }, h('h3', { class: 'pn-input-name' }, text.panel.lamps[lane] ?? endpoint.name)),
+                h('p', { class: 'pn-input-endpoint' }, endpoint.name),
+                h('p', { class: 'pn-input-sub' }, endpoint.purpose),
+              ),
+            ),
           ),
-        ),
-      ),
     ),
   );
   return { element };

@@ -54,18 +54,22 @@ describe('every fixture draws', () => {
 });
 
 describe('what each state says', () => {
-  it('welcome offers 시작 and no navigation', () => {
+  it('welcome offers the two entrances and no navigation', () => {
     draw('setup-welcome');
-    expect(buttons()).toContain('시작');
+    expect(buttons()).toEqual([ko.entrance.chooseDriver, ko.entrance.chooseAppSound]);
+    expect(root.querySelector('[data-key="entrance-driver"]')?.getAttribute('data-intent')).toBe('choose_entrance');
+    expect(root.querySelector('[data-key="entrance-app-sound"]')?.getAttribute('data-intent')).toBe('choose_entrance');
     expect(root.querySelector('nav')).toBeNull();
     expect(root.querySelector('[aria-current="step"]')?.textContent).toContain('환영');
   });
 
-  it('unsupported shows the sentence and the platform facts', () => {
+  it('unsupported shows the sentence and the platform facts, and offers the other entrance alone', () => {
     draw('setup-unsupported');
     expect(textOf()).toContain(errorOf('setup-unsupported'));
     expect(textOf()).toContain('18363');
-    expect(root.querySelectorAll('[data-intent]')).toHaveLength(0);
+    const intents = [...root.querySelectorAll('[data-intent]')];
+    expect(intents.map((control) => control.getAttribute('data-key'))).toEqual(['entrance-app-sound']);
+    expect(intents[0]?.getAttribute('data-intent')).toBe('choose_entrance');
   });
 
   it('not_test_signing offers 다시 확인', () => {

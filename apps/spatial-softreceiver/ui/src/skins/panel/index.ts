@@ -12,7 +12,7 @@ import { h, liveText, setAttr, svg } from '../../dom';
 import { describeOutputFormat } from '../../format';
 import { text } from '../../text';
 import type { Drawn, Live, ViewState } from '../../screens/common';
-import { stepIndex } from '../../screens/wizard';
+import { CAPTURE_LANES, appMode, entranceOf, laneView, stepIndex, stepLabels } from '../../screens/entrance';
 import { type Frame, mountWith } from '../controller';
 import type { App, AppOptions } from '../types';
 import { type EncoderHold, encoder, outputKeys, pageKeys, powerButton, powerLamp, powerWord, profileOpen, signalLamps } from './chassis';
@@ -52,6 +52,8 @@ export function mount(root: HTMLElement, api: Api, options: AppOptions = {}): Ap
   let osdTimer: ReturnType<typeof setTimeout> | null = null;
   // The display's page scroll, kept across redraws of the same page.
   let scrolled: { page: string; top: number } | null = null;
+  // The lane whose app list stands open, seen only (ADR 0043).
+  let picking: number | null = null;
   let watching: ResizeObserver | null = null;
   // A window that grows or shrinks past TALL docks or frees the strip.
   let redraw: ((patch: Partial<ViewState>) => void) | null = null;
@@ -83,16 +85,26 @@ export function mount(root: HTMLElement, api: Api, options: AppOptions = {}): Ap
 
     const readouts: ((db: number) => void)[] = [];
     const settled = ctx.pending === 'set_gain' && view.gainSending !== null ? view.gainSending : snapshot.profile.gain_db;
+    // An app list has nothing to offer once the lanes cannot change.
+    if (phase.kind !== 'ready' && phase.kind !== 'faulted') picking = null;
     const scope: Scope = {
       ctx,
       frame,
       gain: { settled, value: () => hold.drag ?? settled, follow: (set) => readouts.push(set) },
+      picker: {
+        open: picking,
+        set(lane) {
+          picking = lane;
+          ctx.setView({});
+        },
+      },
       osd: showOsd,
     };
 
     // The chassis first: what its parts offer, the bands below need not repeat.
     const power = powerButton(ctx);
-    const lamps = signalLamps();
+    // The app-sound entrance's lamps are its lanes with an app (ADR 0043).
+    const lamps = signalLamps(appMode(snapshot) ? CAPTURE_LANES.filter((lane) => laneView(snapshot, lane) !== null) : [0, 1, 2]);
     lamps.update(engineNow);
     const knob = encoder(scope, hold, (db) => {
       for (const set of readouts) set(db);
@@ -135,7 +147,11 @@ export function mount(root: HTMLElement, api: Api, options: AppOptions = {}): Ap
     const format = liveText(engineNow === null ? '' : describeOutputFormat(engineNow));
     const meta =
       phase.kind === 'setup'
-        ? h('span', { class: 'pn-meta num' }, `${text.panel.step} ${stepIndex(phase.value) + 1}/${text.wizard.steps.length}`)
+        ? h(
+            'span',
+            { class: 'pn-meta num' },
+            `${text.panel.step} ${stepIndex(phase.value, entranceOf(snapshot)) + 1}/${stepLabels(entranceOf(snapshot)).length}`,
+          )
         : able
           ? h(
               'span',
