@@ -2715,17 +2715,25 @@ fn forced_trim_incompatible_layout_reopen_retries_and_stops_without_success() {
         .unwrap();
     // The retries wait in wall time (250 ms, then twice as long), and an
     // iteration that retries plays no period, so periods cannot be stepped
-    // through them: let both threads run and wait for the third open.
+    // through them: let both threads run and wait for the fifth open, after
+    // which the output waits 2,000 ms or more. Stopping inside that wait tells
+    // an interrupted backoff from one waited out on a loaded machine too,
+    // where joining the threads alone has taken 480 ms (a 200 ms bound inside
+    // the 500 ms wait after the third open could not).
     lockstep.release();
     wait_for_thread_exit(Duration::from_secs(10), || {
-        state.opened_formats.lock().unwrap().len() >= 3
+        state.opened_formats.lock().unwrap().len() >= 5
     });
     let status = engine.status();
     let start = Instant::now();
     let report = engine.stop();
+    let elapsed = start.elapsed();
 
-    assert!(start.elapsed() < Duration::from_millis(200));
-    assert!(state.opened_formats.lock().unwrap().len() >= 3);
+    assert!(
+        elapsed < Duration::from_millis(1_000),
+        "stop took {elapsed:?} inside a 2,000 ms backoff"
+    );
+    assert!(state.opened_formats.lock().unwrap().len() >= 5);
     assert_eq!(status.output_reopens, 0);
     assert_eq!(status.output_reconnects, 0);
     assert_eq!(report.output_reopens, 0);
@@ -3911,10 +3919,31 @@ fn stop_interrupts_output_reconnect_backoff_promptly() {
     // Release the capture-side lockstep wait; the output-side wait being timed
     // is the runtime's reconnect backoff, which does not use this fixture.
     lockstep.release();
+    // Every reopen fails, so the backoff doubles (250, 500, 1,000 ms) and is
+    // 2,000 ms after the third attempt. Stopping inside that wait tells an
+    // interrupted backoff from one waited out on a loaded machine too, where
+    // joining the threads alone has taken 480 ms (a 200 ms bound inside the
+    // first, 250 ms backoff could not).
+    let waiting = Instant::now();
+    let attempts = loop {
+        let attempts = engine.status().output_reconnect_attempts;
+        if attempts >= 3 {
+            break attempts;
+        }
+        assert!(
+            waiting.elapsed() < Duration::from_secs(10),
+            "the output stopped trying to reopen"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    };
     let start = Instant::now();
     let report = engine.stop();
-    assert!(start.elapsed() < Duration::from_millis(200));
-    assert_eq!(report.final_status.output_reconnect_attempts, 0);
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < Duration::from_millis(1_000),
+        "stop took {elapsed:?} inside a 2,000 ms backoff"
+    );
+    assert_eq!(report.final_status.output_reconnect_attempts, attempts);
     assert!(state.stopped.load(Ordering::Acquire));
 }
 
@@ -3999,7 +4028,13 @@ fn stop_and_drop_join_threads_promptly() {
         } else {
             let _ = engine.stop();
         }
-        assert!(start.elapsed() < Duration::from_millis(200));
+        // The wait this rules out is the decode thread's 1 s park. Joining
+        // has taken up to 390 ms on a machine busy with the other tests.
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(600),
+            "joining took {elapsed:?}"
+        );
         assert!(state.stopped.load(Ordering::Acquire));
     }
 }
