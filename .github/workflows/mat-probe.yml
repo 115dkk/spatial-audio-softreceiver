@@ -1,0 +1,184 @@
+# MAT 2.x with PCM inside, made by Windows' own spatial sound encoder on a
+# runner (ADR 0005, docs/testing/test-signed-pc.md section 3-1). The layout
+# Windows uses for PCM inside MAT has no public document, so the MAT decoder
+# is built from what Windows makes of signals we know: `ssr-live mat-probe`
+# plays seeded signals into every spatial audio object of our endpoint 0
+# while the driver ring records the bursts, and writes the signals' truth.
+#
+# It needs our test-signed driver (installed as driver.yml does), Windows
+# spatial sound on our endpoint, and the "Dolby Atmos for home theater"
+# format, which Dolby Access (Microsoft Store) provides. Each step reports how
+# far the runner got: spatial-format.ps1 shows which formats the endpoint
+# takes before and after Dolby Access, and the status of choosing the home
+# theater format. The dump is Windows' encoder output of test signals; it is
+# not published as is (test-signed-pc.md): it is encrypted with the
+# repository secret MAT_DUMP_KEY before it becomes an artifact, and nothing
+# is uploaded when the secret is missing.
+name: MAT probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/mat-probe.yml
+      - tools/ci/spatial-format.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mat-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build:
+    name: driver build (Release, x64)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build with the NuGet WDK (tools/build-driver.ps1)
+        shell: pwsh
+        run: ./tools/build-driver.ps1 -Configuration Release -Platform x64
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mat-probe-driver
+          path: target/driver/Release/x64
+          if-no-files-found: error
+          retention-days: 3
+
+  probe:
+    name: MAT probe (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: mat-probe-driver
+          path: ${{ runner.temp }}/package
+
+      - uses: ./.github/actions/audio-services
+
+      - name: Test-sign, stage and install (tools/ci/install-driver-test.ps1)
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./tools/ci/install-driver-test.ps1 -Package (Join-Path $env:RUNNER_TEMP 'package')
+
+      - uses: ./.github/actions/rust-toolchain
+
+      - name: Build ssr-live and ssr-replay
+        shell: bash
+        run: cargo build --locked --release -p ssr-live -p ssr-replay
+
+      - name: Spatial sound on our endpoint before Dolby Access (tools/ci/spatial-format.ps1)
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: |
+          $json = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/ci/spatial-format.ps1 -Endpoint 0
+          $json | Set-Content -Encoding UTF8 (Join-Path $env:RUNNER_TEMP 'spatial-before.json')
+          $json
+          Add-Content $env:GITHUB_STEP_SUMMARY "## MAT probe (${{ matrix.os }})`n`nBefore Dolby Access: ``$json```n"
+
+      # The Store is not on Server images; winget's msstore source fetches the
+      # package without it where the image allows. The user accepted the
+      # Store and package agreements for this job (2026-10-30).
+      - name: Install Dolby Access (winget, msstore source)
+        id: dolby
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+            Add-Content $env:GITHUB_STEP_SUMMARY "winget: not on this image"
+            throw 'winget is not on this image'
+          }
+          winget --version
+          winget install --id 9N0866FS04W8 --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
+          $code = $LASTEXITCODE
+          Get-AppxPackage -AllUsers *Dolby* | Format-Table Name, Version, Status -AutoSize | Out-String | Write-Host
+          Add-Content $env:GITHUB_STEP_SUMMARY "winget install Dolby Access: exit $code"
+          if ($code -ne 0) { throw "winget exited $code" }
+
+      - name: Spatial sound after Dolby Access; choose Dolby Atmos for home theater
+        id: spatial
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: |
+          $json = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/ci/spatial-format.ps1 -Endpoint 0 -Set DolbyAtmosForHomeTheater
+          $json | Set-Content -Encoding UTF8 (Join-Path $env:RUNNER_TEMP 'spatial-after.json')
+          $json
+          Add-Content $env:GITHUB_STEP_SUMMARY "After Dolby Access, choosing home theater: ``$json```n"
+          $state = $json | ConvertFrom-Json
+          if ($state.active -ne 'DolbyAtmosForHomeTheater') {
+            Add-Content $env:GITHUB_STEP_SUMMARY "Dolby Atmos for home theater is not active; the probe below shows what Windows sends instead."
+          }
+
+      - name: mat-probe on endpoint 0, then mat-analyze
+        id: probe
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'mat'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $dump = Join-Path $out 'mat-probe-ep0.ssrdump'
+          $truth = Join-Path $out 'mat-probe-ep0.truth.json'
+          $analysis = Join-Path $out 'mat-probe-ep0.analysis.json'
+          target/release/ssr-live.exe mat-probe --endpoint 0 --seconds 12 --out $dump --truth $truth 2>&1 | Tee-Object (Join-Path $out 'mat-probe.log')
+          $probeCode = $LASTEXITCODE
+          Add-Content $env:GITHUB_STEP_SUMMARY "mat-probe: exit $probeCode"
+          Get-Content (Join-Path $out 'mat-probe.log') -Tail 5 | ForEach-Object { Add-Content $env:GITHUB_STEP_SUMMARY "    $_" }
+          if ($probeCode -ne 0) { throw "mat-probe exited $probeCode" }
+          target/release/ssr-replay.exe mat-analyze $dump $truth --json $analysis 2>&1 | Tee-Object (Join-Path $out 'mat-analyze.log')
+          $analyzeCode = $LASTEXITCODE
+          Add-Content $env:GITHUB_STEP_SUMMARY "mat-analyze: exit $analyzeCode"
+          Get-Content (Join-Path $out 'mat-analyze.log') -Tail 5 | ForEach-Object { Add-Content $env:GITHUB_STEP_SUMMARY "    $_" }
+          if ($analyzeCode -ne 0) { throw "mat-analyze exited $analyzeCode" }
+
+      # AES-256-CBC with PBKDF2 (200,000 rounds) through the openssl that
+      # comes with Git for Windows. The key is the secret with surrounding
+      # whitespace removed; the repository owner decrypts with the same:
+      #   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -pass env:KEY -in mat-probe.tar.enc -out mat-probe.tar
+      - name: Encrypt the dump, truth and logs (secret MAT_DUMP_KEY)
+        id: encrypt
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          MAT_DUMP_KEY: ${{ secrets.MAT_DUMP_KEY }}
+        run: |
+          set -euo pipefail
+          KEY="$(printf '%s' "$MAT_DUMP_KEY" | tr -d '\r\n\t ')"
+          if [ -z "$KEY" ]; then
+            echo "::warning::MAT_DUMP_KEY is not set; nothing is uploaded"
+            echo "Encrypted artifact: none (MAT_DUMP_KEY is not set)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          export KEY
+          mkdir -p "$RUNNER_TEMP/mat"
+          cp "$RUNNER_TEMP"/spatial-*.json "$RUNNER_TEMP/mat/" 2>/dev/null || true
+          tar -C "$RUNNER_TEMP" -cf "$RUNNER_TEMP/mat-probe.tar" mat
+          mkdir -p "$RUNNER_TEMP/encrypted"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -salt -pass env:KEY \
+            -in "$RUNNER_TEMP/mat-probe.tar" -out "$RUNNER_TEMP/encrypted/mat-probe-${{ matrix.os }}.tar.enc"
+          rm -f "$RUNNER_TEMP/mat-probe.tar"
+          ls -l "$RUNNER_TEMP/encrypted"
+          echo "Encrypted artifact: mat-probe-${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: mat-probe-${{ matrix.os }}
+          path: ${{ runner.temp }}/encrypted
+          if-no-files-found: ignore
+          retention-days: 14
