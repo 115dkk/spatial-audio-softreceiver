@@ -3337,6 +3337,28 @@ fn slow_cadence_keeps_growing_the_period_until_it_holds() {
 }
 
 #[test]
+fn a_grown_period_reports_the_nominal_cadence_until_its_own_window_ends() {
+    // The slow 3 ms window asks for 6 ms. Until a 6 ms window ends, the ratio
+    // must not be that 3 ms window's: master CI on 2026-10-29 stopped 1.5 s
+    // after growing to 20 ms and period_growth_check read 0.605 for it.
+    let (lockstep, state, engine) = cadence_growth_engine(u64::MAX);
+    drive_until_period(&lockstep, &state, 288, 2);
+    // A few 6 ms periods, far from the 2 s window, and the reopen is done.
+    for _ in 0..5 {
+        lockstep.step_period(1);
+        lockstep.step_read(1);
+    }
+    let status = engine.status();
+    lockstep.release();
+    let report = engine.stop();
+
+    assert_eq!(status.output_period_frames, 288);
+    assert_eq!(report.output_reopens, 1);
+    assert!(status.output_cadence_faults >= 1, "{status:?}");
+    assert_eq!(status.output_cadence_ratio, 1.0, "{status:?}");
+}
+
+#[test]
 fn a_period_reopen_drops_the_backlog_the_slow_period_left() {
     // Full speed from 12 ms. Below it the paced capture still hands over a
     // 10 ms block a period, so a 3 or 6 ms period takes less than arrives and

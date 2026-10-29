@@ -35,6 +35,8 @@ MAX_REOPENS = 3
 # Restarts once the period holds: a late wake on a loaded runner.
 SETTLED_RESTARTS = 2
 # The cadence guard's range (ADR 0012): outside it the period did not hold.
+# The engine reports 1.0 from a reopen until the new period's first 2 s
+# window ends, so a run that stops sooner is judged on its latency alone.
 CADENCE_RANGE = (0.9, 1.1)
 # The live path sits near 70 ms on these runners; seconds mean the backlog of
 # the slow periods stayed after the reopen. The report's latency counts only

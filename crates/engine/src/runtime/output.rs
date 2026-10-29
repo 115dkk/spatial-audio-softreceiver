@@ -271,6 +271,18 @@ impl OutputState {
         output
     }
 
+    /// Starts a new cadence measurement, and reports the nominal ratio until
+    /// its first window ends, as at start. Otherwise the slow window that asked
+    /// for a reopen would stand for the new period until a window of its own
+    /// ended (master CI, 2026-10-29: a run that stopped 1.5 s after growing to
+    /// 20 ms reported 0.605 for a period it never measured).
+    fn reset_cadence(&mut self) {
+        self.cadence.reset();
+        self.shared
+            .output_cadence_ratio_bits
+            .store(1.0_f32.to_bits(), Ordering::Release);
+    }
+
     pub(super) fn reprime(&mut self, why: Reprime) {
         match why {
             Reprime::Started => {
@@ -293,7 +305,7 @@ impl OutputState {
                 self.priming = true;
                 self.fade_in_remaining = boundary_fade_frames(self.device_rate);
                 self.latency.reset(&self.shared);
-                self.cadence.reset();
+                self.reset_cadence();
             }
             Reprime::CrossingDiscarded { overflow_frames } => {
                 self.drop_late_excess = false;
@@ -307,7 +319,7 @@ impl OutputState {
                 self.priming = true;
                 self.fade_in_remaining = boundary_fade_frames(self.device_rate);
                 self.latency.reset(&self.shared);
-                self.cadence.reset();
+                self.reset_cadence();
                 self.restart_storm.reset();
             }
             Reprime::Reconfigured => {
@@ -323,7 +335,7 @@ impl OutputState {
                 self.last_output.fill(0.0);
                 self.have_last_output = false;
                 self.latency.reset(&self.shared);
-                self.cadence.reset();
+                self.reset_cadence();
                 self.restart_storm.reset();
                 self.drain_fade_prepared = false;
                 self.tail_periods = 0;
