@@ -47,8 +47,8 @@ use ssr_abi::setup_contract::{
 };
 use ssr_types::ports::PolicyState;
 use ssr_types::{
-    Arch, DefaultRoles, DeviceId, DeviceState, DriverState, Host, HostError, OutputDevice,
-    OutputLayout, Platform, Role, SecureBoot, SetupOutcome, SetupTask,
+    AppRoleOutputs, Arch, DefaultRoles, DeviceId, DeviceState, DriverState, Host, HostError,
+    OutputDevice, OutputLayout, Platform, Role, SecureBoot, SetupOutcome, SetupTask,
 };
 use windows::{
     Wdk::System::SystemInformation::{NtQuerySystemInformation, SystemCodeIntegrityInformation},
@@ -197,8 +197,20 @@ impl Host for WindowsHost {
         crate::app_routing::app_entrance(pid)
     }
 
+    fn app_entrance_roles(&mut self, pid: u32) -> Result<AppRoleOutputs, HostError> {
+        crate::app_routing::app_entrance_roles(pid)
+    }
+
     fn set_app_entrance(&mut self, pid: u32, device: Option<&DeviceId>) -> Result<(), HostError> {
         crate::app_routing::set_app_entrance(pid, device)
+    }
+
+    fn set_app_entrance_roles(
+        &mut self,
+        pid: u32,
+        roles: &AppRoleOutputs,
+    ) -> Result<(), HostError> {
+        crate::app_routing::set_app_entrance_roles(pid, roles)
     }
 
     fn default_roles(&mut self) -> DefaultRoles {

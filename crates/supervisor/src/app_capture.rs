@@ -12,6 +12,7 @@ use ssr_types::{AudioApp, Host};
 use crate::routing::normalize_exe;
 
 const POLL_PERIOD: Duration = Duration::from_secs(1);
+const RESTART_PERIOD: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ResolveError {
@@ -25,8 +26,9 @@ pub(crate) struct AppCaptureMonitor {
     sessions: Vec<AudioApp>,
     capturing: [Option<u32>; 2],
     waiting: [bool; 2],
-    ended: [bool; 2],
+    restart_pending: [bool; 2],
     waiting_noted: [bool; 2],
+    last_restart: Option<Instant>,
 }
 
 impl AppCaptureMonitor {
@@ -88,7 +90,7 @@ impl AppCaptureMonitor {
     pub(crate) fn set_capturing(&mut self, targets: &[(u16, u32)]) {
         self.capturing = [None, None];
         self.waiting = [false, false];
-        self.ended = [false, false];
+        self.restart_pending = [false, false];
         self.waiting_noted = [false, false];
         for &(lane, pid) in targets {
             if let Some(slot) = self.capturing.get_mut(usize::from(lane)) {
@@ -100,15 +102,16 @@ impl AppCaptureMonitor {
     pub(crate) fn clear_capturing(&mut self) {
         self.capturing = [None, None];
         self.waiting = [false, false];
-        self.ended = [false, false];
+        self.restart_pending = [false, false];
         self.waiting_noted = [false, false];
+        self.last_restart = None;
     }
 
     pub(crate) fn capture_ended(&mut self) {
         for lane in 0..2 {
             if self.capturing[lane].is_some() {
                 self.waiting[lane] = true;
-                self.ended[lane] = true;
+                self.restart_pending[lane] = true;
             }
         }
     }
@@ -117,15 +120,22 @@ impl AppCaptureMonitor {
         self.capturing.get(lane).copied().flatten()
     }
 
-    pub(crate) fn replace_pid(&mut self, lane: usize, pid: u32) {
-        self.capturing[lane] = Some(pid);
-        self.waiting[lane] = false;
-        self.ended[lane] = false;
-        self.waiting_noted[lane] = false;
+    pub(crate) fn restart_pending(&self, lane: usize) -> bool {
+        self.restart_pending.get(lane).copied().unwrap_or(false)
+    }
+
+    pub(crate) fn restart_allowed(&self, now: Instant) -> bool {
+        self.last_restart
+            .is_none_or(|last| now.saturating_duration_since(last) >= RESTART_PERIOD)
+    }
+
+    pub(crate) fn mark_restarted(&mut self, now: Instant) {
+        self.last_restart = Some(now);
     }
 
     pub(crate) fn mark_waiting(&mut self, lane: usize) -> bool {
         self.waiting[lane] = true;
+        self.restart_pending[lane] = true;
         if self.waiting_noted[lane] {
             false
         } else {
@@ -135,7 +145,7 @@ impl AppCaptureMonitor {
     }
 
     pub(crate) fn mark_resumed(&mut self, lane: usize) {
-        if !self.ended[lane] {
+        if !self.restart_pending[lane] {
             self.waiting[lane] = false;
             self.waiting_noted[lane] = false;
         }

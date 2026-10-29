@@ -33,7 +33,7 @@ use ssr_types::app::{
 };
 use ssr_types::ports::PolicyState;
 use ssr_types::{
-    Arch, DeviceId, DeviceState, DirectionId, DirectionView, DriverState, EngineFault,
+    Arch, AudioApp, DeviceId, DeviceState, DirectionId, DirectionView, DriverState, EngineFault,
     EngineStatus, Host, HostError, KsTarget, Layout, OutputDevice, OutputLayout, Platform, Role,
     SetupTask,
 };
@@ -426,6 +426,7 @@ pub struct Supervisor<H: Host, L: Launcher> {
     app_capture: AppCaptureMonitor,
     app_capture_tick_prepared: bool,
     app_outputs: Option<AppOutputs>,
+    last_app_output_retry: Option<Instant>,
     health: HealthLog,
     health_changed: bool,
 }
@@ -478,6 +479,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             app_capture: AppCaptureMonitor::default(),
             app_capture_tick_prepared: false,
             app_outputs: None,
+            last_app_output_retry: None,
             health: HealthLog::default(),
             health_changed: false,
         };
@@ -585,7 +587,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         self.app_capture_tick_prepared = self.app_capture.tick_due(self.host.get_mut(), now);
         self.app_capture_tick_prepared
             && self.phase == Phase::Running
-            && self.app_capture_replacement().is_some()
+            && self.app_capture_restart_plan(now).is_some()
     }
 
     /// Polls the running engine and returns its notices (none outside
@@ -616,6 +618,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     /// refreshes the application list itself.
     pub fn tick(&mut self, now: Instant) -> Vec<SessionNotice> {
         self.upmix.poll_retiring();
+        self.retry_pending_app_outputs(now);
         if self.engine.is_none() {
             if self.settings.entrance == EntranceKind::AppSound {
                 self.tick_app_capture(now);
@@ -1646,6 +1649,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         };
         self.app_capture.refresh(self.host.get_mut());
         let main_pid = self.resolve_capture_app(&main)?;
+        let mut selected_apps = vec![main.clone()];
         let mut targets = vec![CaptureTarget {
             pid: main_pid,
             lane: 0,
@@ -1655,8 +1659,20 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             if music.exe == main.exe || pid == main_pid {
                 return Err(self.message_error(Message::CaptureSameApp, NextAction::None));
             }
+            selected_apps.push(music);
             targets.push(CaptureTarget { pid, lane: 1 });
         }
+        let target_apps: Vec<AudioApp> = targets
+            .iter()
+            .map(|target| {
+                self.app_capture
+                    .sessions()
+                    .iter()
+                    .find(|app| app.pid == target.pid)
+                    .cloned()
+                    .expect("a resolved capture process came from the current session list")
+            })
+            .collect();
 
         let resolved = resolve(&self.config, &self.settings.profile, self.language())
             .map_err(|error| self.localized_error(error))?;
@@ -1676,64 +1692,70 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             self.notes.push(Message::KsNotForAppCapture);
         }
 
-        let mut record = self.app_outputs.take().unwrap_or_default();
+        // The loaded record remains authoritative until the prospective
+        // replacement has been written. Reads and undo attempts may fail without
+        // losing an older pending entry from memory or disk.
+        let mut record = self.app_outputs.clone().unwrap_or_default();
         record.app_pid = Some(std::process::id());
-        for target in &targets {
-            let selected = if target.lane == 0 {
-                main.clone()
-            } else {
-                self.settings
-                    .app_capture
-                    .music
-                    .clone()
-                    .expect("lane one has a selected app")
-            };
-            if let Some(existing) = record.apps.iter_mut().find(|sent| sent.exe == selected.exe) {
-                existing.pid = target.pid;
-                existing.discard = discard.id.clone();
-            } else {
-                let previous = self
-                    .host
-                    .get_mut()
-                    .app_entrance(target.pid)
-                    .map_err(|error| {
-                        eprintln!("app-output read failed for {}: {error}", selected.exe);
-                        self.message_error(
-                            Message::AppOutputChangeFailed {
-                                app: selected.display_name.clone(),
-                            },
-                            NextAction::Retry,
-                        )
-                    })?;
-                record.apps.push(SentApp {
-                    exe: selected.exe.clone(),
-                    pid: target.pid,
-                    discard: discard.id.clone(),
-                    previous,
-                });
+        let mut manually_routed = Vec::new();
+        for ((target, selected), app) in targets.iter().zip(&selected_apps).zip(&target_apps) {
+            if record.apps.iter().any(|sent| sent.path == app.path) {
+                let messages = app_outputs::undo_path(&mut record, self.host.get_mut(), &app.path);
+                if record.apps.iter().any(|sent| sent.path == app.path) {
+                    self.notes.extend(messages);
+                    return Err(self.message_error(
+                        Message::AppOutputUndoFailed {
+                            app: selected.display_name.clone(),
+                        },
+                        NextAction::Retry,
+                    ));
+                }
+                self.notes.extend(messages);
             }
+            let previous = match self.host.get_mut().app_entrance_roles(target.pid) {
+                Ok(previous) => previous,
+                Err(HostError::Unsupported) => {
+                    if !self.notes.contains(&Message::EntranceRoutingUnavailable) {
+                        self.notes.push(Message::EntranceRoutingUnavailable);
+                    }
+                    manually_routed.push(target.pid);
+                    continue;
+                }
+                Err(error) => {
+                    eprintln!("app-output read failed for {}: {error}", selected.exe);
+                    return Err(self.message_error(
+                        Message::AppOutputChangeFailed {
+                            app: selected.display_name.clone(),
+                        },
+                        NextAction::Retry,
+                    ));
+                }
+            };
+            record.apps.push(SentApp {
+                exe: selected.exe.clone(),
+                path: app.path.clone(),
+                pid: target.pid,
+                discard: discard.id.clone(),
+                previous,
+            });
         }
-        if let Err(error) = self
-            .host
-            .get_mut()
-            .write_app_outputs(Some(&record.to_json()))
-        {
+        let write = if record.apps.is_empty() {
+            self.host.get_mut().write_app_outputs(None)
+        } else {
+            self.host
+                .get_mut()
+                .write_app_outputs(Some(&record.to_json()))
+        };
+        if let Err(error) = write {
             eprintln!("app-output record write failed: {error}");
-            self.app_outputs = Some(record);
             return Err(self.message_error(Message::AppOutputsRecordFailed, NextAction::Retry));
         }
-        self.app_outputs = Some(record);
+        self.app_outputs = (!record.apps.is_empty()).then_some(record);
 
-        for target in &targets {
-            let selected = if target.lane == 0 {
-                main.clone()
-            } else {
-                self.settings
-                    .app_capture
-                    .music
-                    .clone()
-                    .expect("lane one has a selected app")
-            };
+        for ((target, selected), app) in targets.iter().zip(&selected_apps).zip(&target_apps) {
+            if manually_routed.contains(&target.pid) {
+                continue;
+            }
             match self
                 .host
                 .get_mut()
@@ -1741,9 +1763,11 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             {
                 Ok(()) => {}
                 Err(HostError::Unsupported) => {
-                    self.notes.push(Message::EntranceRoutingUnavailable);
+                    if !self.notes.contains(&Message::EntranceRoutingUnavailable) {
+                        self.notes.push(Message::EntranceRoutingUnavailable);
+                    }
                     if let Some(record) = self.app_outputs.as_mut() {
-                        record.apps.retain(|sent| sent.exe != selected.exe);
+                        record.apps.retain(|sent| sent.path != app.path);
                     }
                     self.persist_app_outputs();
                 }
@@ -1945,23 +1969,74 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         }
     }
 
-    fn app_capture_replacement(&self) -> Option<(usize, u32, CaptureApp)> {
+    fn retry_pending_app_outputs(&mut self, now: Instant) {
+        if self.app_outputs.is_none()
+            || self
+                .last_app_output_retry
+                .is_some_and(|last| now.saturating_duration_since(last) < Duration::from_secs(1))
+        {
+            return;
+        }
+        self.last_app_output_retry = Some(now);
+        let active_pids: Vec<u32> = self
+            .engine
+            .as_ref()
+            .map(|running| {
+                running
+                    .capture_targets
+                    .iter()
+                    .map(|target| target.pid)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let Some(mut record) = self.app_outputs.take() else {
+            return;
+        };
+        let messages =
+            app_outputs::undo_except_pids(&mut record, self.host.get_mut(), &active_pids);
+        let pending = messages
+            .iter()
+            .find(|message| matches!(message, Message::AppOutputUndoPending { .. }))
+            .cloned();
+        for message in messages {
+            if !self.notes.contains(&message) {
+                self.notes.push(message);
+            }
+        }
+        self.app_outputs = (!record.apps.is_empty()).then_some(record);
+        self.persist_app_outputs();
+        if self.phase == Phase::Ready {
+            if let Some(message) = pending {
+                self.error = Some(self.message_error(message, NextAction::Retry));
+            } else if self
+                .error_message
+                .as_ref()
+                .is_some_and(|error| matches!(error.message, Message::AppOutputUndoPending { .. }))
+            {
+                self.error = None;
+                self.error_message = None;
+            }
+        }
+    }
+
+    fn app_capture_restart_plan(&self, now: Instant) -> Option<(Vec<CaptureTarget>, CaptureApp)> {
+        if !self.app_capture.restart_allowed(now) {
+            return None;
+        }
         let selected = [
             self.settings.app_capture.main.as_ref(),
             self.settings.app_capture.music.as_ref(),
         ];
+        let mut targets = Vec::new();
+        let mut trigger = None;
         for (lane, app) in selected.into_iter().enumerate() {
             let Some(app) = app else { continue };
-            let old = self.app_capture.captured_pid(lane);
-            let old_present = old.is_some_and(|pid| {
+            let old_present = self.app_capture.captured_pid(lane).is_some_and(|pid| {
                 self.app_capture
                     .sessions()
                     .iter()
                     .any(|session| session.pid == pid && session.exe == app.exe)
             });
-            if old_present {
-                continue;
-            }
             let mut active: Vec<_> = self
                 .app_capture
                 .sessions()
@@ -1972,10 +2047,16 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             active.sort_unstable();
             active.dedup();
             if let [pid] = active.as_slice() {
-                return Some((lane, *pid, app.clone()));
+                targets.push(CaptureTarget {
+                    pid: *pid,
+                    lane: u16::try_from(lane).expect("capture lanes are 0 and 1"),
+                });
+                if trigger.is_none() && (self.app_capture.restart_pending(lane) || !old_present) {
+                    trigger = Some(app.clone());
+                }
             }
         }
-        None
+        trigger.map(|app| (targets, app))
     }
 
     fn tick_app_capture(&mut self, now: Instant) {
@@ -1985,43 +2066,36 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         }
         self.health_changed = true;
         if self.phase != Phase::Running {
-            self.undo_app_outputs(true);
             return;
         }
-        let replacement = self.app_capture_replacement();
-        if replacement.is_none() {
-            let selected = [
-                self.settings.app_capture.main.as_ref(),
-                self.settings.app_capture.music.as_ref(),
-            ];
-            for (lane, app) in selected.into_iter().enumerate() {
-                let Some(app) = app else { continue };
-                let captured = self.app_capture.captured_pid(lane);
-                let captured_active = captured.is_some_and(|pid| {
-                    self.app_capture.sessions().iter().any(|session| {
-                        session.pid == pid && session.exe == app.exe && session.active
-                    })
-                });
-                if captured_active {
-                    self.app_capture.mark_resumed(lane);
-                    continue;
-                }
-                let active = self
-                    .app_capture
+        let selected = [
+            self.settings.app_capture.main.as_ref(),
+            self.settings.app_capture.music.as_ref(),
+        ];
+        for (lane, app) in selected.into_iter().enumerate() {
+            let Some(app) = app else { continue };
+            let captured = self.app_capture.captured_pid(lane);
+            let captured_active = captured.is_some_and(|pid| {
+                self.app_capture
                     .sessions()
                     .iter()
-                    .any(|session| session.exe == app.exe && session.active);
-                if !active && self.app_capture.mark_waiting(lane) {
-                    self.notes.push(Message::AppCaptureWaiting {
-                        app: app.display_name.clone(),
-                    });
-                }
+                    .any(|session| session.pid == pid && session.exe == app.exe && session.active)
+            });
+            if captured_active {
+                self.app_capture.mark_resumed(lane);
+            } else if self.app_capture.mark_waiting(lane) {
+                self.notes.push(Message::AppCaptureWaiting {
+                    app: app.display_name.clone(),
+                });
             }
         }
-        let Some((lane, pid, app)) = replacement else {
+        let Some((targets, app)) = self.app_capture_restart_plan(now) else {
             return;
         };
-        if let Err(error) = self.restart_app_capture(lane, pid) {
+        if targets.is_empty() {
+            return;
+        }
+        if let Err(error) = self.restart_app_capture(targets, now) {
             self.fault(error);
             return;
         }
@@ -2030,33 +2104,34 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         });
     }
 
-    fn restart_app_capture(&mut self, lane: usize, pid: u32) -> Result<(), UserError> {
-        let Some(mut running) = self.engine.take() else {
+    fn restart_app_capture(
+        &mut self,
+        targets: Vec<CaptureTarget>,
+        now: Instant,
+    ) -> Result<(), UserError> {
+        let Some(running) = self.engine.take() else {
             return Ok(());
         };
+        self.reconnecting = None;
+        self.app_capture.clear_capturing();
         self.upmix.engine_stopped();
         if let Err(error) = running.handle.stop() {
             self.notes.push(Message::EngineStopFailed {
                 detail: error.to_string(),
             });
         }
-        let lane_u16 = u16::try_from(lane).expect("capture lanes are 0 and 1");
-        if let Some(target) = running
-            .capture_targets
-            .iter_mut()
-            .find(|target| target.lane == lane_u16)
-        {
-            target.pid = pid;
-        }
-        if let Some(record) = self.app_outputs.as_mut()
-            && let Some(selected) = if lane == 0 {
-                self.settings.app_capture.main.as_ref()
-            } else {
-                self.settings.app_capture.music.as_ref()
+        if let Some(record) = self.app_outputs.as_mut() {
+            for target in &targets {
+                if let Some(app) = self
+                    .app_capture
+                    .sessions()
+                    .iter()
+                    .find(|app| app.pid == target.pid)
+                    && let Some(sent) = record.apps.iter_mut().find(|sent| sent.path == app.path)
+                {
+                    sent.pid = target.pid;
+                }
             }
-            && let Some(sent) = record.apps.iter_mut().find(|sent| sent.exe == selected.exe)
-        {
-            sent.pid = pid;
         }
         self.persist_app_outputs();
         let outputs = self.host.get_mut().outputs();
@@ -2066,7 +2141,6 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         let Some(discard) = self.find_discard(&outputs) else {
             return Err(self.message_error(Message::NoDiscardOutput, NextAction::Retry));
         };
-        let targets = running.capture_targets;
         let profile = running.profile;
         let handle = self
             .launcher
@@ -2092,7 +2166,27 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                     NextAction::Retry,
                 )
             })?;
-        self.app_capture.replace_pid(lane, pid);
+        self.app_capture.set_capturing(
+            &targets
+                .iter()
+                .map(|target| (target.lane, target.pid))
+                .collect::<Vec<_>>(),
+        );
+        for lane in 0..2 {
+            let selected = if lane == 0 {
+                self.settings.app_capture.main.as_ref()
+            } else {
+                self.settings.app_capture.music.as_ref()
+            };
+            if selected.is_some()
+                && !targets
+                    .iter()
+                    .any(|target| usize::from(target.lane) == lane)
+            {
+                self.app_capture.mark_waiting(lane);
+            }
+        }
+        self.app_capture.mark_restarted(now);
         self.engine = Some(Running {
             handle,
             profile,

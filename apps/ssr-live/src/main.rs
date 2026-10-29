@@ -2602,6 +2602,7 @@ mod platform {
             let app = |pid, exe: &str| ssr_types::AudioApp {
                 pid,
                 exe: exe.into(),
+                path: format!(r"c:\apps\{exe}"),
                 display_name: exe.into(),
                 device: DeviceId("device".into()),
                 active: true,

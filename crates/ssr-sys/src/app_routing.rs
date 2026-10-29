@@ -29,7 +29,7 @@
 use std::collections::BTreeMap;
 use std::ffi::c_void;
 
-use ssr_types::{AudioApp, DeviceId, HostError};
+use ssr_types::{AppRoleOutputs, AudioApp, DeviceId, HostError};
 use windows::{
     Win32::{
         Foundation::{
@@ -85,21 +85,24 @@ impl Process {
         Ok(())
     }
 
-    fn exe(&self) -> Option<String> {
-        let mut path = vec![0_u16; 32_768];
-        let mut length = path.len() as u32;
+    fn image(&self) -> Option<(String, String)> {
+        let mut buffer = vec![0_u16; 32_768];
+        let mut length = buffer.len() as u32;
         // SAFETY: owned query handle; writable buffer for the supplied UTF-16 count.
         unsafe {
             QueryFullProcessImageNameW(
                 self.0,
                 PROCESS_NAME_WIN32,
-                PWSTR(path.as_mut_ptr()),
+                PWSTR(buffer.as_mut_ptr()),
                 &mut length,
             )
         }
         .ok()?;
         self.check_running().ok()?;
-        executable_basename(&String::from_utf16(&path[..length as usize]).ok()?)
+        let mut path = String::from_utf16(&buffer[..length as usize]).ok()?;
+        let exe = executable_basename(&path)?;
+        path.make_ascii_lowercase();
+        Some((exe, path))
     }
 }
 
@@ -252,7 +255,7 @@ fn describe_session(session: &IAudioSessionControl2, device: DeviceId) -> Option
         return None;
     }
     let process = Process::open(pid).ok()?;
-    let exe = process.exe()?;
+    let (exe, path) = process.image()?;
     // SAFETY: live typed session; returned state is a value, not a pointer.
     let state = unsafe { session.GetState() }.ok()?;
     if state == AudioSessionStateExpired {
@@ -267,6 +270,7 @@ fn describe_session(session: &IAudioSessionControl2, device: DeviceId) -> Option
     Some(AudioApp {
         pid,
         exe,
+        path,
         display_name,
         device,
         active: state == AudioSessionStateActive,
@@ -382,15 +386,18 @@ impl Policy {
 }
 
 pub(crate) fn app_entrance(pid: u32) -> Result<Option<DeviceId>, HostError> {
+    let roles = app_entrance_roles(pid)?;
+    Ok(consistent_roles(roles.console, roles.multimedia))
+}
+
+pub(crate) fn app_entrance_roles(pid: u32) -> Result<AppRoleOutputs, HostError> {
     let _ro = RoGuard::new()?;
     let policy = Policy::activate()?;
     let _process = Process::open(pid)?;
-    let console = policy.get(pid, eConsole.0)?;
-    let multimedia = policy.get(pid, eMultimedia.0)?;
-    Ok(consistent_roles(
-        decode_id(&console)?,
-        decode_id(&multimedia)?,
-    ))
+    Ok(AppRoleOutputs {
+        console: decode_id(&policy.get(pid, eConsole.0)?)?,
+        multimedia: decode_id(&policy.get(pid, eMultimedia.0)?)?,
+    })
 }
 
 fn decode_id(id: &HSTRING) -> Result<Option<DeviceId>, HostError> {
@@ -398,16 +405,36 @@ fn decode_id(id: &HSTRING) -> Result<Option<DeviceId>, HostError> {
     unwrap(&text)
 }
 
-pub(crate) fn set_app_entrance(pid: u32, device: Option<&DeviceId>) -> Result<(), HostError> {
-    let target = device
+fn encode_id(id: Option<&DeviceId>) -> Result<HSTRING, HostError> {
+    Ok(id
         .map(wrap)
         .transpose()?
-        .map_or_else(HSTRING::new, HSTRING::from);
+        .map_or_else(HSTRING::new, HSTRING::from))
+}
+
+pub(crate) fn set_app_entrance(pid: u32, device: Option<&DeviceId>) -> Result<(), HostError> {
+    set_app_entrance_roles(
+        pid,
+        &AppRoleOutputs {
+            console: device.cloned(),
+            multimedia: device.cloned(),
+        },
+    )
+}
+
+pub(crate) fn set_app_entrance_roles(pid: u32, devices: &AppRoleOutputs) -> Result<(), HostError> {
+    let targets = [
+        encode_id(devices.console.as_ref())?,
+        encode_id(devices.multimedia.as_ref())?,
+    ];
     let _ro = RoGuard::new()?;
     let policy = Policy::activate()?;
     // Holding the process handle prevents a reused PID from being targeted on rollback.
     let process = Process::open(pid)?;
-    if let Some(device) = device {
+    for device in [devices.console.as_ref(), devices.multimedia.as_ref()]
+        .into_iter()
+        .flatten()
+    {
         require_active_render(device)?;
     }
     let roles = [eConsole.0, eMultimedia.0];
@@ -419,15 +446,15 @@ pub(crate) fn set_app_entrance(pid: u32, device: Option<&DeviceId>) -> Result<()
             if policy.get(pid, role)? != previous[index] {
                 return Err(HostError::Conflict);
             }
-            if previous[index] != target {
-                policy.set(pid, role, &target)?;
+            if previous[index] != targets[index] {
+                policy.set(pid, role, &targets[index])?;
                 written.push(index);
             }
         }
-        // Check each role, including clear: app_entrance(None) alone cannot
-        // distinguish both cleared from disagreement between the two roles.
-        for role in roles {
-            if decode_id(&policy.get(pid, role)?)?.as_ref() != device {
+        for (index, role) in roles.into_iter().enumerate() {
+            if decode_id(&policy.get(pid, role)?)?
+                != [devices.console.clone(), devices.multimedia.clone()][index]
+            {
                 return Err(HostError::Conflict);
             }
         }
@@ -441,7 +468,7 @@ pub(crate) fn set_app_entrance(pid: u32, device: Option<&DeviceId>) -> Result<()
         for index in written.into_iter().rev() {
             if let Err(error) = process.check_running().and_then(|()| {
                 let current = policy.get(pid, roles[index])?;
-                if current == target {
+                if current == targets[index] {
                     policy.set(pid, roles[index], &previous[index])?;
                 }
                 Ok(())
