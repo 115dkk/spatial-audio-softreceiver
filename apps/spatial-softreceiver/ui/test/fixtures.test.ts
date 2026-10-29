@@ -29,6 +29,10 @@ describe('fixtures match bindings.ts', () => {
         'set_routing_enabled',
         'set_app_rule',
         'remove_app_rule',
+        'choose_entrance',
+        'choose_discard',
+        'choose_capture_app',
+        'set_app_capture_exclusive',
         'begin_setup',
         'install_driver',
         'recheck',
@@ -53,6 +57,130 @@ describe('fixtures match bindings.ts', () => {
         'quit',
       ]),
     );
+  });
+});
+
+describe('app-capture contract wiring', () => {
+  it('accepts absent optional snapshot fields without accepting null or incomplete views', () => {
+    const value = structuredClone(rawFixture('ready-apps')) as Record<string, unknown>;
+    delete value.entrance;
+    delete value.app_capture;
+    expect(assertSnapshot(value)).toEqual(value);
+    value.entrance = null;
+    expect(() => assertSnapshot(value)).toThrow('snapshot.entrance');
+    value.entrance = 'app_sound';
+    value.app_capture = null;
+    expect(() => assertSnapshot(value)).toThrow('snapshot.app_capture');
+    value.app_capture = {};
+    expect(() => assertSnapshot(value)).toThrow('snapshot.app_capture.supported');
+  });
+
+  it('checks every capture state and the nested app fields', () => {
+    const value = structuredClone(rawFixture('ready-apps')) as {
+      app_capture: { main: Record<string, unknown>; apps: Record<string, unknown>[] };
+    };
+    for (const state of ['not_running', 'running', 'capturing', 'waiting']) {
+      value.app_capture.main.state = state;
+      expect(assertSnapshot(value).app_capture?.main?.state).toBe(state);
+    }
+    value.app_capture.main.state = 'stopped';
+    expect(() => assertSnapshot(value)).toThrow('snapshot.app_capture.main.state');
+    value.app_capture.main.state = 'running';
+    delete value.app_capture.main.exe;
+    expect(() => assertSnapshot(value)).toThrow('snapshot.app_capture.main.exe');
+    value.app_capture.main.exe = 'game.exe';
+    value.app_capture.apps = [{ exe: 'game.exe', display_name: 'Game', active: 1 }];
+    expect(() => assertSnapshot(value)).toThrow('snapshot.app_capture.apps[0].active');
+  });
+
+  it.each([
+    { kind: 'choose_entrance', value: 'loopback' },
+    { kind: 'choose_entrance' },
+    { kind: 'choose_discard', value: null },
+    { kind: 'choose_capture_app', value: { lane: '0', exe: 'game.exe' } },
+    { kind: 'choose_capture_app', value: { lane: 0 } },
+    { kind: 'choose_capture_app', value: { lane: 0, exe: null, pid: 42 } },
+    { kind: 'set_app_capture_exclusive', value: 1 },
+  ])('rejects an invalid capture intent %j', (value) => {
+    expect(() => assertIntent(value)).toThrow(ShapeError);
+  });
+
+  it('accepts nullable lane choices and both entrance kinds', () => {
+    for (const value of ['driver', 'app_sound']) {
+      expect(assertIntent({ kind: 'choose_entrance', value })).toEqual({ kind: 'choose_entrance', value });
+    }
+    const clear = { kind: 'choose_capture_app', value: { lane: 1, exe: null } };
+    expect(assertIntent(clear)).toEqual(clear);
+  });
+
+  it('initializes old mock snapshots with the driver entrance and empty capture settings', async () => {
+    const start = fixture('ready');
+    delete start.entrance;
+    delete start.app_capture;
+    const snapshot = await createMockApi(start).snapshot();
+    expect(snapshot.entrance).toBe('driver');
+    expect(snapshot.app_capture).toMatchObject({ discard: null, main: null, music: null, apps: [], exclusive: false });
+    expect(assertSnapshot(snapshot)).toEqual(snapshot);
+  });
+
+  it('mock setup bypasses driver checks and chooses a separate discard output', async () => {
+    const start = fixture('ready');
+    start.platform = { computer_name: 'PC', os_build: 26100, arch: 'arm64', test_signing: false, secure_boot: 'enabled' };
+    const api = createMockApi(start);
+    await api.dispatch({ kind: 'choose_entrance', value: 'app_sound' });
+    const choosing = await api.snapshot();
+    expect(choosing.phase).toEqual({ kind: 'setup', value: 'choose_discard' });
+    expect(choosing.driver).toBeNull();
+    expect(choosing.app_capture?.supported).toBe(true);
+    expect(choosing.app_capture?.discards.some((output) => output.id === choosing.chosen_output?.id)).toBe(false);
+    const discard = choosing.app_capture?.discards[0];
+    if (discard === undefined) throw new Error('fixture needs a discard candidate');
+    await api.dispatch({ kind: 'choose_discard', value: discard.id });
+    expect((await api.snapshot()).app_capture?.discard).toEqual(discard);
+    expect((await api.snapshot()).phase).toEqual({ kind: 'ready' });
+    await api.dispatch({ kind: 'choose_entrance', value: 'driver' });
+    expect((await api.snapshot()).entrance).toBe('driver');
+    expect((await api.snapshot()).phase).toEqual({ kind: 'setup', value: 'unsupported' });
+  });
+
+  it('keeps an unsupported app-sound choice and its explanation', async () => {
+    const start = fixture('ready');
+    if (start.platform === null) throw new Error('fixture needs a platform');
+    start.platform.os_build = 19041;
+    const api = createMockApi(start);
+    await api.dispatch({ kind: 'choose_entrance', value: 'app_sound' });
+    const snapshot = await api.snapshot();
+    expect(snapshot.entrance).toBe('app_sound');
+    expect(snapshot.phase).toEqual({ kind: 'setup', value: 'unsupported' });
+    expect(snapshot.app_capture?.supported).toBe(false);
+    expect(snapshot.error).not.toBeNull();
+  });
+
+  it('stores normalized app choices, clears either lane and applies exclusive output on restart', async () => {
+    const start = fixture('ready-apps');
+    start.app_capture?.apps.push({ exe: 'music.exe', display_name: 'Music', active: false });
+    const api = createMockApi(start, { meters: false });
+    await api.dispatch({ kind: 'choose_capture_app', value: { lane: 0, exe: 'GAME.EXE' } });
+    await api.dispatch({ kind: 'choose_capture_app', value: { lane: 1, exe: 'music.exe' } });
+    expect((await api.snapshot()).app_capture?.main).toEqual({ exe: 'game.exe', display_name: 'Game', state: 'running' });
+    expect((await api.snapshot()).app_capture?.music?.state).toBe('running');
+    await api.dispatch({ kind: 'enable' });
+    expect((await api.snapshot()).roles_taken).toBe(false);
+    expect((await api.snapshot()).app_capture?.main?.state).toBe('capturing');
+    expect((await api.snapshot()).engine).toMatchObject({ clock: 'asrc', trim_available: false, output_mode: 'shared' });
+    await api.dispatch({ kind: 'set_app_capture_exclusive', value: true });
+    expect((await api.snapshot()).app_capture?.exclusive).toBe(true);
+    expect((await api.snapshot()).engine?.output_mode).toBe('shared');
+    await api.dispatch({ kind: 'disable' });
+    expect((await api.snapshot()).app_capture?.main?.state).toBe('running');
+    await api.dispatch({ kind: 'enable' });
+    expect((await api.snapshot()).engine?.output_mode).toBe('exclusive');
+    await api.dispatch({ kind: 'disable' });
+    for (const lane of [0, 1]) await api.dispatch({ kind: 'choose_capture_app', value: { lane, exe: null } });
+    const snapshot = await api.snapshot();
+    expect(snapshot.app_capture?.main).toBeNull();
+    expect(snapshot.app_capture?.music).toBeNull();
+    expect(assertSnapshot(snapshot)).toEqual(snapshot);
   });
 });
 

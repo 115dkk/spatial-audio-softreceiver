@@ -6,7 +6,13 @@
 // these guards, which is what ties fixtures, bindings and the screen together.
 
 import type {
+  AppCaptureView,
   AppRule,
+  CaptureAppChoice,
+  CaptureAppView,
+  CaptureLaneView,
+  CaptureState,
+  EntranceKind,
   Arch,
   AsioLayout,
   AsioSettings,
@@ -142,8 +148,11 @@ function oneOf<T extends string>(table: Record<T, true>): Guard<T> {
   };
 }
 
-/** An object with exactly these fields. */
-function object<T>(fields: { [K in keyof T]-?: Guard<T[K]> }): Guard<T> {
+/** An object with exactly these fields; listed optional fields may be absent. */
+function object<T>(
+  fields: { [K in keyof T]-?: Guard<T[K]> },
+  optional: readonly { [K in keyof T]-?: {} extends Pick<T, K> ? K : never }[keyof T][] = [],
+): Guard<T> {
   const entries = Object.entries(fields) as [string, Guard<unknown>][];
   return (value, path) => {
     if (!isRecord(value)) throw new ShapeError(path, 'an object');
@@ -152,7 +161,10 @@ function object<T>(fields: { [K in keyof T]-?: Guard<T[K]> }): Guard<T> {
     }
     const out: Record<string, unknown> = {};
     for (const [key, guard] of entries) {
-      if (!(key in value)) throw new ShapeError(`${path}.${key}`, 'a field');
+      if (!(key in value)) {
+        if ((optional as readonly string[]).includes(key)) continue;
+        throw new ShapeError(`${path}.${key}`, 'a field');
+      }
       out[key] = guard(value[key], `${path}.${key}`);
     }
     return out as T;
@@ -207,6 +219,7 @@ export const SETUP_STEPS: Record<SetupStep, true> = {
   driver: true,
   reboot_required: true,
   choose_output: true,
+  choose_discard: true,
 };
 export const NEXT_ACTIONS: Record<NextAction, true> = {
   retry: true,
@@ -221,6 +234,13 @@ export const OUTPUT_MODES: Record<OutputMode, true> = {
 };
 export const OUTPUT_PATHS: Record<OutputPath, true> = { wasapi: true, kernel_streaming: true };
 export const ENTRANCES: Record<Entrance, true> = { main: true, music: true, pass: true };
+export const ENTRANCE_KINDS: Record<EntranceKind, true> = { driver: true, app_sound: true };
+export const CAPTURE_STATES: Record<CaptureState, true> = {
+  not_running: true,
+  running: true,
+  capturing: true,
+  waiting: true,
+};
 export const KS_FALLBACK_REASONS: Record<KsFallbackReason, true> = {
   no_target: true,
   filter_open: true,
@@ -497,6 +517,24 @@ const phase = tagged<Phase>({
 });
 
 const outputChoice = object<OutputChoice>({ id: string, name: string });
+const entranceKind = oneOf(ENTRANCE_KINDS);
+const captureAppChoice = object<CaptureAppChoice>({ lane: number, exe: nullable(string) });
+const captureAppView = object<CaptureAppView>({ exe: string, display_name: string, active: boolean });
+const captureLaneView = object<CaptureLaneView>({
+  exe: string,
+  display_name: string,
+  state: oneOf(CAPTURE_STATES),
+});
+const appCaptureView = object<AppCaptureView>({
+  supported: boolean,
+  min_build: number,
+  discard: nullable(outputChoice),
+  discards: array(outputChoice),
+  main: nullable(captureLaneView),
+  music: nullable(captureLaneView),
+  apps: array(captureAppView),
+  exclusive: boolean,
+});
 
 const driverState = tagged<DriverState>({
   not_installed: unit('not_installed'),
@@ -633,6 +671,8 @@ const snapshot = object<Snapshot>({
   language,
   language_choice: nullable(language),
   skin,
+  entrance: entranceKind,
+  app_capture: appCaptureView,
   output_path: outputPath,
   phase,
   profile: profileView,
@@ -648,7 +688,7 @@ const snapshot = object<Snapshot>({
   roles_taken: boolean,
   error: nullable(userError),
   notes: array(string),
-});
+}, ['entrance', 'app_capture']);
 
 const intent = tagged<Intent>({
   set_language: carrying('set_language', nullable(language)),
@@ -657,6 +697,10 @@ const intent = tagged<Intent>({
   set_routing_enabled: carrying('set_routing_enabled', boolean),
   set_app_rule: carrying('set_app_rule', appRule),
   remove_app_rule: carrying('remove_app_rule', appExecutable),
+  choose_entrance: carrying('choose_entrance', entranceKind),
+  choose_discard: carrying('choose_discard', string),
+  choose_capture_app: carrying('choose_capture_app', captureAppChoice),
+  set_app_capture_exclusive: carrying('set_app_capture_exclusive', boolean),
   begin_setup: unit('begin_setup'),
   install_driver: unit('install_driver'),
   recheck: unit('recheck'),
