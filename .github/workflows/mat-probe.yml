@@ -161,13 +161,20 @@ jobs:
             $stderr = Join-Path $out "$name.err"
             $p = Start-Process -Wait -PassThru -NoNewWindow -FilePath $exe -ArgumentList $arguments `
               -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-            $log = Join-Path $out "$name.log"
-            Get-Content $stdout, $stderr -ErrorAction SilentlyContinue | Set-Content $log
-            Get-Content $log | Write-Host
             $code = '0x{0:X8}' -f $p.ExitCode
-            Write-Host "${name}: exit $code"
-            Add-Content $env:GITHUB_STEP_SUMMARY "${name}: exit $code"
-            Get-Content $log -Tail 8 | ForEach-Object { Add-Content $env:GITHUB_STEP_SUMMARY "    $_" }
+            $elapsed = [math]::Round(($p.ExitTime - $p.StartTime).TotalSeconds, 1)
+            Write-Host "${name}: exit $code after $elapsed s"
+            Add-Content $env:GITHUB_STEP_SUMMARY "${name}: exit $code after $elapsed s"
+            # A program that printed nothing leaves empty files; say so.
+            $log = Join-Path $out "$name.log"
+            $text = (@($stdout, $stderr) | ForEach-Object { [IO.File]::ReadAllText($_) }) -join ''
+            [IO.File]::WriteAllText($log, $text)
+            if ($text) {
+              Write-Host $text
+              ($text -split "`n" | Select-Object -Last 8) | ForEach-Object { Add-Content $env:GITHUB_STEP_SUMMARY "    $_" }
+            } else {
+              Add-Content $env:GITHUB_STEP_SUMMARY "    (printed nothing)"
+            }
             return [int64]$p.ExitCode
           }
           $dump = Join-Path $out 'mat-probe-ep0.ssrdump'
