@@ -22,7 +22,11 @@
 # MAT observation tool (ADR 0022 addendum 2026-10-21, +19): ISpatialAudioClient
 # activation through a VT_BLOB PROPVARIANT, the object render stream and its
 # event, and the static and dynamic object buffers.
-ssr-sys = 179
+# Process loopback app capture (ADR 0043, +30): activation through a VT_BLOB
+# PROPVARIANT and a completion handler, including the heap-owned activation
+# lifetime, the capture client's initialize, event, start and stop, packet reads
+# and the event wait. The CI tone helper's session experiment is included too.
+ssr-sys = 209
 # The administrator tasks of ssr-setup (ADR 0032): COM endpoint enumeration
 # and the exclusive-mode property store, cfgmgr32 device nodes, SetupAPI root
 # device install and removal, the local machine certificate stores, and the

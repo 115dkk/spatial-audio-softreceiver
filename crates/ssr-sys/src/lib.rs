@@ -30,10 +30,11 @@
 #[cfg(any(windows, test))]
 mod app_device_id;
 #[cfg(windows)]
-mod app_routing;
+pub mod app_routing;
 pub mod bitstream;
 pub mod driver_ring;
 pub mod ks;
+pub mod loopback_format;
 mod playback_clock;
 pub mod sal_format;
 mod stall_guard;
@@ -57,6 +58,8 @@ mod device;
 pub mod devices;
 #[cfg(windows)]
 pub mod host;
+#[cfg(windows)]
+pub mod loopback;
 #[cfg(windows)]
 pub mod mmcss;
 #[cfg(windows)]

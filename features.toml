@@ -192,6 +192,23 @@ note = "Per endpoint, arrival summarizes how READs came: gaps between payload RE
 # ---- Replay chain (M1) ----
 
 [[feature]]
+id = "capture.app_loopback"
+kind = "pipeline"
+milestone = "M1"
+status = "implemented"
+tests = [
+  "ssr-sys::mix_layout_accepts_valid_masks_and_falls_back_to_stereo",
+  "ssr-sys::mix_layout_sets_format_and_frame_width",
+  "ssr-sys::first_packet_gives_start_format_and_endpoint_one_data",
+  "ssr-sys::silent_packet_is_zero_and_discontinuity_precedes_data",
+  "ssr-sys::idle_stops_and_restart_keeps_epoch_and_repeats_format",
+  "ssr-sys::converts_hns_to_qpc_with_saturation",
+  "ssr-sys::large_packet_drains_across_small_writers_without_loss",
+  "ssr-sys::writer_too_small_keeps_pending_and_end_stops_once",
+]
+note = "ADR 0043 process-loopback capture translates 48 kHz float packets in stereo or a valid 1-to-8-channel render mix layout into the common record stream without allocating after open. tools/ci/test_app_loopback_check.py checks synthetic stereo, multichannel, silent, leaking-channel and wrong-format dumps; the Windows device job uses the tone player and app_loopback_check.py."
+
+[[feature]]
 id = "bitstream.iec61937"
 kind = "pipeline"
 milestone = "M1"

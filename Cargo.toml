@@ -52,6 +52,7 @@ ssr-guard = { path = "apps/ssr-guard" }
 ssr-sys = { path = "crates/ssr-sys" }
 ssr-setup-sys = { path = "crates/ssr-setup-sys" }
 
+windows-core = "0.62.2"
 windows = { version = "0.62", features = [
     "Data_Xml_Dom",
     "UI_Notifications",

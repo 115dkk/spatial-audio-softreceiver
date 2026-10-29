@@ -38,8 +38,8 @@ use windows::{
         },
         Media::Audio::{
             AudioSessionStateActive, AudioSessionStateExpired, DEVICE_STATE_ACTIVE,
-            IAudioSessionControl2, IAudioSessionManager2, IMMDeviceEnumerator, MMDeviceEnumerator,
-            eConsole, eMultimedia, eRender,
+            IAudioSessionControl2, IAudioSessionManager2, IMMDeviceEnumerator, ISimpleAudioVolume,
+            MMDeviceEnumerator, eConsole, eMultimedia, eRender,
         },
         System::{
             Com::{CLSCTX_ALL, CoCreateInstance},
@@ -110,11 +110,79 @@ impl Drop for Process {
     }
 }
 
-pub(crate) fn audio_apps() -> Vec<AudioApp> {
+pub fn audio_apps() -> Vec<AudioApp> {
     let Ok(_com) = ComGuard::new() else {
         return Vec::new();
     };
     collect_apps().unwrap_or_default()
+}
+
+/// Changes every current render session owned by `pid`. This is used only by
+/// the process-loopback CI tone helper after its stream has started.
+pub fn set_process_session_volume(
+    pid: u32,
+    mute: bool,
+    volume: Option<f32>,
+) -> Result<(), HostError> {
+    if !mute && volume.is_none() {
+        return Ok(());
+    }
+    let _com = ComGuard::new().map_err(|error| HostError::Failed(error.to_string()))?;
+    // SAFETY: this MTA thread requests the typed endpoint enumerator without aggregation.
+    let enumerator: IMMDeviceEnumerator =
+        unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }
+            .map_err(|error| failed("MMDeviceEnumerator", error))?;
+    // SAFETY: live enumerator, render flow and active-state mask.
+    let devices = unsafe { enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) }
+        .map_err(|error| failed("EnumAudioEndpoints", error))?;
+    // SAFETY: live collection on this apartment.
+    let device_count = unsafe { devices.GetCount() }.map_err(|error| failed("GetCount", error))?;
+    let mut changed = false;
+    for device_index in 0..device_count {
+        // SAFETY: index is below this collection's count.
+        let device =
+            unsafe { devices.Item(device_index) }.map_err(|error| failed("Item", error))?;
+        // SAFETY: live endpoint, typed session manager, no activation parameters.
+        let manager = unsafe { device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) }
+            .map_err(|error| failed("IAudioSessionManager2", error))?;
+        // SAFETY: live manager on this MTA thread.
+        let sessions = unsafe { manager.GetSessionEnumerator() }
+            .map_err(|error| failed("GetSessionEnumerator", error))?;
+        // SAFETY: live session enumerator.
+        let session_count =
+            unsafe { sessions.GetCount() }.map_err(|error| failed("session GetCount", error))?;
+        for session_index in 0..session_count {
+            // SAFETY: index is below this session collection's count.
+            let session = unsafe { sessions.GetSession(session_index) }
+                .map_err(|error| failed("GetSession", error))?;
+            let control = session
+                .cast::<IAudioSessionControl2>()
+                .map_err(|error| failed("IAudioSessionControl2", error))?;
+            // SAFETY: live typed session; the method returns its owning process id.
+            if unsafe { control.GetProcessId() }.ok() != Some(pid) {
+                continue;
+            }
+            let simple = session
+                .cast::<ISimpleAudioVolume>()
+                .map_err(|error| failed("ISimpleAudioVolume", error))?;
+            if let Some(volume) = volume {
+                // SAFETY: level was range-checked by the helper; null event context is allowed.
+                unsafe { simple.SetMasterVolume(volume, std::ptr::null()) }
+                    .map_err(|error| failed("SetMasterVolume", error))?;
+            }
+            // SAFETY: live session volume interface; null event context is allowed.
+            unsafe { simple.SetMute(mute, std::ptr::null()) }
+                .map_err(|error| failed("SetMute", error))?;
+            changed = true;
+        }
+    }
+    if changed {
+        Ok(())
+    } else {
+        Err(HostError::Failed(format!(
+            "no render audio session belongs to process {pid}"
+        )))
+    }
 }
 
 fn collect_apps() -> windows::core::Result<Vec<AudioApp>> {
