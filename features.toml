@@ -755,7 +755,7 @@ tests = [
   "engine::capture_and_output_steady_state_do_not_allocate",
   "ssr-replay::one_ms_pcm71_records_render_exactly_the_same_samples_as_ten_ms_records",
 ]
-note = "The output sink timestamps each device-buffer write so reports split source-to-playback latency into handoff and device portions (ADR 0044). The live audio job plays pcm71-1ms (the driver's 1 ms records) exclusive at 10 and 20 ms periods for 60 s each, and tools/ci/latency_bench_check.py (tested by tools/ci/test_latency_bench_check.py) fails a handoff p50 more than 10 ms above the value ADR 0044's formula gives for the period and notes one more than 2 ms off it."
+note = "The output sink timestamps each device-buffer write so reports split source-to-playback latency into handoff and device portions (ADR 0044). The live audio job plays pcm71-1ms (the driver's 1 ms records) exclusive at 10 and 20 ms periods for 60 s each, and tools/ci/latency_bench_check.py (tested by tools/ci/test_latency_bench_check.py) fails a handoff p50 more than 5 ms above the range ADR 0044 gives for the period (one block below 9 + 10 + min(P, 10) + P + 2.7 ms; the phase between blocks and periods decides where a run falls) and notes one more than 1 ms outside it. First CI figures: 34.6 and 36.7 ms at 10 ms, 43.1 and 48.5 ms at 20 ms, the device latency one period."
 
 [[feature]]
 id = "convolver.non_uniform"
