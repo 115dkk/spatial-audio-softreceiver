@@ -25,10 +25,11 @@ use std::time::{Duration, Instant};
 use engine::{CorrectionProfile, LiveChange, OutputProfile, Prepared, UpmixStatus};
 use speakers::SpeakerProfile;
 use ssr_types::app::{
-    AsioSettings, CorrectionView, HeadphonesView, Intent, Language, NextAction, OutputChoice,
-    OutputPath, Phase, PluginChoice, PluginFormat, ProfileKind, ProfileView, RoutingSettings,
-    SetupStep, Skin, Snapshot, SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply,
-    UpmixerChoice, UpmixerSetting, UserError,
+    AppCaptureSettings, AsioSettings, CaptureApp, CaptureAppChoice, CorrectionView, EntranceKind,
+    HeadphonesView, Intent, Language, NextAction, OutputChoice, OutputPath, Phase, PluginChoice,
+    PluginFormat, ProfileKind, ProfileView, RoutingSettings, SetupStep, Skin, Snapshot,
+    SpeakerChannelView, SpeakerLayout, SpeakersView, UpmixApply, UpmixerChoice, UpmixerSetting,
+    UserError,
 };
 use ssr_types::ports::PolicyState;
 use ssr_types::{
@@ -37,6 +38,8 @@ use ssr_types::{
     SetupTask,
 };
 
+use crate::app_capture::{AppCaptureMonitor, ResolveError};
+use crate::app_outputs::{self, AppOutputs, SentApp};
 use crate::health::{HealthLog, Observation};
 use crate::restore_point::{self, RestorePoint};
 use crate::routing::Routing;
@@ -110,10 +113,28 @@ impl EngineHandle for Session {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CaptureTarget {
+    pub pid: u32,
+    pub lane: u16,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub enum LaunchCapture<'a> {
+    #[default]
+    Driver,
+    Apps {
+        targets: &'a [CaptureTarget],
+        discard: &'a DeviceId,
+        exclusive: bool,
+    },
+}
+
 /// Starts the engine for the state machine.
 /// What a launch asks for besides the output and the profile.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LaunchOptions<'a> {
+    pub capture: LaunchCapture<'a>,
     /// The settings ask for kernel streaming (ADR 0037).
     pub kernel_streaming: bool,
     /// The output's render pin; `None` when kernel streaming was not asked
@@ -143,7 +164,7 @@ pub trait Launcher {
         profile: &OutputProfile,
         options: LaunchOptions<'_>,
     ) -> Result<Box<dyn EngineHandle>, SessionError> {
-        if options.ks_target.is_some() {
+        if options.ks_target.is_some() || matches!(options.capture, LaunchCapture::Apps { .. }) {
             return Err(SessionError::Rejected);
         }
         self.launch(output, profile)
@@ -179,6 +200,8 @@ struct Running {
     pending: Option<Box<Prepared>>,
     /// The current run has already reported a KS-to-WASAPI fallback.
     ks_fallback_noted: bool,
+    /// Process targets for the app-sound entrance; empty for the driver entrance.
+    capture_targets: Vec<CaptureTarget>,
 }
 
 /// What the profile intents remember (ADR 0034).
@@ -291,6 +314,12 @@ pub struct Settings {
     /// The chosen output, remembered by id and name: the id can change across
     /// reboots, the name is the fallback.
     pub output: Option<OutputChoice>,
+    /// The selected sound entrance. Older settings use the driver.
+    #[serde(default)]
+    pub entrance: EntranceKind,
+    /// Settings used by the driverless app-sound entrance.
+    #[serde(default)]
+    pub app_capture: AppCaptureSettings,
     #[serde(default)]
     pub profile: ProfileSettings,
     /// How the selected output is opened. Old settings default to WASAPI.
@@ -318,6 +347,8 @@ pub struct Config {
     /// of M5).
     pub requires_test_signing: bool,
     pub min_os_build: u32,
+    /// The first Windows build with process loopback.
+    pub min_app_capture_build: u32,
     /// The architecture the driver package was built for.
     pub arch: Arch,
     /// How long the engine may try to reconnect a lost output or capture
@@ -332,6 +363,7 @@ pub struct Config {
 impl Config {
     /// Windows 10 2004.
     pub const MIN_OS_BUILD: u32 = 19_041;
+    pub const MIN_APP_CAPTURE_BUILD: u32 = 20_348;
 
     /// Three of the engine's longest reconnect waits (5 s each).
     pub const FAULT_GRACE: Duration = Duration::from_secs(15);
@@ -354,6 +386,7 @@ impl Default for Config {
             default_language: Language::Ko,
             requires_test_signing: true,
             min_os_build: Self::MIN_OS_BUILD,
+            min_app_capture_build: Self::MIN_APP_CAPTURE_BUILD,
             arch: Self::BUILD_ARCH,
             fault_grace: Self::FAULT_GRACE,
             profile_file: None,
@@ -390,6 +423,9 @@ pub struct Supervisor<H: Host, L: Launcher> {
     /// The upmixers' plugin hosts and their stages in the engine (ADR 0035).
     upmix: Upmixers,
     routing: Routing,
+    app_capture: AppCaptureMonitor,
+    app_capture_tick_prepared: bool,
+    app_outputs: Option<AppOutputs>,
     health: HealthLog,
     health_changed: bool,
 }
@@ -439,18 +475,64 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             profile: default_profile_view_for(language),
             upmix: Upmixers::new(plugins),
             routing: Routing::new(),
+            app_capture: AppCaptureMonitor::default(),
+            app_capture_tick_prepared: false,
+            app_outputs: None,
             health: HealthLog::default(),
             health_changed: false,
         };
         supervisor.refresh_profile();
-        let driver = supervisor.host.get_mut().driver();
-        let fine = driver_is_fine(&driver);
-        supervisor.driver = Some(driver);
-        if fine && supervisor.settings.output.is_some() {
-            let outputs = supervisor.host.get_mut().outputs();
-            if supervisor.find_output(&outputs).is_some() {
-                supervisor.phase = Phase::Ready;
+        if let Ok(Some(text)) = supervisor.host.get_mut().read_app_outputs() {
+            match AppOutputs::from_json(&text) {
+                Ok(mut record) => {
+                    record.app_pid = None;
+                    let notes = app_outputs::undo(&mut record, supervisor.host.get_mut());
+                    supervisor.notes.extend(notes);
+                    supervisor.app_outputs = (!record.apps.is_empty()).then_some(record);
+                    supervisor.persist_app_outputs();
+                }
+                Err(error) => eprintln!("app-output record could not be read: {error}"),
             }
+        }
+        let outputs = supervisor.host.get_mut().outputs();
+        match supervisor.settings.entrance {
+            EntranceKind::Driver => {
+                let driver = supervisor.host.get_mut().driver();
+                let fine = driver_is_fine(&driver);
+                supervisor.driver = Some(driver);
+                if fine
+                    && supervisor.settings.output.is_some()
+                    && supervisor.find_output(&outputs).is_some()
+                {
+                    supervisor.phase = Phase::Ready;
+                }
+            }
+            EntranceKind::AppSound => {
+                supervisor.app_capture.refresh(supervisor.host.get_mut());
+                let platform = supervisor.host.get_mut().platform();
+                let supported = platform.os_build >= supervisor.config.min_app_capture_build;
+                supervisor.platform = Some(platform);
+                if supported
+                    && supervisor.settings.output.is_some()
+                    && supervisor.find_output(&outputs).is_some()
+                    && supervisor.find_discard(&outputs).is_some()
+                {
+                    supervisor.phase = Phase::Ready;
+                }
+            }
+        }
+        if supervisor.phase == Phase::Ready
+            && let Some(pending) = supervisor
+                .notes
+                .iter()
+                .find(|message| matches!(message, Message::AppOutputUndoPending { .. }))
+                .cloned()
+        {
+            supervisor
+                .notes
+                .retain(|message| !matches!(message, Message::AppOutputUndoPending { .. }));
+            let error = supervisor.message_error(pending, NextAction::Retry);
+            supervisor.error = Some(error);
         }
         supervisor
     }
@@ -458,11 +540,17 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     /// Applies one intent. A failure's `Err` is also kept in the snapshot
     /// until an intent succeeds; a refusal's is only returned.
     pub fn handle(&mut self, intent: Intent) -> Result<(), UserError> {
-        let keeps_error = matches!(&intent, Intent::SetLanguage(_) | Intent::SetSkin(_));
+        let keeps_error = matches!(
+            &intent,
+            Intent::SetLanguage(_) | Intent::SetSkin(_) | Intent::ChooseEntrance(_)
+        );
         let previous_message = self.error_message.clone();
         match self.dispatch(intent) {
             Outcome::Done => {
-                if keeps_error {
+                let undo_pending = self.error_message.as_ref().is_some_and(|error| {
+                    matches!(error.message, Message::AppOutputUndoPending { .. })
+                });
+                if keeps_error || undo_pending {
                     self.error = self
                         .error_message
                         .as_ref()
@@ -482,6 +570,22 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                 Err(error)
             }
         }
+    }
+
+    /// Refreshes the application list before [`Supervisor::tick`] and says
+    /// whether that tick will restart process-loopback capture.
+    ///
+    /// The shell uses this only to send an idle heartbeat before the blocking
+    /// stop-and-launch operation. Calling it is optional; `tick` refreshes the
+    /// list when no preflight was done.
+    pub fn prepare_app_capture_tick(&mut self, now: Instant) -> bool {
+        if self.settings.entrance != EntranceKind::AppSound {
+            return false;
+        }
+        self.app_capture_tick_prepared = self.app_capture.tick_due(self.host.get_mut(), now);
+        self.app_capture_tick_prepared
+            && self.phase == Phase::Running
+            && self.app_capture_replacement().is_some()
     }
 
     /// Polls the running engine and returns its notices (none outside
@@ -505,12 +609,21 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     /// one whose endpoint changed rate restarts at the new rate, and hosts
     /// let go are watched until they exit, in every phase.
     /// [`Supervisor::take_tick_changes`] tells what that changed.
+    ///
+    /// The shell calls [`Supervisor::prepare_app_capture_tick`] immediately
+    /// before this method so it can bracket a capture restart with idle
+    /// heartbeats. Direct callers may omit that preflight; this method still
+    /// refreshes the application list itself.
     pub fn tick(&mut self, now: Instant) -> Vec<SessionNotice> {
         self.upmix.poll_retiring();
-        let Some(running) = self.engine.as_mut() else {
+        if self.engine.is_none() {
+            if self.settings.entrance == EntranceKind::AppSound {
+                self.tick_app_capture(now);
+            }
             self.observe_health(now);
             return Vec::new();
-        };
+        }
+        let running = self.engine.as_mut().expect("the engine was checked above");
         let fault = running
             .handle
             .status()
@@ -554,6 +667,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                         running.needs_prepared = true;
                     }
                 }
+                SessionNotice::CaptureEnded => self.app_capture.capture_ended(),
                 _ => {}
             }
         }
@@ -579,7 +693,9 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             let error = self.message_error(message, NextAction::Retry);
             self.fault(error);
         }
-        if self.phase == Phase::Running && self.engine.is_some() {
+        if self.settings.entrance == EntranceKind::AppSound {
+            self.tick_app_capture(now);
+        } else if self.phase == Phase::Running && self.engine.is_some() {
             let routing_notes = self
                 .routing
                 .tick(self.host.get_mut(), &self.settings.routing, now);
@@ -723,22 +839,39 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     }
 
     pub fn snapshot(&self) -> Snapshot {
-        let outputs = self
-            .host
-            .borrow_mut()
-            .outputs()
-            .into_iter()
-            .filter(is_choosable)
+        let listed = self.host.borrow_mut().outputs();
+        let outputs: Vec<_> = listed
+            .iter()
+            .filter(|output| is_choosable(output))
             .map(|output| OutputChoice {
-                id: output.id,
-                name: output.name,
+                id: output.id.clone(),
+                name: output.name.clone(),
             })
             .collect();
+        let discards = outputs
+            .iter()
+            .filter(|candidate| {
+                self.settings.output.as_ref().map(|choice| &choice.id) != Some(&candidate.id)
+            })
+            .cloned()
+            .collect();
+        let supported = self
+            .platform
+            .as_ref()
+            .is_some_and(|platform| platform.os_build >= self.config.min_app_capture_build);
         let language = self.language();
         Snapshot {
             language,
             language_choice: self.settings.language,
             skin: self.settings.skin,
+            entrance: self.settings.entrance,
+            app_capture: self.app_capture.view(
+                &self.settings.app_capture,
+                supported,
+                self.config.min_app_capture_build,
+                discards,
+                self.phase == Phase::Running,
+            ),
             output_path: self.settings.output_path,
             phase: self.phase.clone(),
             profile: self.profile.clone(),
@@ -844,6 +977,43 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                 Phase::Ready | Phase::Running | Phase::Faulted => self.remove_app_rule(&exe),
                 _ => return self.refused(),
             },
+            Intent::ChooseEntrance(entrance) => {
+                match self.phase {
+                    Phase::Running => Err(self
+                        .message_error(Message::DisableBeforeChangingEntrance, NextAction::None)),
+                    Phase::Setup(_) | Phase::Ready | Phase::Faulted => {
+                        self.settings.entrance = entrance;
+                        self.notes.clear();
+                        self.shell_notes.clear();
+                        self.error = None;
+                        self.error_message = None;
+                        // Unsupported is still a successful choice and must be saved.
+                        match self.evaluate() {
+                            Ok(()) => Ok(()),
+                            Err(_) if self.phase == Phase::Setup(SetupStep::Unsupported) => Ok(()),
+                            Err(error) => Err(error),
+                        }
+                    }
+                    Phase::Quit => return self.refused(),
+                }
+            }
+            Intent::ChooseDiscard(id) => match self.phase {
+                Phase::Setup(SetupStep::ChooseDiscard) | Phase::Ready | Phase::Faulted => {
+                    self.choose_discard(&id)
+                }
+                _ => return self.refused(),
+            },
+            Intent::ChooseCaptureApp(choice) => match self.phase {
+                Phase::Running => {
+                    Err(self.message_error(Message::DisableBeforeChangingApps, NextAction::None))
+                }
+                Phase::Ready | Phase::Faulted => self.choose_capture_app(choice),
+                _ => return self.refused(),
+            },
+            Intent::SetAppCaptureExclusive(exclusive) => {
+                self.settings.app_capture.exclusive = exclusive;
+                Ok(())
+            }
             // The profile can change whenever the wizard is done; a running
             // engine takes changes to the kind in use live, all or nothing.
             Intent::SetProfileKind(kind) => match self.phase {
@@ -948,10 +1118,16 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                     | SetupStep::NotTestSigning
                     | SetupStep::RebootRequired
                     | SetupStep::Driver
-                    | SetupStep::ChooseOutput,
+                    | SetupStep::ChooseOutput
+                    | SetupStep::ChooseDiscard,
                 ) => self.evaluate(),
                 Phase::Faulted => {
                     self.phase = Phase::Ready;
+                    self.undo_app_outputs(true);
+                    Ok(())
+                }
+                Phase::Ready if self.app_outputs.is_some() => {
+                    self.undo_app_outputs(true);
                     Ok(())
                 }
                 _ => return self.refused(),
@@ -974,14 +1150,16 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             Intent::Disable => match self.phase {
                 Phase::Running => {
                     self.stop_engine();
-                    self.restore();
                     self.phase = Phase::Ready;
+                    self.undo_app_outputs(true);
+                    self.restore();
                     Ok(())
                 }
                 _ => return self.refused(),
             },
             Intent::Quit => {
                 self.stop_engine();
+                self.undo_app_outputs(true);
                 self.restore();
                 self.phase = Phase::Quit;
                 self.upmix.drain();
@@ -998,6 +1176,20 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     fn evaluate(&mut self) -> Result<(), UserError> {
         let platform = self.host.get_mut().platform();
         self.platform = Some(platform.clone());
+        if self.settings.entrance == EntranceKind::AppSound {
+            self.driver = None;
+            if platform.os_build < self.config.min_app_capture_build {
+                self.phase = Phase::Setup(SetupStep::Unsupported);
+                return Err(self.message_error(
+                    Message::AppCaptureOsRequirement {
+                        min_build: self.config.min_app_capture_build,
+                    },
+                    NextAction::None,
+                ));
+            }
+            self.phase = Phase::Setup(SetupStep::ChooseOutput);
+            return self.resume_output();
+        }
         if platform.os_build < self.config.min_os_build {
             self.phase = Phase::Setup(SetupStep::Unsupported);
             return Err(self.message_error(
@@ -1092,8 +1284,13 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         }
         let outputs = self.host.get_mut().outputs();
         if self.find_output(&outputs).is_some() {
-            self.phase = Phase::Ready;
-            Ok(())
+            if self.settings.entrance == EntranceKind::AppSound {
+                self.phase = Phase::Setup(SetupStep::ChooseDiscard);
+                self.resume_discard(&outputs)
+            } else {
+                self.phase = Phase::Ready;
+                Ok(())
+            }
         } else {
             Err(self.output_missing())
         }
@@ -1138,6 +1335,138 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         }
     }
 
+    fn resume_discard(&mut self, outputs: &[OutputDevice]) -> Result<(), UserError> {
+        let candidates: Vec<_> = outputs
+            .iter()
+            .filter(|output| {
+                is_choosable(output)
+                    && self.settings.output.as_ref().map(|choice| &choice.id) != Some(&output.id)
+            })
+            .collect();
+        if candidates.is_empty() {
+            return Err(self.message_error(Message::NoDiscardOutput, NextAction::Retry));
+        }
+        if self.settings.app_capture.discard.is_none() {
+            return Ok(());
+        }
+        if self.find_discard(outputs).is_some() {
+            self.phase = Phase::Ready;
+            Ok(())
+        } else {
+            let name = self
+                .settings
+                .app_capture
+                .discard
+                .as_ref()
+                .map_or("", |choice| choice.name.as_str())
+                .to_owned();
+            Err(self.message_error(Message::StoredDiscardMissing { name }, NextAction::Retry))
+        }
+    }
+
+    fn find_discard(&mut self, outputs: &[OutputDevice]) -> Option<OutputDevice> {
+        let output_id = self
+            .settings
+            .output
+            .as_ref()
+            .map(|choice| choice.id.clone());
+        let choice = self.settings.app_capture.discard.as_mut()?;
+        let allowed =
+            |output: &&OutputDevice| is_choosable(output) && output_id.as_ref() != Some(&output.id);
+        if let Some(found) = outputs
+            .iter()
+            .filter(allowed)
+            .find(|output| output.id == choice.id)
+        {
+            choice.name.clone_from(&found.name);
+            return Some(found.clone());
+        }
+        let mut named = outputs
+            .iter()
+            .filter(allowed)
+            .filter(|output| output.name == choice.name);
+        let (Some(found), None) = (named.next(), named.next()) else {
+            return None;
+        };
+        choice.id = found.id.clone();
+        Some(found.clone())
+    }
+
+    fn choose_discard(&mut self, id: &DeviceId) -> Result<(), UserError> {
+        let outputs = self.host.get_mut().outputs();
+        if self.settings.output.as_ref().map(|choice| &choice.id) == Some(id) {
+            return Err(self.message_error(Message::DiscardIsOutput, NextAction::None));
+        }
+        let Some(output) = outputs.iter().find(|output| output.id == *id) else {
+            return Err(self.message_error(Message::ChosenOutputMissing, NextAction::None));
+        };
+        if !is_choosable(output) {
+            let message = if output.endpoint.is_some() {
+                Message::OwnOutputChosen
+            } else {
+                Message::ChosenOutputInactive
+            };
+            return Err(self.message_error(message, NextAction::None));
+        }
+        self.settings.app_capture.discard = Some(OutputChoice {
+            id: output.id.clone(),
+            name: output.name.clone(),
+        });
+        if self.phase == Phase::Setup(SetupStep::ChooseDiscard) {
+            self.phase = Phase::Ready;
+        }
+        Ok(())
+    }
+
+    fn choose_capture_app(&mut self, choice: CaptureAppChoice) -> Result<(), UserError> {
+        if choice.lane >= 2 {
+            return Err(self.message_error(Message::NotAllowed, NextAction::None));
+        }
+        let selected = if let Some(exe) = choice.exe {
+            let Some(exe) = crate::routing::normalize_exe(&exe) else {
+                return Err(self.message_error(Message::NotAllowed, NextAction::None));
+            };
+            self.app_capture.refresh(self.host.get_mut());
+            let Some(app) = self
+                .app_capture
+                .sessions()
+                .iter()
+                .find(|app| app.exe == exe)
+            else {
+                return Err(self
+                    .message_error(Message::CaptureAppNotRunning { app: exe }, NextAction::None));
+            };
+            Some(CaptureApp {
+                exe,
+                display_name: if app.display_name.is_empty() {
+                    app.exe.clone()
+                } else {
+                    app.display_name.clone()
+                },
+            })
+        } else {
+            None
+        };
+        let other = if choice.lane == 0 {
+            self.settings.app_capture.music.as_ref()
+        } else {
+            self.settings.app_capture.main.as_ref()
+        };
+        if selected
+            .as_ref()
+            .zip(other)
+            .is_some_and(|(selected, other)| selected.exe == other.exe)
+        {
+            return Err(self.message_error(Message::CaptureSameApp, NextAction::None));
+        }
+        if choice.lane == 0 {
+            self.settings.app_capture.main = selected;
+        } else {
+            self.settings.app_capture.music = selected;
+        }
+        Ok(())
+    }
+
     fn choose_output(&mut self, id: &DeviceId) -> Result<(), UserError> {
         let outputs = self.host.get_mut().outputs();
         let Some(output) = outputs.iter().find(|output| output.id == *id) else {
@@ -1149,12 +1478,28 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         if output.state != DeviceState::Active {
             return Err(self.message_error(Message::ChosenOutputInactive, NextAction::None));
         }
+        if self.settings.entrance == EntranceKind::AppSound
+            && self
+                .settings
+                .app_capture
+                .discard
+                .as_ref()
+                .map(|choice| &choice.id)
+                == Some(id)
+        {
+            return Err(self.message_error(Message::OutputIsDiscard, NextAction::None));
+        }
         self.settings.output = Some(OutputChoice {
             id: output.id.clone(),
             name: output.name.clone(),
         });
-        self.phase = Phase::Ready;
-        Ok(())
+        if self.settings.entrance == EntranceKind::AppSound {
+            self.phase = Phase::Setup(SetupStep::ChooseDiscard);
+            self.resume_discard(&outputs)
+        } else {
+            self.phase = Phase::Ready;
+            Ok(())
+        }
     }
 
     /// Takes the roles, then starts the engine; on any failure the roles go
@@ -1163,6 +1508,9 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     fn enable(&mut self) -> Result<(), UserError> {
         self.validate_asio(self.settings.asio)?;
         self.notes.clear();
+        if self.settings.entrance == EntranceKind::AppSound {
+            return self.enable_app_capture();
+        }
         // Ready is only a cached conclusion. Refresh the driver before any
         // profile work, restore-point write, role mutation, or engine launch.
         let driver = self.host.get_mut().driver();
@@ -1226,6 +1574,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             &output,
             &resolved.profile,
             LaunchOptions {
+                capture: LaunchCapture::Driver,
                 kernel_streaming: self.settings.output_path == OutputPath::KernelStreaming,
                 ks_target: ks_target.as_ref(),
                 asio: self.settings.asio,
@@ -1240,6 +1589,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                     pending: None,
                     ks_fallback_noted: self.settings.output_path == OutputPath::KernelStreaming
                         && ks_target.is_none(),
+                    capture_targets: Vec::new(),
                 });
                 self.phase = Phase::Running;
                 if let Some(running) = self.engine.as_mut() {
@@ -1259,6 +1609,218 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
                     },
                     NextAction::Retry,
                 ))
+            }
+        }
+    }
+
+    fn enable_app_capture(&mut self) -> Result<(), UserError> {
+        let platform = self.host.get_mut().platform();
+        self.platform = Some(platform.clone());
+        self.driver = None;
+        if platform.os_build < self.config.min_app_capture_build {
+            self.phase = Phase::Setup(SetupStep::Unsupported);
+            return Err(self.message_error(
+                Message::AppCaptureOsRequirement {
+                    min_build: self.config.min_app_capture_build,
+                },
+                NextAction::None,
+            ));
+        }
+        let outputs = self.host.get_mut().outputs();
+        let Some(output) = self.find_output(&outputs) else {
+            self.phase = Phase::Setup(SetupStep::ChooseOutput);
+            return Err(self.output_missing());
+        };
+        let Some(discard) = self.find_discard(&outputs) else {
+            self.phase = Phase::Setup(SetupStep::ChooseDiscard);
+            return self.resume_discard(&outputs).and_then(|()| {
+                Err(self.message_error(Message::NoDiscardOutput, NextAction::Retry))
+            });
+        };
+        if output.id == discard.id {
+            self.phase = Phase::Setup(SetupStep::ChooseDiscard);
+            return Err(self.message_error(Message::DiscardIsOutput, NextAction::None));
+        }
+        let Some(main) = self.settings.app_capture.main.clone() else {
+            return Err(self.message_error(Message::CaptureAppFirst, NextAction::None));
+        };
+        self.app_capture.refresh(self.host.get_mut());
+        let main_pid = self.resolve_capture_app(&main)?;
+        let mut targets = vec![CaptureTarget {
+            pid: main_pid,
+            lane: 0,
+        }];
+        if let Some(music) = self.settings.app_capture.music.clone() {
+            let pid = self.resolve_capture_app(&music)?;
+            if music.exe == main.exe || pid == main_pid {
+                return Err(self.message_error(Message::CaptureSameApp, NextAction::None));
+            }
+            targets.push(CaptureTarget { pid, lane: 1 });
+        }
+
+        let resolved = resolve(&self.config, &self.settings.profile, self.language())
+            .map_err(|error| self.localized_error(error))?;
+        self.profile = resolved.view;
+        match &resolved.profile {
+            OutputProfile::Speakers(profile) => self.check_layout(
+                &profile.name,
+                OutputLayout {
+                    channels: u16::try_from(profile.device_channels).unwrap_or(u16::MAX),
+                    channel_mask: profile.channel_mask,
+                },
+            )?,
+            OutputProfile::Correction(profile) => self.check_correction(profile)?,
+            OutputProfile::Headphones(_) => {}
+        }
+        if self.settings.output_path == OutputPath::KernelStreaming {
+            self.notes.push(Message::KsNotForAppCapture);
+        }
+
+        let mut record = self.app_outputs.take().unwrap_or_default();
+        record.app_pid = Some(std::process::id());
+        for target in &targets {
+            let selected = if target.lane == 0 {
+                main.clone()
+            } else {
+                self.settings
+                    .app_capture
+                    .music
+                    .clone()
+                    .expect("lane one has a selected app")
+            };
+            if let Some(existing) = record.apps.iter_mut().find(|sent| sent.exe == selected.exe) {
+                existing.pid = target.pid;
+                existing.discard = discard.id.clone();
+            } else {
+                let previous = self
+                    .host
+                    .get_mut()
+                    .app_entrance(target.pid)
+                    .map_err(|error| {
+                        eprintln!("app-output read failed for {}: {error}", selected.exe);
+                        self.message_error(
+                            Message::AppOutputChangeFailed {
+                                app: selected.display_name.clone(),
+                            },
+                            NextAction::Retry,
+                        )
+                    })?;
+                record.apps.push(SentApp {
+                    exe: selected.exe.clone(),
+                    pid: target.pid,
+                    discard: discard.id.clone(),
+                    previous,
+                });
+            }
+        }
+        if let Err(error) = self
+            .host
+            .get_mut()
+            .write_app_outputs(Some(&record.to_json()))
+        {
+            eprintln!("app-output record write failed: {error}");
+            self.app_outputs = Some(record);
+            return Err(self.message_error(Message::AppOutputsRecordFailed, NextAction::Retry));
+        }
+        self.app_outputs = Some(record);
+
+        for target in &targets {
+            let selected = if target.lane == 0 {
+                main.clone()
+            } else {
+                self.settings
+                    .app_capture
+                    .music
+                    .clone()
+                    .expect("lane one has a selected app")
+            };
+            match self
+                .host
+                .get_mut()
+                .set_app_entrance(target.pid, Some(&discard.id))
+            {
+                Ok(()) => {}
+                Err(HostError::Unsupported) => {
+                    self.notes.push(Message::EntranceRoutingUnavailable);
+                    if let Some(record) = self.app_outputs.as_mut() {
+                        record.apps.retain(|sent| sent.exe != selected.exe);
+                    }
+                    self.persist_app_outputs();
+                }
+                Err(error) => {
+                    eprintln!("app-output change failed for {}: {error}", selected.exe);
+                    self.undo_app_outputs(false);
+                    return Err(self.message_error(
+                        Message::AppOutputChangeFailed {
+                            app: selected.display_name.clone(),
+                        },
+                        NextAction::Retry,
+                    ));
+                }
+            }
+        }
+
+        let launch = self.launcher.launch_with(
+            &output,
+            &resolved.profile,
+            LaunchOptions {
+                capture: LaunchCapture::Apps {
+                    targets: &targets,
+                    discard: &discard.id,
+                    exclusive: self.settings.app_capture.exclusive,
+                },
+                kernel_streaming: false,
+                ks_target: None,
+                asio: self.settings.asio,
+            },
+        );
+        match launch {
+            Ok(handle) => {
+                self.app_capture.set_capturing(
+                    &targets
+                        .iter()
+                        .map(|target| (target.lane, target.pid))
+                        .collect::<Vec<_>>(),
+                );
+                self.engine = Some(Running {
+                    handle,
+                    profile: resolved.profile,
+                    needs_prepared: false,
+                    pending: None,
+                    ks_fallback_noted: true,
+                    capture_targets: targets,
+                });
+                self.phase = Phase::Running;
+                if let Some(running) = self.engine.as_mut() {
+                    self.upmix.engine_started(
+                        running.handle.as_mut(),
+                        &mut self.settings.upmix,
+                        self.profile.kind,
+                    );
+                }
+                Ok(())
+            }
+            Err(error) => {
+                self.undo_app_outputs(false);
+                Err(self.message_error(
+                    Message::EngineStartFailed {
+                        detail: error.to_string(),
+                    },
+                    NextAction::Retry,
+                ))
+            }
+        }
+    }
+
+    fn resolve_capture_app(&mut self, selected: &CaptureApp) -> Result<u32, UserError> {
+        match self.app_capture.resolve(selected) {
+            Ok(pid) => Ok(pid),
+            Err(ResolveError::NotRunning(app)) => {
+                Err(self.message_error(Message::CaptureAppNotRunning { app }, NextAction::Retry))
+            }
+            Err(ResolveError::Ambiguous { app, pids }) => {
+                eprintln!("app capture is ambiguous for {app}: {pids:?}");
+                Err(self.message_error(Message::CaptureAppAmbiguous { app }, NextAction::Retry))
             }
         }
     }
@@ -1325,6 +1887,230 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         Ok(())
     }
 
+    fn persist_app_outputs(&mut self) {
+        let result = match self.app_outputs.as_ref() {
+            Some(record) if !record.apps.is_empty() => self
+                .host
+                .get_mut()
+                .write_app_outputs(Some(&record.to_json())),
+            _ => self.host.get_mut().write_app_outputs(None),
+        };
+        if let Err(error) = result {
+            eprintln!("app-output record write failed: {error}");
+            self.notes.push(Message::AppOutputsRecordFailed);
+        }
+        if self
+            .app_outputs
+            .as_ref()
+            .is_some_and(|record| record.apps.is_empty())
+        {
+            self.app_outputs = None;
+        }
+    }
+
+    fn undo_app_outputs(&mut self, parked: bool) {
+        let Some(mut record) = self.app_outputs.take() else {
+            return;
+        };
+        let messages = app_outputs::undo(&mut record, self.host.get_mut());
+        if parked {
+            record.app_pid = None;
+        }
+        let pending = messages
+            .iter()
+            .find(|message| matches!(message, Message::AppOutputUndoPending { .. }))
+            .cloned();
+        let ready = self.phase == Phase::Ready;
+        // The app tick retries a pending undo every second; a note already
+        // listed is not added again.
+        for message in messages {
+            let shown_as_error = ready && matches!(message, Message::AppOutputUndoPending { .. });
+            if !shown_as_error && !self.notes.contains(&message) {
+                self.notes.push(message);
+            }
+        }
+        self.app_outputs = (!record.apps.is_empty()).then_some(record);
+        self.persist_app_outputs();
+        if self.phase == Phase::Ready {
+            if let Some(message) = pending {
+                self.error = Some(self.message_error(message, NextAction::Retry));
+            } else if self
+                .error_message
+                .as_ref()
+                .is_some_and(|error| matches!(error.message, Message::AppOutputUndoPending { .. }))
+            {
+                self.error = None;
+                self.error_message = None;
+            }
+        }
+    }
+
+    fn app_capture_replacement(&self) -> Option<(usize, u32, CaptureApp)> {
+        let selected = [
+            self.settings.app_capture.main.as_ref(),
+            self.settings.app_capture.music.as_ref(),
+        ];
+        for (lane, app) in selected.into_iter().enumerate() {
+            let Some(app) = app else { continue };
+            let old = self.app_capture.captured_pid(lane);
+            let old_present = old.is_some_and(|pid| {
+                self.app_capture
+                    .sessions()
+                    .iter()
+                    .any(|session| session.pid == pid && session.exe == app.exe)
+            });
+            if old_present {
+                continue;
+            }
+            let mut active: Vec<_> = self
+                .app_capture
+                .sessions()
+                .iter()
+                .filter(|session| session.exe == app.exe && session.active)
+                .map(|session| session.pid)
+                .collect();
+            active.sort_unstable();
+            active.dedup();
+            if let [pid] = active.as_slice() {
+                return Some((lane, *pid, app.clone()));
+            }
+        }
+        None
+    }
+
+    fn tick_app_capture(&mut self, now: Instant) {
+        let prepared = std::mem::take(&mut self.app_capture_tick_prepared);
+        if !prepared && !self.app_capture.tick_due(self.host.get_mut(), now) {
+            return;
+        }
+        self.health_changed = true;
+        if self.phase != Phase::Running {
+            self.undo_app_outputs(true);
+            return;
+        }
+        let replacement = self.app_capture_replacement();
+        if replacement.is_none() {
+            let selected = [
+                self.settings.app_capture.main.as_ref(),
+                self.settings.app_capture.music.as_ref(),
+            ];
+            for (lane, app) in selected.into_iter().enumerate() {
+                let Some(app) = app else { continue };
+                let captured = self.app_capture.captured_pid(lane);
+                let captured_active = captured.is_some_and(|pid| {
+                    self.app_capture.sessions().iter().any(|session| {
+                        session.pid == pid && session.exe == app.exe && session.active
+                    })
+                });
+                if captured_active {
+                    self.app_capture.mark_resumed(lane);
+                    continue;
+                }
+                let active = self
+                    .app_capture
+                    .sessions()
+                    .iter()
+                    .any(|session| session.exe == app.exe && session.active);
+                if !active && self.app_capture.mark_waiting(lane) {
+                    self.notes.push(Message::AppCaptureWaiting {
+                        app: app.display_name.clone(),
+                    });
+                }
+            }
+        }
+        let Some((lane, pid, app)) = replacement else {
+            return;
+        };
+        if let Err(error) = self.restart_app_capture(lane, pid) {
+            self.fault(error);
+            return;
+        }
+        self.notes.push(Message::AppCaptureReattached {
+            app: app.display_name,
+        });
+    }
+
+    fn restart_app_capture(&mut self, lane: usize, pid: u32) -> Result<(), UserError> {
+        let Some(mut running) = self.engine.take() else {
+            return Ok(());
+        };
+        self.upmix.engine_stopped();
+        if let Err(error) = running.handle.stop() {
+            self.notes.push(Message::EngineStopFailed {
+                detail: error.to_string(),
+            });
+        }
+        let lane_u16 = u16::try_from(lane).expect("capture lanes are 0 and 1");
+        if let Some(target) = running
+            .capture_targets
+            .iter_mut()
+            .find(|target| target.lane == lane_u16)
+        {
+            target.pid = pid;
+        }
+        if let Some(record) = self.app_outputs.as_mut()
+            && let Some(selected) = if lane == 0 {
+                self.settings.app_capture.main.as_ref()
+            } else {
+                self.settings.app_capture.music.as_ref()
+            }
+            && let Some(sent) = record.apps.iter_mut().find(|sent| sent.exe == selected.exe)
+        {
+            sent.pid = pid;
+        }
+        self.persist_app_outputs();
+        let outputs = self.host.get_mut().outputs();
+        let Some(output) = self.find_output(&outputs) else {
+            return Err(self.output_missing());
+        };
+        let Some(discard) = self.find_discard(&outputs) else {
+            return Err(self.message_error(Message::NoDiscardOutput, NextAction::Retry));
+        };
+        let targets = running.capture_targets;
+        let profile = running.profile;
+        let handle = self
+            .launcher
+            .launch_with(
+                &output,
+                &profile,
+                LaunchOptions {
+                    capture: LaunchCapture::Apps {
+                        targets: &targets,
+                        discard: &discard.id,
+                        exclusive: self.settings.app_capture.exclusive,
+                    },
+                    kernel_streaming: false,
+                    ks_target: None,
+                    asio: self.settings.asio,
+                },
+            )
+            .map_err(|error| {
+                self.message_error(
+                    Message::EngineStartFailed {
+                        detail: error.to_string(),
+                    },
+                    NextAction::Retry,
+                )
+            })?;
+        self.app_capture.replace_pid(lane, pid);
+        self.engine = Some(Running {
+            handle,
+            profile,
+            needs_prepared: false,
+            pending: None,
+            ks_fallback_noted: true,
+            capture_targets: targets,
+        });
+        if let Some(running) = self.engine.as_mut() {
+            self.upmix.engine_started(
+                running.handle.as_mut(),
+                &mut self.settings.upmix,
+                self.profile.kind,
+            );
+        }
+        Ok(())
+    }
+
     /// Gives the roles back when they were taken (ADR 0023) and removes the
     /// restore point.
     fn restore(&mut self) {
@@ -1350,6 +2136,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     /// `error`.
     fn fault(&mut self, error: UserError) {
         self.stop_engine();
+        self.undo_app_outputs(true);
         self.restore();
         self.phase = Phase::Faulted;
         self.error = Some(error);
@@ -1359,6 +2146,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
     /// note, not a failure.
     fn stop_engine(&mut self) {
         self.reconnecting = None;
+        self.app_capture.clear_capturing();
         self.upmix.engine_stopped();
         if let Some(running) = self.engine.take()
             && let Err(error) = running.handle.stop()

@@ -3,7 +3,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use supervisor::guard::{Action, Guard, Observation, Progress, Reason};
 
 use crate::heartbeat;
-use crate::marker::{Marker, MarkerReason};
+use crate::marker::{Marker, MarkerReason, MarkerScope};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Timeout;
@@ -18,16 +18,22 @@ pub trait AppProcess {
     fn id(&self) -> u32;
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Recovery {
+    pub notes: Vec<String>,
+    pub scope: MarkerScope,
+}
+
 pub trait Platform {
     fn spawn(&mut self, resume: bool) -> Result<Box<dyn AppProcess>, String>;
     /// Gives the roles back from the restore point when there is one and
     /// [`restore_allowed`] accepts it for `app`, the process this guard
     /// launched: `None` when nothing was restored (no restore point, or
     /// another instance's), otherwise the notes.
-    fn restore(&mut self, app: u32) -> Option<Vec<String>>;
-    /// The `app_pid` of the restore point, when there is one: an app took the
-    /// roles and has not given them back.
-    fn restore_point_owner(&self) -> Option<u32>;
+    fn restore(&mut self, app: u32) -> Option<Recovery>;
+    /// The owner of a restore point or an app-output record. Parked app-output
+    /// records have no owner and do not start the takeover-silence clock.
+    fn recovery_owner(&self) -> Option<u32>;
     fn write_marker(&mut self, marker: &Marker);
     fn now(&self) -> Instant;
 }
@@ -117,8 +123,12 @@ pub fn run(
                 }
             }
             Ok(None) => {
-                if let Some(notes) = platform.restore(child.id()) {
-                    platform.write_marker(&marker(MarkerReason::AppExited, notes));
+                if let Some(recovery) = platform.restore(child.id()) {
+                    platform.write_marker(&marker(
+                        recovery.scope,
+                        MarkerReason::AppExited,
+                        recovery.notes,
+                    ));
                     return Exit::Restored(MarkerReason::AppExited);
                 }
                 return Exit::Clean;
@@ -154,7 +164,7 @@ fn silence(
         return act(platform, child, watch, action);
     }
     let holds_the_roles = platform
-        .restore_point_owner()
+        .recovery_owner()
         .is_some_and(|owner| restore_allowed(owner, child.id()));
     if !holds_the_roles {
         watch.held_since = None;
@@ -165,8 +175,8 @@ fn silence(
         return None;
     }
     child.kill();
-    let notes = platform.restore(child.id()).unwrap_or_default();
-    platform.write_marker(&marker(MarkerReason::Stuck, notes));
+    let recovery = platform.restore(child.id()).unwrap_or_default();
+    platform.write_marker(&marker(recovery.scope, MarkerReason::Stuck, recovery.notes));
     Some(Exit::Restored(MarkerReason::Stuck))
 }
 
@@ -181,8 +191,12 @@ fn act(
         Action::RestartApp => {
             let killed = child.id();
             child.kill();
-            let notes = platform.restore(killed).unwrap_or_default();
-            platform.write_marker(&marker(MarkerReason::StallRestarted, notes.clone()));
+            let recovery = platform.restore(killed).unwrap_or_default();
+            platform.write_marker(&marker(
+                recovery.scope,
+                MarkerReason::StallRestarted,
+                recovery.notes.clone(),
+            ));
             match platform.spawn(true) {
                 Ok(new_child) => {
                     *child = new_child;
@@ -194,17 +208,21 @@ fn act(
                 Err(_) => {
                     // Only the killed app's leftover, if the first restore
                     // left one, is this guard's to use.
-                    let notes = platform.restore(killed).unwrap_or(notes);
-                    platform.write_marker(&marker(MarkerReason::RestartFailed, notes));
+                    let recovery = platform.restore(killed).unwrap_or(recovery);
+                    platform.write_marker(&marker(
+                        recovery.scope,
+                        MarkerReason::RestartFailed,
+                        recovery.notes,
+                    ));
                     Some(Exit::Restored(MarkerReason::RestartFailed))
                 }
             }
         }
         Action::RestoreAndNotify { reason } => {
             child.kill();
-            let notes = platform.restore(child.id()).unwrap_or_default();
+            let recovery = platform.restore(child.id()).unwrap_or_default();
             let reason = MarkerReason::from(reason);
-            platform.write_marker(&marker(reason, notes));
+            platform.write_marker(&marker(recovery.scope, reason, recovery.notes));
             Some(Exit::Restored(reason))
         }
     }
@@ -219,10 +237,10 @@ impl From<Reason> for MarkerReason {
     }
 }
 
-fn marker(reason: MarkerReason, notes: Vec<String>) -> Marker {
+fn marker(scope: MarkerScope, reason: MarkerReason, notes: Vec<String>) -> Marker {
     let at_unix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    Marker::new(reason, at_unix, notes)
+    Marker::new_in(scope, reason, at_unix, notes)
 }

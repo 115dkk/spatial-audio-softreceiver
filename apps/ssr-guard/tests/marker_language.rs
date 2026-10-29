@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use ssr_guard::marker::{self, Marker, MarkerReason};
+use ssr_guard::marker::{self, Marker, MarkerReason, MarkerScope};
 use ssr_types::app::Language;
 
 #[test]
@@ -36,4 +36,22 @@ fn every_marker_reason_has_both_languages_without_changing_the_record() {
             before
         );
     }
+}
+
+#[test]
+fn app_output_marker_scope_has_its_own_sentences_and_roles_is_the_old_default() {
+    let marker = Marker::new_in(
+        MarkerScope::AppOutputs,
+        MarkerReason::AppExited,
+        123,
+        Vec::new(),
+    );
+    assert_eq!(
+        marker::sentence(&marker, Language::En),
+        "The app exited unexpectedly. The apps' outputs have been restored."
+    );
+    let old: Marker =
+        serde_json::from_str(r#"{"version":1,"reason":"app_exited","at_unix":1,"notes":[]}"#)
+            .expect("old marker");
+    assert_eq!(old.scope, MarkerScope::Roles);
 }

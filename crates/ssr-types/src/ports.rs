@@ -483,6 +483,16 @@ pub trait Host {
     /// Writes (`Some`) or removes (`None`) the restore point `ssr-guard`
     /// reads (`supervisor::restore_point`).
     fn write_restore_point(&mut self, json: Option<&str>) -> Result<(), HostError>;
+
+    /// Writes (`Some`) or removes (`None`) the app-output recovery record.
+    fn write_app_outputs(&mut self, _json: Option<&str>) -> Result<(), HostError> {
+        Ok(())
+    }
+
+    /// Reads the app-output recovery record when one exists.
+    fn read_app_outputs(&mut self) -> Result<Option<String>, HostError> {
+        Ok(None)
+    }
 }
 
 /// The longest a capture read may wait before the engine checks for a stop

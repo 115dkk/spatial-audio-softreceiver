@@ -19,6 +19,25 @@ profile_file_takes_precedence = "profile.toml in the state folder takes preceden
 
 # The supervisor crate renders status, errors, architecture names, and default-device roles.
 [supervisor]
+app_capture_os_requirement = "The app-sound entrance requires Windows build {min_build} or newer. This PC has an older version, so only the driver entrance is available."
+no_discard_output = "There is no device other than the selected output to receive the apps' original sound. Connect or enable an unused HDMI output or a virtual cable, then check again."
+stored_discard_missing = "The saved discard output could not be found ({name}). Choose another device."
+discard_is_output = "The discard output cannot be the device you listen on."
+output_is_discard = "This device is the discard output. Choose another output device or change the discard output first."
+capture_app_first = "Choose an app to capture before turning it on."
+capture_app_not_running = "The app has no audio session. Start it and play some sound, then turn it on: {app}"
+capture_app_ambiguous = "Several copies of the app are running, so it is unclear which one to capture. Leave only one open, then turn it on again: {app}"
+capture_same_app = "Choose different apps for the main and music lanes."
+disable_before_changing_entrance = "Turn it off before changing the entrance."
+disable_before_changing_apps = "Turn it off before changing the apps to capture."
+app_output_change_failed = "Could not send the app's sound to the discard output, so capture did not turn on: {app}"
+app_output_undo_pending = "The app is not running, so its output could not be restored yet. Start the app, then press Retry: {app}"
+app_output_restored = "Restored the app's output: {app}"
+app_output_undo_failed = "Could not restore the app's previous output setting: {app}"
+app_outputs_record_failed = "Could not save the record required before changing the apps' outputs. Nothing was changed, and capture did not turn on."
+app_capture_waiting = "Waiting for the app to play sound: {app}"
+app_capture_reattached = "The app started again. Capturing its sound again: {app}"
+ks_not_for_app_capture = "The app-sound entrance opens the output in the usual way instead of using kernel streaming."
 app_entrance_moved = "Changed the app's output setting: {app}"
 entrance_routing_unavailable = "Automatic app output selection is unavailable on this PC. Open Windows sound settings and choose an output under app volume settings."
 invalid_app_rule = "Enter a nonempty executable file name without a folder path or NUL character."
@@ -360,6 +379,9 @@ report_path = "Test report: {path}"
 
 # ssr-guard renders restore markers and restore failures in the current language.
 [guard]
+marker_app_exited_apps = "The app exited unexpectedly. The apps' outputs have been restored."
+marker_restart_failed_apps = "Audio processing stopped responding after restarting. The apps' outputs have been restored."
+marker_stuck_apps = "The program stopped responding after changing the apps' outputs. Their previous outputs have been restored."
 marker_app_exited = "The app exited unexpectedly. The default audio devices have been restored."
 marker_stall_restarted = "Audio processing stopped responding, so the app was restarted."
 marker_restart_failed = "Audio processing stopped responding after restarting. The default audio devices have been restored."

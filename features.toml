@@ -1471,6 +1471,25 @@ tests = [
 note = "ADR 0028 portable per-app entrance policy. Private IAudioPolicyConfigFactory; CI checks set/get on the runner; the test-signed PC checks real players."
 
 [[feature]]
+id = "supervisor.app_capture"
+kind = "app"
+milestone = "M4"
+status = "implemented"
+tests = [
+  "supervisor::app_entrance_choice_is_saved_even_when_the_build_is_unsupported",
+  "supervisor::app_capture_enable_records_before_routing_and_passes_targets_and_exclusive",
+  "supervisor::app_capture_record_failure_changes_no_application_output",
+  "supervisor::app_capture_launch_failure_restores_the_previous_output",
+  "supervisor::unsupported_app_routing_still_starts_and_reports_the_existing_note",
+  "supervisor::capture_ended_marks_the_selected_lane_waiting",
+  "supervisor::running_refuses_entrance_and_capture_app_changes",
+  "supervisor::app_capture_reattaches_once_to_a_new_active_pid_and_updates_the_record",
+  "supervisor::undo_restores_only_while_the_discard_is_still_selected",
+  "supervisor::undo_waits_for_the_executable_and_uses_its_new_pid",
+]
+note = "ADR 0043 driverless process-loopback entrance, discard-output recovery, and supervisor lifecycle."
+
+[[feature]]
 id = "ring.streamring"
 kind = "pipeline"
 milestone = "M4"

@@ -67,6 +67,25 @@ pub enum Message {
     AppEntranceMoved { app: String },
     EntranceRoutingUnavailable,
     InvalidAppRule,
+    AppCaptureOsRequirement { min_build: u32 },
+    NoDiscardOutput,
+    StoredDiscardMissing { name: String },
+    DiscardIsOutput,
+    OutputIsDiscard,
+    CaptureAppFirst,
+    CaptureAppNotRunning { app: String },
+    CaptureAppAmbiguous { app: String },
+    CaptureSameApp,
+    DisableBeforeChangingEntrance,
+    DisableBeforeChangingApps,
+    AppOutputChangeFailed { app: String },
+    AppOutputUndoPending { app: String },
+    AppOutputRestored { app: String },
+    AppOutputUndoFailed { app: String },
+    AppOutputsRecordFailed,
+    AppCaptureWaiting { app: String },
+    AppCaptureReattached { app: String },
+    KsNotForAppCapture,
 }
 
 impl Message {
@@ -190,6 +209,29 @@ impl Message {
             Self::AppEntranceMoved { app } => text::app_entrance_moved(language, app),
             Self::EntranceRoutingUnavailable => text::entrance_routing_unavailable(language).into(),
             Self::InvalidAppRule => text::invalid_app_rule(language).into(),
+            Self::AppCaptureOsRequirement { min_build } => {
+                text::app_capture_os_requirement(language, min_build)
+            }
+            Self::NoDiscardOutput => text::no_discard_output(language).into(),
+            Self::StoredDiscardMissing { name } => text::stored_discard_missing(language, name),
+            Self::DiscardIsOutput => text::discard_is_output(language).into(),
+            Self::OutputIsDiscard => text::output_is_discard(language).into(),
+            Self::CaptureAppFirst => text::capture_app_first(language).into(),
+            Self::CaptureAppNotRunning { app } => text::capture_app_not_running(language, app),
+            Self::CaptureAppAmbiguous { app } => text::capture_app_ambiguous(language, app),
+            Self::CaptureSameApp => text::capture_same_app(language).into(),
+            Self::DisableBeforeChangingEntrance => {
+                text::disable_before_changing_entrance(language).into()
+            }
+            Self::DisableBeforeChangingApps => text::disable_before_changing_apps(language).into(),
+            Self::AppOutputChangeFailed { app } => text::app_output_change_failed(language, app),
+            Self::AppOutputUndoPending { app } => text::app_output_undo_pending(language, app),
+            Self::AppOutputRestored { app } => text::app_output_restored(language, app),
+            Self::AppOutputUndoFailed { app } => text::app_output_undo_failed(language, app),
+            Self::AppOutputsRecordFailed => text::app_outputs_record_failed(language).into(),
+            Self::AppCaptureWaiting { app } => text::app_capture_waiting(language, app),
+            Self::AppCaptureReattached { app } => text::app_capture_reattached(language, app),
+            Self::KsNotForAppCapture => text::ks_not_for_app_capture(language).into(),
         }
     }
 }

@@ -6,8 +6,8 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use ssr_guard::heartbeat;
-use ssr_guard::marker::{self, Marker, MarkerReason};
-use ssr_guard::runner::{self, AppProcess, Exit, Platform, Timeout, restore_allowed};
+use ssr_guard::marker::{self, Marker, MarkerReason, MarkerScope};
+use ssr_guard::runner::{self, AppProcess, Exit, Platform, Recovery, Timeout, restore_allowed};
 use ssr_guard::show;
 use ssr_types::app::Heartbeat;
 
@@ -60,7 +60,7 @@ struct FakePlatform {
     clock: Rc<RefCell<Instant>>,
     processes: VecDeque<Result<VecDeque<Event>, String>>,
     /// What each restore gives back, in order, once the owner rule allows it.
-    restores: VecDeque<Option<Vec<String>>>,
+    restores: VecDeque<Option<Recovery>>,
     /// The restore point's `app_pid`, when a restore point exists.
     owner: Option<u32>,
     /// The restore point appears this long after the start (the app takes
@@ -89,7 +89,15 @@ impl FakePlatform {
                 .into_iter()
                 .map(|result| result.map(VecDeque::from))
                 .collect(),
-            restores: restores.into(),
+            restores: restores
+                .into_iter()
+                .map(|notes| {
+                    notes.map(|notes| Recovery {
+                        notes,
+                        scope: MarkerScope::Roles,
+                    })
+                })
+                .collect(),
             owner: None,
             owner_after: Duration::ZERO,
             start,
@@ -127,7 +135,7 @@ impl Platform for FakePlatform {
         }))
     }
 
-    fn restore(&mut self, app: u32) -> Option<Vec<String>> {
+    fn restore(&mut self, app: u32) -> Option<Recovery> {
         self.restore_calls.push(app);
         if let Some(owner) = self.owner
             && !restore_allowed(owner, app)
@@ -137,7 +145,7 @@ impl Platform for FakePlatform {
         self.restores.pop_front().unwrap_or(None)
     }
 
-    fn restore_point_owner(&self) -> Option<u32> {
+    fn recovery_owner(&self) -> Option<u32> {
         if self.now().saturating_duration_since(self.start) < self.owner_after {
             return None;
         }

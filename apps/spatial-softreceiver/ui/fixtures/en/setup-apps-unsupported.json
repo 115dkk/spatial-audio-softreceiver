@@ -1,0 +1,174 @@
+{
+  "language": "en",
+  "language_choice": null,
+  "skin": "standard",
+  "entrance": "app_sound",
+  "app_capture": {
+    "supported": false,
+    "min_build": 20348,
+    "discard": null,
+    "discards": [],
+    "main": null,
+    "music": null,
+    "apps": [],
+    "exclusive": false
+  },
+  "output_path": "wasapi",
+  "phase": {
+    "kind": "setup",
+    "value": "unsupported"
+  },
+  "profile": {
+    "kind": "speakers",
+    "name": "2.0",
+    "gain_db": 0.0,
+    "directions": [
+      {
+        "id": 0,
+        "name": "L",
+        "azimuth_deg": 30.0,
+        "elevation_deg": 0.0
+      },
+      {
+        "id": 1,
+        "name": "R",
+        "azimuth_deg": -30.0,
+        "elevation_deg": 0.0
+      }
+    ],
+    "from_file": false,
+    "headphones": {
+      "brir": null
+    },
+    "speakers": {
+      "layout": "2.0",
+      "correction": null,
+      "channels": [
+        {
+          "name": "L",
+          "channel": 0,
+          "subwoofer": false
+        },
+        {
+          "name": "R",
+          "channel": 1,
+          "subwoofer": false
+        }
+      ]
+    }
+  },
+  "upmix": {
+    "endpoints": [
+      {
+        "endpoint": 0,
+        "choice": null,
+        "effective": "off",
+        "plugin": null,
+        "state": {
+          "kind": "stopped"
+        },
+        "bypass": null,
+        "latency_ms": null,
+        "inputs": [],
+        "outputs": []
+      },
+      {
+        "endpoint": 1,
+        "choice": null,
+        "effective": "off",
+        "plugin": null,
+        "state": {
+          "kind": "stopped"
+        },
+        "bypass": null,
+        "latency_ms": null,
+        "inputs": [],
+        "outputs": []
+      },
+      {
+        "endpoint": 2,
+        "choice": null,
+        "effective": "off",
+        "plugin": null,
+        "state": {
+          "kind": "stopped"
+        },
+        "bypass": null,
+        "latency_ms": null,
+        "inputs": [],
+        "outputs": []
+      }
+    ],
+    "headphones": true,
+    "speakers": true,
+    "first_party_available": false
+  },
+  "routing": {
+    "available": true,
+    "enabled": true,
+    "rules": [
+      {
+        "exe": "applemusic.exe",
+        "entrance": "music",
+        "built_in": "music"
+      },
+      {
+        "exe": "foobar2000.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      },
+      {
+        "exe": "kodi.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      },
+      {
+        "exe": "mpc-be.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      },
+      {
+        "exe": "mpc-be64.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      },
+      {
+        "exe": "mpc-hc.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      },
+      {
+        "exe": "mpc-hc64.exe",
+        "entrance": "pass",
+        "built_in": "pass"
+      }
+    ],
+    "apps": []
+  },
+  "asio": {
+    "enabled": true,
+    "layout": "7.1.4",
+    "system_attenuation_db": 0.0
+  },
+  "engine": null,
+  "health": {
+    "minutes": [],
+    "incidents": []
+  },
+  "outputs": [],
+  "chosen_output": null,
+  "driver": null,
+  "platform": {
+    "computer_name": "STUDIO-PC",
+    "os_build": 19045,
+    "arch": "x64",
+    "test_signing": false,
+    "secure_boot": "enabled"
+  },
+  "roles_taken": false,
+  "error": {
+    "message": "The app-sound entrance requires Windows build 20348 or newer. This PC has an older version, so only the driver entrance is available.",
+    "next": "none"
+  },
+  "notes": []
+}

@@ -98,6 +98,8 @@ use crate::driver_ring::DriverRing;
 /// The restore point file in the state directory (`supervisor::restore_point`,
 /// read by `ssr-guard`).
 pub const RESTORE_POINT_FILE: &str = "restore-point.json";
+/// Applications temporarily routed to the app-capture discard output.
+pub const APP_OUTPUTS_FILE: &str = "app-outputs.json";
 
 /// `SW_HIDE`: `ssr-setup` is a console program; its window is not shown.
 const SW_HIDE: i32 = 0;
@@ -307,6 +309,24 @@ impl Host for WindowsHost {
             None => remove_if_present(&path),
         }
         .map_err(|error| io_failure(&path, error))
+    }
+
+    fn write_app_outputs(&mut self, json: Option<&str>) -> Result<(), HostError> {
+        let path = self.state_dir.join(APP_OUTPUTS_FILE);
+        match json {
+            Some(json) => replace_file(&path, json),
+            None => remove_if_present(&path),
+        }
+        .map_err(|error| io_failure(&path, error))
+    }
+
+    fn read_app_outputs(&mut self) -> Result<Option<String>, HostError> {
+        let path = self.state_dir.join(APP_OUTPUTS_FILE);
+        match fs::read_to_string(&path) {
+            Ok(text) => Ok(Some(text)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(io_failure(&path, error)),
+        }
     }
 }
 

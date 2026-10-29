@@ -2,6 +2,17 @@
   "language": "en",
   "language_choice": null,
   "skin": "standard",
+  "entrance": "driver",
+  "app_capture": {
+    "supported": false,
+    "min_build": 0,
+    "discard": null,
+    "discards": [],
+    "main": null,
+    "music": null,
+    "apps": [],
+    "exclusive": false
+  },
   "output_path": "wasapi",
   "phase": {
     "kind": "setup",

@@ -20,10 +20,20 @@ pub enum MarkerReason {
     Stuck,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MarkerScope {
+    #[default]
+    Roles,
+    AppOutputs,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Marker {
     pub version: u32,
     pub reason: MarkerReason,
+    #[serde(default)]
+    pub scope: MarkerScope,
     pub at_unix: u64,
     pub notes: Vec<String>,
 }
@@ -32,9 +42,19 @@ impl Marker {
     pub const VERSION: u32 = 1;
 
     pub fn new(reason: MarkerReason, at_unix: u64, notes: Vec<String>) -> Self {
+        Self::new_in(MarkerScope::Roles, reason, at_unix, notes)
+    }
+
+    pub fn new_in(
+        scope: MarkerScope,
+        reason: MarkerReason,
+        at_unix: u64,
+        notes: Vec<String>,
+    ) -> Self {
         Self {
             version: Self::VERSION,
             reason,
+            scope,
             at_unix,
             notes,
         }
@@ -43,11 +63,20 @@ impl Marker {
 
 /// The marker stays language-neutral on disk; render it when it is shown.
 pub fn sentence(marker: &Marker, language: ssr_types::app::Language) -> &'static str {
-    match marker.reason {
-        MarkerReason::AppExited => ssr_i18n::guard::marker_app_exited(language),
-        MarkerReason::StallRestarted => ssr_i18n::guard::marker_stall_restarted(language),
-        MarkerReason::RestartFailed => ssr_i18n::guard::marker_restart_failed(language),
-        MarkerReason::Stuck => ssr_i18n::guard::marker_stuck(language),
+    match (marker.scope, marker.reason) {
+        (MarkerScope::AppOutputs, MarkerReason::AppExited) => {
+            ssr_i18n::guard::marker_app_exited_apps(language)
+        }
+        (MarkerScope::AppOutputs, MarkerReason::RestartFailed) => {
+            ssr_i18n::guard::marker_restart_failed_apps(language)
+        }
+        (MarkerScope::AppOutputs, MarkerReason::Stuck) => {
+            ssr_i18n::guard::marker_stuck_apps(language)
+        }
+        (_, MarkerReason::AppExited) => ssr_i18n::guard::marker_app_exited(language),
+        (_, MarkerReason::StallRestarted) => ssr_i18n::guard::marker_stall_restarted(language),
+        (_, MarkerReason::RestartFailed) => ssr_i18n::guard::marker_restart_failed(language),
+        (_, MarkerReason::Stuck) => ssr_i18n::guard::marker_stuck(language),
     }
 }
 

@@ -2062,6 +2062,7 @@ mod platform {
                 "{}",
                 live::output_cadence_reopen(language, format_args!("{period_ms:.1}"))
             ),
+            supervisor::SessionNotice::CaptureEnded => {}
             supervisor::SessionNotice::Fault(fault) => {
                 eprintln!("{}", live::fault(language, format_args!("{fault:?}")))
             }

@@ -19,6 +19,25 @@ profile_file_takes_precedence = "상태 폴더의 profile.toml이 우선합니�
 
 # supervisor 크레이트가 상태, 오류, 아키텍처와 기본 장치 역할 이름을 만듭니다.
 [supervisor]
+app_capture_os_requirement = "앱 소리 입구는 Windows 빌드 {min_build} 이상이 필요합니다. 이 PC는 그보다 이전 버전이므로 드라이버 입구만 쓸 수 있습니다."
+no_discard_output = "고른 출력 외에는 앱의 원래 소리를 보낼 장치가 없습니다. 쓰지 않는 HDMI 출력이나 가상 케이블을 연결하거나 켠 뒤 다시 확인하십시오."
+stored_discard_missing = "저장한 버리는 출력을 찾지 못했습니다({name}). 다른 장치를 고르십시오."
+discard_is_output = "소리를 듣는 장치는 버리는 출력으로 고를 수 없습니다."
+output_is_discard = "이 장치는 버리는 출력으로 쓰고 있습니다. 다른 출력 장치를 고르거나 버리는 출력을 먼저 바꾸십시오."
+capture_app_first = "켜기 전에 소리를 받을 앱을 고르십시오."
+capture_app_not_running = "앱의 소리 세션이 없습니다. 이 앱을 실행하고 소리를 재생한 뒤 켜십시오: {app}"
+capture_app_ambiguous = "같은 앱을 여러 개 실행해 어느 쪽 소리를 받을지 정하지 못했습니다. 하나만 남기고 나머지는 종료한 뒤 다시 켜십시오: {app}"
+capture_same_app = "주 차선과 음악 차선에는 서로 다른 앱을 골라야 합니다."
+disable_before_changing_entrance = "먼저 끈 뒤 입구를 바꾸십시오."
+disable_before_changing_apps = "먼저 끈 뒤 소리를 받을 앱을 바꾸십시오."
+app_output_change_failed = "앱의 소리를 버리는 출력으로 보내지 못해 켜지 않았습니다: {app}"
+app_output_undo_pending = "앱이 실행 중이 아니라 출력을 아직 되돌리지 못했습니다. 이 앱을 실행한 뒤 '다시 시도'를 누르십시오: {app}"
+app_output_restored = "앱의 출력을 되돌렸습니다: {app}"
+app_output_undo_failed = "앱의 출력을 이전 설정으로 되돌리지 못했습니다: {app}"
+app_outputs_record_failed = "앱들의 출력을 바꾸기 전에 남기는 기록을 저장하지 못했습니다. 아무것도 바꾸지 않았으며 켜지 않았습니다."
+app_capture_waiting = "앱의 소리 재생 대기 중: {app}"
+app_capture_reattached = "앱이 다시 실행되어 소리를 다시 받습니다: {app}"
+ks_not_for_app_capture = "앱 소리 입구에서는 커널 스트리밍 대신 일반 방식으로 출력을 엽니다."
 app_entrance_moved = "앱의 출력 설정을 바꿨습니다: {app}"
 entrance_routing_unavailable = "이 PC에서는 앱의 출력을 자동으로 정할 수 없습니다. Windows 소리 설정을 열고 앱 볼륨 설정에서 출력을 고르십시오."
 invalid_app_rule = "실행 파일 이름을 입력하십시오. 이름은 비어 있으면 안 되며 폴더 경로나 NUL 문자를 포함할 수 없습니다."
@@ -360,6 +379,9 @@ report_path = "시험 보고서: {path}"
 
 # ssr-guard가 복원 표지와 복원 실패 알림을 현재 언어로 만듭니다.
 [guard]
+marker_app_exited_apps = "지난번에 앱이 예기치 않게 종료되어 앱들의 출력을 되돌렸습니다."
+marker_restart_failed_apps = "다시 시작한 뒤에도 소리 처리가 멈춰 앱들의 출력을 되돌렸습니다."
+marker_stuck_apps = "앱들의 출력을 바꾼 뒤 프로그램의 응답이 없어 이전 출력으로 되돌렸습니다."
 marker_app_exited = "지난번에 앱이 예기치 않게 종료되어 기본 오디오 장치를 되돌렸습니다."
 marker_stall_restarted = "소리 처리가 멈춰 앱을 다시 시작했습니다."
 marker_restart_failed = "다시 시작한 뒤에도 소리 처리가 멈춰 기본 오디오 장치를 되돌렸습니다."
