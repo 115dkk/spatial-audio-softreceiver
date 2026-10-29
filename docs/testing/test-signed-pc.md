@@ -365,6 +365,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\volume_check.ps1 -Summary 
 
 우리 드라이버가 형식 목록만으로 Windows에 "Dolby Atmos for home theater"를 열어 주는지가 이 단계의 핵심입니다. 아키텍처 문서의 "확인하지 못한 것" 첫 항목입니다.
 
+CI 러너로는 이 질문에 답할 수 없어 시험서명 PC에서 확인해야 합니다. `mat-probe.yml`이 windows-2025 러너(Windows Server 2025)에 드라이버와 Dolby Access를 설치해 확인한 결과는 다음과 같습니다(2026-10-29).
+- 엔드포인트 0의 인코딩 형식 목록에 MAT 2.0, MAT 2.1이 들어 있습니다.
+- 공간 형식 이름에 "Dolby Atmos for Home Theater"가 있고, `IsSpatialAudioFormatSupported`도 참이라고 답합니다.
+- 그런데 기본 형식으로 고르면 `NotSupportedOnAudioEndpoint`로 거부합니다.
+- KS 요청 추적을 걸어 보니, 거부하는 동안 우리 필터에는 아무 요청도 오지 않았습니다.
+
+Windows Sonic은 같은 러너에서 켜집니다. windows-2022 러너는 모든 형식을 `AccessDenied`로 거부합니다.
+
 `Spatial SoftReceiver`(엔드포인트 0)와 `Spatial SoftReceiver Music`(엔드포인트 1)에 대해 각각:
 
 1. 설정 → 시스템 → 소리 → 해당 출력 → **공간 오디오**의 목록에 무엇이 있는지 적고 화면을 캡처합니다. 예: 끔, Windows Sonic for Headphones, Dolby Atmos for Headphones, Dolby Atmos for home theater.
@@ -388,6 +396,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\volume_check.ps1 -Summary 
 ## 3-1. MAT 안의 PCM 배치 관찰 (블랙박스, ADR 0005)
 
 Windows 공간 음향이 MAT 2.x 안에 PCM을 담는 배치는 공개 문서가 없습니다. 그래서 알고 있는 신호와 위치를 Windows 공간 음향에 넣고, 드라이버 링에 들어온 MAT를 녹화해 둘을 맞춰 봅니다. 이 녹화가 MAT 안의 PCM 디코더를 만드는 근거가 됩니다. 3단계에서 "Dolby Atmos for home theater"를 켤 수 있었던 엔드포인트에서만 합니다.
+
+`mat-probe.yml`은 러너에서 같은 두 명령을 Windows Sonic으로 돌립니다(MAT 버스트는 0개). 그래서 도구가 공간 스트림을 열고 정적 객체 19개(Windows 11의 StereoLeft, StereoRight 포함)와 동적 객체를 끝까지 구동하는지는 CI가 확인합니다. 디코더의 재료가 되는 MAT 덤프는 여기서 얻어야 합니다.
 
 1. 3단계처럼 엔드포인트 0(`Spatial SoftReceiver`)의 공간 오디오를 "Dolby Atmos for home theater"로 켭니다. 다른 재생 앱과 게임은 모두 닫습니다. 녹화에 시험 신호만 들어가야 하기 때문입니다.
 2. 도구 zip의 `ssr-live.exe`와 `ssr-replay.exe`를 드라이버 묶음 폴더에 두고, 관리자 PowerShell에서 실행합니다:

@@ -90,6 +90,10 @@ impl Client {
             "BottomBackLeft",
             "BottomBackRight",
             "BackCenter",
+            // 1 << 18 and 1 << 19 in spatialaudioclient.h; the windows crate has no
+            // names for them yet, and Windows 11 reports both in the native mask.
+            "StereoLeft",
+            "StereoRight",
         ];
         let mut positions = Vec::new();
         for (index, kind) in names.into_iter().enumerate() {
@@ -143,7 +147,10 @@ impl Client {
         };
         // The blob borrows params for this synchronous call. Do not PropVariantClear:
         // Windows does not own this stack storage (Microsoft rendering example).
-        let variant = PROPVARIANT {
+        // The windows crate's PROPVARIANT clears itself on drop, which handed the
+        // stack params to CoTaskMemFree and corrupted the heap (0xC0000374, found
+        // by the MAT probe job under page heap), so it is never dropped.
+        let variant = ManuallyDrop::new(PROPVARIANT {
             Anonymous: PROPVARIANT_0 {
                 Anonymous: ManuallyDrop::new(PROPVARIANT_0_0 {
                     vt: VT_BLOB,
@@ -158,9 +165,9 @@ impl Client {
                     },
                 }),
             },
-        };
+        });
         // SAFETY: typed VT_BLOB describes live params/format; event outlives stream.
-        let stream = unsafe { self.client.ActivateSpatialAudioStream(&variant) }?;
+        let stream = unsafe { self.client.ActivateSpatialAudioStream(&*variant) }?;
         Ok(Stream {
             stream,
             objects: Vec::with_capacity(

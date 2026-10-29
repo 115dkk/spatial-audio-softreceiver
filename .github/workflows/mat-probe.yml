@@ -1,0 +1,294 @@
+# MAT 2.x with PCM inside, made by Windows' own spatial sound encoder on a
+# runner (ADR 0005, docs/testing/test-signed-pc.md section 3-1). The layout
+# Windows uses for PCM inside MAT has no public document, so the MAT decoder
+# is built from what Windows makes of signals we know: `ssr-live mat-probe`
+# plays seeded signals into every spatial audio object of our endpoint 0
+# while the driver ring records the bursts, and writes the signals' truth.
+#
+# It needs our test-signed driver (installed as driver.yml does), Windows
+# spatial sound on our endpoint, and the "Dolby Atmos for home theater"
+# format, which Dolby Access (Microsoft Store) provides. Each step reports how
+# far the runner got: spatial-format.ps1 shows which formats the endpoint
+# takes before and after Dolby Access, and the status of choosing the home
+# theater format. The dump is Windows' encoder output of test signals; it is
+# not published as is (test-signed-pc.md): it is encrypted with the
+# repository secret MAT_DUMP_KEY before it becomes an artifact, and nothing
+# is uploaded when the secret is missing.
+name: MAT probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/mat-probe.yml
+      - tools/ci/spatial-format.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mat-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  # Line numbers in cdb's stacks when ssr-live ends without a word.
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+
+jobs:
+  build:
+    name: driver build (Release, x64)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build with the NuGet WDK (tools/build-driver.ps1)
+        shell: pwsh
+        run: ./tools/build-driver.ps1 -Configuration Release -Platform x64
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mat-probe-driver
+          path: target/driver/Release/x64
+          if-no-files-found: error
+          retention-days: 3
+
+  probe:
+    name: MAT probe (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # windows-2022 answers AccessDenied to choosing any spatial format,
+        # Windows Sonic included (first runs, 2026-10-30).
+        os: [windows-2025]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: mat-probe-driver
+          path: ${{ runner.temp }}/package
+
+      - uses: ./.github/actions/audio-services
+
+      - name: Test-sign, stage and install (tools/ci/install-driver-test.ps1)
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./tools/ci/install-driver-test.ps1 -Package (Join-Path $env:RUNNER_TEMP 'package')
+
+      - uses: ./.github/actions/rust-toolchain
+
+      - name: Build ssr-live and ssr-replay
+        shell: bash
+        run: cargo build --locked --release -p ssr-live -p ssr-replay
+
+      - name: Spatial sound on our endpoint before Dolby Access (tools/ci/spatial-format.ps1)
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: |
+          $json = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/ci/spatial-format.ps1 -Endpoint 0
+          $json | Set-Content -Encoding UTF8 (Join-Path $env:RUNNER_TEMP 'spatial-before.json')
+          $json
+          Add-Content $env:GITHUB_STEP_SUMMARY "## MAT probe (${{ matrix.os }})`n`nBefore Dolby Access: ``$json```n"
+
+      # Whether choosing a format works at all here: Windows Sonic ships
+      # with Windows, so a refusal of it is about the runner, not Dolby.
+      - name: Choose Windows Sonic (the built-in format) as a control
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: |
+          $json = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/ci/spatial-format.ps1 -Endpoint 0 -Set WindowsSonic
+          $json
+          Add-Content $env:GITHUB_STEP_SUMMARY "Choosing Windows Sonic (control): ``$json```n"
+
+      # The Store is not on Server images; winget's msstore source fetches the
+      # package without it where the image allows. The user accepted the
+      # Store and package agreements for this job (2026-10-30).
+      - name: Install Dolby Access (winget, msstore source)
+        id: dolby
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+            Add-Content $env:GITHUB_STEP_SUMMARY "winget: not on this image"
+            throw 'winget is not on this image'
+          }
+          winget --version
+          winget install --id 9N0866FS04W8 --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
+          $code = $LASTEXITCODE
+          Get-AppxPackage -AllUsers *Dolby* | Format-Table Name, Version, Status -AutoSize | Out-String | Write-Host
+          Add-Content $env:GITHUB_STEP_SUMMARY "winget install Dolby Access: exit $code"
+          if ($code -ne 0) { throw "winget exited $code" }
+
+      # windows-2025 refuses the home theater format for our endpoint 0
+      # (NotSupportedOnAudioEndpoint) although it reports the format supported.
+      # The trace shows whether choosing it asks our filters anything (which
+      # format, from which process, and what we answered) or is decided from
+      # the endpoint's properties alone.
+      - name: Start the KS request trace for the format choice (tools/ci/ks-trace.ps1)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./tools/ci/ks-trace.ps1 -Start -Label spatial
+
+      - name: Spatial sound after Dolby Access; choose Dolby Atmos for home theater
+        id: spatial
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: |
+          $json = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/ci/spatial-format.ps1 -Endpoint 0 -Set DolbyAtmosForHomeTheater
+          $json | Set-Content -Encoding UTF8 (Join-Path $env:RUNNER_TEMP 'spatial-after.json')
+          $json
+          Add-Content $env:GITHUB_STEP_SUMMARY "After Dolby Access, choosing home theater: ``$json```n"
+          $state = $json | ConvertFrom-Json
+          if ($state.active -ne 'DolbyAtmosForHomeTheater') {
+            # The probe still runs, on Windows Sonic, so the spatial stream
+            # path of mat-probe is checked even where MAT cannot be had.
+            $sonic = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/ci/spatial-format.ps1 -Endpoint 0 -Set WindowsSonic
+            Add-Content $env:GITHUB_STEP_SUMMARY "Dolby Atmos for home theater is not active; the probe runs on Windows Sonic instead: ``$sonic```n"
+          }
+
+      # Stopped before mat-probe opens the stream, so the trace holds only the
+      # format choice (and the Windows Sonic fallback after it).
+      - name: What choosing the format asked our filters (tools/ci/ks-trace.ps1)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          Start-Sleep -Seconds 5
+          ./tools/ci/ks-trace.ps1 -Stop -Label spatial
+
+      # The trace showed that refusing the home theater format asked our
+      # filters nothing (only the Windows Sonic fallback proposed 48 kHz
+      # stereo PCM), so the refusal comes from what the endpoint builder
+      # stored. Every property of our endpoints, encoded formats included.
+      - name: What the endpoint builder stored for our endpoints (tools/ci/audio-diagnostics.ps1)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./tools/ci/audio-diagnostics.ps1 -InstanceId 'ROOT\MEDIA\0000'
+
+      - name: WER local dumps for ssr-live and ssr-replay (tools/ci/crash-dumps.ps1)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./tools/ci/crash-dumps.ps1 -Folder (Join-Path $env:RUNNER_TEMP 'dumps')
+
+      # mat-probe ended with 0xC0000374 (heap corruption) after 1.2 s and
+      # printed nothing. Full page heap puts a guard page after every block,
+      # so a bad heap operation stops at once with a stack (as soak.ps1
+      # -PageHeap does). It found the cause (the activation PROPVARIANT
+      # cleared on drop, freeing stack memory) and stays on as a guard.
+      - name: Full page heap for ssr-live.exe
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $ifeo = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\ssr-live.exe'
+          New-Item -Force -Path $ifeo | Out-Null
+          Set-ItemProperty -Path $ifeo -Name GlobalFlag -Value 0x02000000 -Type DWord
+          Set-ItemProperty -Path $ifeo -Name PageHeapFlags -Value 0x3 -Type DWord
+
+      - name: mat-probe on endpoint 0, then mat-analyze
+        id: probe
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        env:
+          SSR_LANG: en
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'mat'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          # Start-Process keeps the whole exit code: bash keeps only its low
+          # byte, and showed a process Windows ended on an exception as 127.
+          function Invoke-Logged([string] $name, [string] $exe, [string[]] $arguments) {
+            $stdout = Join-Path $out "$name.out"
+            $stderr = Join-Path $out "$name.err"
+            $p = Start-Process -Wait -PassThru -NoNewWindow -FilePath $exe -ArgumentList $arguments `
+              -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+            $code = '0x{0:X8}' -f $p.ExitCode
+            $elapsed = [math]::Round(($p.ExitTime - $p.StartTime).TotalSeconds, 1)
+            Write-Host "${name}: exit $code after $elapsed s"
+            Add-Content $env:GITHUB_STEP_SUMMARY "${name}: exit $code after $elapsed s"
+            # A program that printed nothing leaves empty files; say so.
+            $log = Join-Path $out "$name.log"
+            $text = (@($stdout, $stderr) | ForEach-Object { [IO.File]::ReadAllText($_) }) -join ''
+            [IO.File]::WriteAllText($log, $text)
+            if ($text) {
+              Write-Host $text
+              ($text -split "`n" | Select-Object -Last 8) | ForEach-Object { Add-Content $env:GITHUB_STEP_SUMMARY "    $_" }
+            } else {
+              Add-Content $env:GITHUB_STEP_SUMMARY "    (printed nothing)"
+            }
+            return [int64]$p.ExitCode
+          }
+          $dump = Join-Path $out 'mat-probe-ep0.ssrdump'
+          $truth = Join-Path $out 'mat-probe-ep0.truth.json'
+          $probe = Invoke-Logged 'mat-probe' 'target/release/ssr-live.exe' @('mat-probe', '--endpoint', '0', '--seconds', '12', '--out', $dump, '--truth', $truth)
+          if ($probe -ne 0) { exit 1 }
+          $analysis = Join-Path $out 'mat-probe-ep0.analysis.json'
+          $analyze = Invoke-Logged 'mat-analyze' 'target/release/ssr-replay.exe' @('mat-analyze', $dump, $truth, '--json', $analysis)
+          if ($analyze -ne 0) { exit 1 }
+
+      # Page heap ended mat-probe with 0xC0000421 (a verifier stop), which
+      # only a debugger sees: no WER dump is written. So mat-probe runs once
+      # more under cdb, which breaks at the stop and prints its report and
+      # every thread's stack.
+      - name: mat-probe again under cdb (the page heap stop and its stacks)
+        if: ${{ !cancelled() && steps.probe.outcome == 'failure' }}
+        shell: pwsh
+        env:
+          SSR_LANG: en
+        run: |
+          $cdb = Get-ChildItem -Path (Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\Debuggers') -Recurse -Filter cdb.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.Directory.Name -eq 'x64' } | Select-Object -First 1
+          if (-not $cdb) { throw 'cdb.exe not found' }
+          $out = Join-Path $env:RUNNER_TEMP 'mat'
+          $symbols = "$((Resolve-Path target/release).Path);srv*$(Join-Path $env:RUNNER_TEMP 'symbols')*https://msdl.microsoft.com/download/symbols"
+          & $cdb.FullName -g -lines -y $symbols -c '.symopt+ 0x40; !avrf; .exr -1; .ecxr; kpn 60; ~*kn 30; q' `
+            target/release/ssr-live.exe mat-probe --endpoint 0 --seconds 12 `
+            --out (Join-Path $out 'cdb.ssrdump') --truth (Join-Path $out 'cdb.truth.json') 2>&1 |
+            Tee-Object (Join-Path $out 'cdb.log')
+
+      - name: Crash stacks (cdb on any dump)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./tools/ci/crash-dumps.ps1 -Folder (Join-Path $env:RUNNER_TEMP 'dumps') -Report -Symbols (Resolve-Path target/release).Path
+
+      # AES-256-CBC with PBKDF2 (200,000 rounds) through the openssl that
+      # comes with Git for Windows. The key is the secret with surrounding
+      # whitespace removed; the repository owner decrypts with the same:
+      #   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -pass env:KEY -in mat-probe.tar.enc -out mat-probe.tar
+      - name: Encrypt the dump, truth and logs (secret MAT_DUMP_KEY)
+        id: encrypt
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          MAT_DUMP_KEY: ${{ secrets.MAT_DUMP_KEY }}
+        run: |
+          set -euo pipefail
+          KEY="$(printf '%s' "$MAT_DUMP_KEY" | tr -d '\r\n\t ')"
+          if [ -z "$KEY" ]; then
+            echo "::warning::MAT_DUMP_KEY is not set; nothing is uploaded"
+            echo "Encrypted artifact: none (MAT_DUMP_KEY is not set)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          export KEY
+          # Git Bash's tar reads "D:\..." as a remote host; use the POSIX path.
+          temp="$(cygpath -u "$RUNNER_TEMP")"
+          mkdir -p "$temp/mat"
+          cp "$temp"/spatial-*.json "$temp/mat/" 2>/dev/null || true
+          tar -C "$temp" -cf "$temp/mat-probe.tar" mat
+          mkdir -p "$temp/encrypted"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -salt -pass env:KEY \
+            -in "$temp/mat-probe.tar" -out "$temp/encrypted/mat-probe-${{ matrix.os }}.tar.enc"
+          rm -f "$temp/mat-probe.tar"
+          ls -l "$temp/encrypted"
+          echo "Encrypted artifact: mat-probe-${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: mat-probe-${{ matrix.os }}
+          path: ${{ runner.temp }}/encrypted
+          if-no-files-found: ignore
+          retention-days: 14
