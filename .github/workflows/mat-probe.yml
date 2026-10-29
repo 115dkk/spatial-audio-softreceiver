@@ -177,8 +177,9 @@ jobs:
 
       # mat-probe ended with 0xC0000374 (heap corruption) after 1.2 s and
       # printed nothing. Full page heap puts a guard page after every block,
-      # so the overrunning write faults at once and leaves a dump and a stack
-      # (as soak.ps1 -PageHeap does).
+      # so a bad heap operation stops at once with a stack (as soak.ps1
+      # -PageHeap does). It found the cause (the activation PROPVARIANT
+      # cleared on drop, freeing stack memory) and stays on as a guard.
       - name: Full page heap for ssr-live.exe
         if: ${{ !cancelled() }}
         shell: pwsh
