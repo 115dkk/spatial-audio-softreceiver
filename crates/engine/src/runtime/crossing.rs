@@ -119,6 +119,7 @@ pub(super) struct PeriodPlayback {
     pub(super) start: u64,
     pub(super) frames: usize,
     pub(super) qpc: u64,
+    pub(super) handoff_qpc: Option<u64>,
     pub(super) mode: super::ClockMode,
     pub(super) device_rate: u32,
     pub(super) qpc_frequency: u64,
@@ -291,7 +292,11 @@ impl CrossingConsumer {
     }
     /// Reports the latency of every marker that starts inside `period` and
     /// moves past the markers it finished.
-    pub(super) fn consume_markers(&mut self, period: PeriodPlayback, mut latency: impl FnMut(f32)) {
+    pub(super) fn consume_markers(
+        &mut self,
+        period: PeriodPlayback,
+        mut latency: impl FnMut(f32, Option<f32>, Option<f32>),
+    ) {
         if self.pending_marker.is_none() {
             self.pending_marker = self.next_marker();
         }
@@ -311,13 +316,24 @@ impl CrossingConsumer {
                     offset * f64::from(period.device_rate) / f64::from(crate::MIX_RATE)
                 }
             };
-            let qpc = period.qpc.saturating_add(
-                (device_offset * period.qpc_frequency as f64 / f64::from(period.device_rate))
-                    .round() as u64,
-            );
-            if m.source_qpc != 0 && qpc >= m.source_qpc {
+            let device_offset_ticks = (device_offset * period.qpc_frequency as f64
+                / f64::from(period.device_rate))
+            .round() as u64;
+            let playback_qpc = period.qpc.saturating_add(device_offset_ticks);
+            if m.source_qpc != 0 && playback_qpc >= m.source_qpc {
+                let handoff_qpc = period
+                    .handoff_qpc
+                    .map(|handoff| handoff.saturating_add(device_offset_ticks));
+                let to_ms =
+                    |ticks: u64| (ticks as f64 * 1000.0 / period.qpc_frequency as f64) as f32;
                 latency(
-                    ((qpc - m.source_qpc) as f64 * 1000.0 / period.qpc_frequency as f64) as f32,
+                    to_ms(playback_qpc - m.source_qpc),
+                    handoff_qpc
+                        .filter(|handoff| *handoff >= m.source_qpc)
+                        .map(|handoff| to_ms(handoff - m.source_qpc)),
+                    handoff_qpc
+                        .filter(|handoff| playback_qpc >= *handoff)
+                        .map(|handoff| to_ms(playback_qpc - handoff)),
                 );
             }
             if m.stream_frame.saturating_add(u64::from(m.frames)) <= end {

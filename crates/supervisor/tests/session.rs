@@ -64,6 +64,15 @@ fn dump_session_report_keeps_the_live_cli_key_contract() {
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
+    // A null sink cannot tell the handoff time: the split is null, not 0 ms.
+    for key in [
+        "handoff_latency_p50_ms",
+        "handoff_latency_p99_ms",
+        "device_latency_p50_ms",
+        "device_latency_p99_ms",
+    ] {
+        assert!(report[key].is_null(), "{key}: {}", report[key]);
+    }
     let expected = [
         "output_mode",
         "output_fell_back",
@@ -103,6 +112,10 @@ fn dump_session_report_keeps_the_live_cli_key_contract() {
         "faults",
         "latency_p50_ms",
         "latency_p99_ms",
+        "handoff_latency_p50_ms",
+        "handoff_latency_p99_ms",
+        "device_latency_p50_ms",
+        "device_latency_p99_ms",
         "ring_trough_min_ms",
         "clock_ppm",
         "clock_ppm_max_abs",

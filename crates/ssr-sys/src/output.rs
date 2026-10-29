@@ -96,6 +96,7 @@ pub struct WasapiSink {
     started_qpc: u64,
     playback_clock: PlaybackClock,
     latest_played_frames: u64,
+    latest_handoff_qpc: u64,
     // Must be last: interface fields are released before CoUninitialize.
     _com: ComGuard,
 }
@@ -294,6 +295,7 @@ impl OutputOpener for WasapiOpener {
             started_qpc: 0,
             playback_clock: PlaybackClock::default(),
             latest_played_frames: 0,
+            latest_handoff_qpc: 0,
             _com: com,
         })
     }
@@ -496,6 +498,10 @@ impl OutputSink for WasapiSink {
         Some(self.latest_played_frames)
     }
 
+    fn handoff_qpc(&self) -> Option<u64> {
+        (self.latest_handoff_qpc != 0).then_some(self.latest_handoff_qpc)
+    }
+
     fn next_period(&mut self, fill: &mut dyn FnMut(&mut [f32])) -> Result<u64, OutputError> {
         self.next_period_with_restarts(&mut |samples, _| fill(samples))
     }
@@ -527,6 +533,7 @@ impl OutputSink for WasapiSink {
         self.render
             .write_to_device(self.format.period_frames, &self.bytes, None)
             .map_err(output_error)?;
+        self.latest_handoff_qpc = qpc::now();
         self.submitted = self
             .submitted
             .saturating_add(self.format.period_frames as u64);

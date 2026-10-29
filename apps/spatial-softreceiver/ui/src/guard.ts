@@ -450,6 +450,8 @@ const engineStatus = object<EngineStatus>({
   unattributed_chain_errors: chainErrors,
   skipped_records: number,
   latency,
+  handoff_latency: latency,
+  device_latency: latency,
   ring_level_ms: number,
   underruns: number,
   last_underrun: nullable(underrun),

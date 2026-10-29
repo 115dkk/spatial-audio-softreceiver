@@ -11,9 +11,10 @@ restarting ten times a second or playing seconds late for good (ADR 0019,
 
     py period_growth_check.py report.json
 
-The report must show the restarts that start the growth, a final period of
-at least MIN_PERIOD_FRAMES and at most MAX_PERIOD_FRAMES, at most MAX_REOPENS
-reopens, no more restarts than the reopens explain, a last cadence window
+The report must show a growth (a reopen, which restarts that keep coming or a
+cadence that stays slow start; a run without either held the minimum), a final
+period of at least MIN_PERIOD_FRAMES and at most MAX_PERIOD_FRAMES, at most
+MAX_REOPENS reopens, no more restarts than the reopens explain, a last cadence window
 within the guard's range, and a latency since the last reopen of at most
 MAX_LATENCY_P99_MS. Prints ``pass`` or one problem per line; exits 0 or 1.
 """
@@ -65,7 +66,9 @@ def growth_problems(report):
     reopens = report["output_reopens"]
     period = report["output_period_frames"]
     problems = []
-    if restarts < STORM_RESTARTS:
+    # Either trigger starts the growth: windows-2022 at #92 restarted twice,
+    # then its cadence ran at 0.301 and 0.603 and grew it to 6 and 12 ms.
+    if restarts < STORM_RESTARTS and reopens == 0:
         problems.append(
             f"{restarts} restarts: the cable held its minimum period, unlike ADR 0026's "
             "measurements, so this run did not exercise the growth")

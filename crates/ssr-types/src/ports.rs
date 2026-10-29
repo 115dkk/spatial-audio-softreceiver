@@ -183,6 +183,12 @@ pub trait OutputSink {
         self.next_period(&mut |samples| fill(samples, restarts))
     }
 
+    /// QPC read immediately after the latest period was written into the device
+    /// buffer. Adapters that cannot observe the handoff keep the default.
+    fn handoff_qpc(&self) -> Option<u64> {
+        None
+    }
+
     /// Device-side queued latency in frames, excluding upstream DSP and queues.
     /// Adapters without a hardware measurement report one period as an estimate.
     fn latency_frames(&self) -> u32 {

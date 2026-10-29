@@ -215,6 +215,7 @@ impl OutputOpener for Opener {
             samples: vec![0.0; self.period_frames * usize::from(layout.channels)],
             emitted: Arc::clone(&self.emitted),
             fail_drain: Arc::clone(&self.fail_drain),
+            handoff_qpc: None,
         })
     }
 }
@@ -227,6 +228,7 @@ struct Sink {
     samples: Vec<f32>,
     emitted: Arc<AtomicU64>,
     fail_drain: Arc<AtomicBool>,
+    handoff_qpc: Option<u64>,
 }
 
 impl OutputSink for Sink {
@@ -254,8 +256,14 @@ impl OutputSink for Sink {
             self.emitted.fetch_add(1, Ordering::Release);
         }
         let period = self.periods.fetch_add(1, Ordering::AcqRel);
+        let playback_qpc = period * self.period_frames as u64;
+        self.handoff_qpc = Some(playback_qpc);
         std::thread::yield_now();
-        Ok(period * self.period_frames as u64)
+        Ok(playback_qpc)
+    }
+
+    fn handoff_qpc(&self) -> Option<u64> {
+        self.handoff_qpc
     }
 }
 

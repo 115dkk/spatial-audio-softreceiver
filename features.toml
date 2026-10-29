@@ -763,6 +763,19 @@ tests = [
 note = "record QPC to the device's playback QPC (correlated GetPosition), p50 and p99 over the last 1,024 blocks. Silence before any audio carries source time 0 and stays out of the statistics; counted up from 0 it read as the machine's uptime (p99 429 s in the CI loopback), and the CI checks now fail any p50 or p99 above 1 s. The output thread only publishes into a fixed atomic ring; Engine::status copies and sorts it on the control thread, and an output reopen advances an odd/even generation seqlock so concurrent status calls cannot mix old samples with new ones. From a paced dump on the dev PC: 13-16 ms p50 in exclusive mode (3 ms period, 10 ms target), 47 ms in shared mode. The SAL figure needs the SAL PC"
 
 [[feature]]
+id = "bench.handoff_latency"
+kind = "tool"
+milestone = "M3"
+status = "implemented"
+tests = [
+  "engine::handoff_and_device_latency_sum_to_total_within_one_qpc_tick",
+  "engine::latency_uses_playback_qpc_and_source_qpc",
+  "engine::capture_and_output_steady_state_do_not_allocate",
+  "ssr-replay::one_ms_pcm71_records_render_exactly_the_same_samples_as_ten_ms_records",
+]
+note = "The output sink timestamps each device-buffer write so reports split source-to-playback latency into handoff and device portions (ADR 0044). The live audio job plays pcm71-1ms (the driver's 1 ms records) exclusive at 10 and 20 ms periods for 60 s each, and tools/ci/latency_bench_check.py (tested by tools/ci/test_latency_bench_check.py) fails a handoff p50 more than 5 ms above the range ADR 0044 gives for the period (one block below 9 + 10 + min(P, 10) + P + 2.7 ms; the phase between blocks and periods decides where a run falls) and notes one more than 1 ms outside it. First CI figures: 34.6 and 36.7 ms at 10 ms, 43.1 and 48.5 ms at 20 ms, the device latency one period."
+
+[[feature]]
 id = "convolver.non_uniform"
 kind = "pipeline"
 milestone = "M2"
