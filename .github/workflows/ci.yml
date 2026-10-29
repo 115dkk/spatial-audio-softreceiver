@@ -24,9 +24,10 @@ name: CI
 #   audio     Windows Server 2022 and 2025 with a virtual audio cable
 #             (VB-CABLE): the device tests ssr-sys keeps #[ignore]d, the live
 #             path played into the cable and recorded back against ssr-replay's
-#             offline render, and soaks (exclusive, shared, under CPU load and
-#             under full page heap) that must end without faults, restarts or
-#             underruns
+#             offline render, an app's sound taken by process loopback without
+#             the driver (ADR 0043), and soaks (exclusive, shared, under CPU
+#             load and under full page heap) that must end without faults,
+#             restarts or underruns
 #   plughost  Windows Server 2022 and 2025 (x64) and Windows 11 (ARM64): the
 #             plugin host we ship (ssr-plughost, vst-audio's worker) runs
 #             vst-audio's #[ignore]d native tests from the exact source of the
@@ -427,6 +428,82 @@ jobs:
           fi
           exit $status
 
+      # App capture without the driver (ADR 0043). tone_player renders a 997 Hz
+      # sine at -20 dBFS to the cable's front pair in shared mode; ssr-live
+      # takes that process's sound by process loopback in the cable's mix
+      # layout (--discard-output) and records the stream it made of it. The
+      # record must be 48 kHz float in that layout, carrying the sine at its
+      # level on the front pair for 3 s or more and nothing on the other
+      # channels. Three things ADR 0043 leaves open are only reported: whether a
+      # muted session still reaches the loopback, the packet rate against QPC
+      # (rate_ratio), and where the output's ASRC settles after 20 s on a
+      # source it cannot trim.
+      - name: App capture (a tone player's process loopback; tools/ci/app_loopback_check.py)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet -r tools/ci/requirements.txt
+          cargo build --locked --release -p ssr-sys --example tone_player
+          out="$RUNNER_TEMP/app-capture"
+          mkdir -p "$out"
+          # The layout ssr-live asks for: the cable's mix when it is 1 to 8
+          # channels with a full mask (LoopbackLayout::from_mix), else stereo.
+          target/release/ssr-live.exe devices --formats --json > "$out/devices.json"
+          channels="$(python -c '
+          import json, sys
+          for endpoint in json.load(open(sys.argv[1], encoding="utf-8")):
+              if "VB-Audio Virtual Cable" in endpoint["name"]:
+                  mix = endpoint["mix"]
+                  count, mask = mix["channels"], mix["channel_mask"]
+                  print(count if 1 <= count <= 8 and mask and bin(mask).count("1") == count else 2)
+                  break
+          ' "$out/devices.json")"
+          echo "cable mix layout for the loopback: $channels channels"
+          # capture NAME SECONDS [tone_player options]: plays the tone and
+          # takes it for SECONDS (the tone runs 3 s longer).
+          capture() {
+            local name="$1" seconds="$2" pid="" tone
+            shift 2
+            target/release/examples/tone_player.exe --output "VB-Audio Virtual Cable" \
+              --seconds $((seconds + 3)) --level-db -20 "$@" > "$out/$name-tone.log" &
+            tone=$!
+            for _ in $(seq 1 100); do
+              pid="$(sed -n 's/^pid=\([0-9][0-9]*\).*/\1/p' "$out/$name-tone.log" | head -n 1)"
+              if [ -n "$pid" ]; then break; fi
+              sleep 0.1
+            done
+            if [ -z "$pid" ]; then
+              echo "::error::tone_player ($name) printed no pid"
+              cat "$out/$name-tone.log"
+              kill "$tone" 2>/dev/null || true
+              return 1
+            fi
+            target/release/ssr-live.exe play --source app --app "$pid" \
+              --discard-output "VB-Audio Virtual Cable" \
+              --profile "$RUNNER_TEMP/fx/profile.toml" --output "VB-Audio Virtual Cable" --shared \
+              --seconds "$seconds" --record "$out/$name.ssrdump" --report "$out/$name-report.json"
+            wait "$tone"
+          }
+          {
+            echo "## App capture (${{ matrix.os }})"
+            echo
+            echo "Loopback layout: $channels channels (the cable's mix)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          capture plain 20
+          python tools/ci/app_loopback_check.py "$out/plain.ssrdump" --frequency 997 --level-db -20 \
+            --channels "$channels" --summary "$GITHUB_STEP_SUMMARY"
+          # No trim on this source: the output's ASRC follows it (reported only).
+          jq -r '"ASRC after 20 s: clock_ppm \(.clock_ppm), largest \(.clock_ppm_max_abs), cadence \(.output_cadence_ratio), underruns \(.underruns)"' \
+            "$out/plain-report.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "Muted session (reported only):" >> "$GITHUB_STEP_SUMMARY"
+          if capture muted 5 --mute-session; then
+            python tools/ci/app_loopback_check.py "$out/muted.ssrdump" --frequency 997 --level-db -20 \
+              --channels "$channels" --report-only --summary "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- the muted run did not finish" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # Kernel streaming (ADR 0037). The cable's render endpoint is disabled
       # while ssr-live writes its KS pin directly, and must be enabled again
       # afterwards. VB-CABLE is WaveCyclic, so this is the standard-streaming
@@ -653,6 +730,8 @@ jobs:
             ${{ runner.temp }}/ks
             ${{ runner.temp }}/soak-*.json
             ${{ runner.temp }}/soak-*.log
+            ${{ runner.temp }}/restart-*.json
+            ${{ runner.temp }}/app-capture
             ${{ runner.temp }}/dumps
             ${{ runner.temp }}/asio/*.json
             ${{ runner.temp }}/asio/*.log

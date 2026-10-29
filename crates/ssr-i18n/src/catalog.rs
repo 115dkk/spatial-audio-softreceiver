@@ -1079,6 +1079,50 @@ pub mod live {
         }
     }
 
+    #[doc = "앱 소리 캡처는 play에서만 쓸 수 있습니다."]
+    pub fn app_source_play_only(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "앱 소리 캡처는 play에서만 쓸 수 있습니다.",
+            Language::En => "The app capture source is available only with play.",
+        }
+    }
+
+    #[doc = "앱 지정값 {target}에는 0이 아닌 프로세스 식별자나 실행 파일 이름을 써야 합니다."]
+    pub fn app_target_invalid(language: Language, target: impl core::fmt::Display) -> String {
+        match language {
+            Language::Ko => format!(
+                "앱 지정값 {target}에는 0이 아닌 프로세스 식별자나 실행 파일 이름을 써야 합니다."
+            ),
+            Language::En => {
+                format!("App target {target} is not a nonzero process ID or image name.")
+            }
+        }
+    }
+
+    #[doc = "앱 지정값 {target}에 해당하는 프로세스는 하나여야 합니다. 후보는 {candidates}입니다."]
+    pub fn app_target_not_unique(
+        language: Language,
+        target: impl core::fmt::Display,
+        candidates: impl core::fmt::Display,
+    ) -> String {
+        match language {
+            Language::Ko => format!(
+                "앱 지정값 {target}에 해당하는 프로세스는 하나여야 합니다. 후보는 {candidates}입니다."
+            ),
+            Language::En => format!(
+                "App target {target} must match exactly one process; candidates: {candidates}"
+            ),
+        }
+    }
+
+    #[doc = "--source app을 쓰려면 --app을 지정해야 합니다."]
+    pub fn app_target_required(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "--source app을 쓰려면 --app을 지정해야 합니다.",
+            Language::En => "--source app requires --app.",
+        }
+    }
+
     #[doc = "앱이 ASIO 소리를 받을 준비가 되지 않았습니다."]
     pub fn asio_driver_app_not_ready(language: Language) -> &'static str {
         match language {
@@ -2053,11 +2097,31 @@ pub mod live {
         }
     }
 
+    #[doc = "앱마다 소리 받기가 시작될 때까지 기다릴 최대 시간(ms)입니다."]
+    pub fn play_activation_timeout_ms_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "앱마다 소리 받기가 시작될 때까지 기다릴 최대 시간(ms)입니다.",
+            Language::En => "Milliseconds allowed for each process-loopback activation",
+        }
+    }
+
     #[doc = "독점 모드 요청이 실패하면 WASAPI 공유 모드로 대체하도록 허용합니다."]
     pub fn play_allow_shared_fallback_help(language: Language) -> &'static str {
         match language {
             Language::Ko => "독점 모드 요청이 실패하면 WASAPI 공유 모드로 대체하도록 허용합니다.",
             Language::En => "Permit an exclusive request to fall back to WASAPI shared mode",
+        }
+    }
+
+    #[doc = "주 입구로 소리를 받을 앱의 프로세스 식별자나 실행 파일 이름입니다. --source app을 쓰면 반드시 지정해야 합니다."]
+    pub fn play_app_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "주 입구로 소리를 받을 앱의 프로세스 식별자나 실행 파일 이름입니다. --source app을 쓰면 반드시 지정해야 합니다."
+            }
+            Language::En => {
+                "Process ID or image name captured into lane 0 (required with --source app)"
+            }
         }
     }
 
@@ -2086,6 +2150,16 @@ pub mod live {
             Language::En => {
                 "Override a zero-mask PCM order, as CHANNELS=PRESET or CHANNELS=SPEAKER,SPEAKER,..."
             }
+        }
+    }
+
+    #[doc = "버리는 출력으로 쓸 장치입니다. 앱 소리는 이 장치의 공유 모드 채널 배치에 맞춰 받습니다."]
+    pub fn play_discard_output_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => {
+                "버리는 출력으로 쓸 장치입니다. 앱 소리는 이 장치의 공유 모드 채널 배치에 맞춰 받습니다."
+            }
+            Language::En => "Render endpoint whose shared mix layout is used for process capture",
         }
     }
 
@@ -2134,6 +2208,14 @@ pub mod live {
             Language::En => {
                 "With --from-dump: repeat the dump's data records, with continuous positions and times, until --seconds or Enter stops the run"
             }
+        }
+    }
+
+    #[doc = "음악 입구로 소리를 받을 앱의 프로세스 식별자나 실행 파일 이름입니다."]
+    pub fn play_music_app_help(language: Language) -> &'static str {
+        match language {
+            Language::Ko => "음악 입구로 소리를 받을 앱의 프로세스 식별자나 실행 파일 이름입니다.",
+            Language::En => "Process ID or image name captured into lane 1",
         }
     }
 

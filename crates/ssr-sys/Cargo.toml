@@ -31,6 +31,7 @@ streamring.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true
+windows-core.workspace = true
 wasapi.workspace = true
 
 [dev-dependencies]

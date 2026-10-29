@@ -60,6 +60,7 @@ enum Clock {
 enum CaptureKind {
     Driver,
     Sal,
+    App,
 }
 
 /// What only the command line knows for `--report` (source kind, requested
@@ -80,6 +81,7 @@ fn request_fields(
             match source {
                 CaptureKind::Driver => "driver",
                 CaptureKind::Sal => "sal",
+                CaptureKind::App => "app",
             }
         }
         .to_owned(),
@@ -875,6 +877,18 @@ enum Command {
         /// Capture source; ignored when --from-dump supplies the source.
         #[arg(long, value_enum, default_value_t = CaptureKind::Driver)]
         source: CaptureKind,
+        /// Process ID or image name captured into lane 0 (required with --source app).
+        #[arg(long, value_name = "PID|NAME", required_if_eq("source", "app"))]
+        app: Option<String>,
+        /// Process ID or image name captured into lane 1.
+        #[arg(long, value_name = "PID|NAME", requires = "app")]
+        music_app: Option<String>,
+        /// Milliseconds allowed for each process-loopback activation.
+        #[arg(long, value_name = "MS", default_value_t = 5000, value_parser = clap::value_parser!(u64).range(1..))]
+        activation_timeout_ms: u64,
+        /// Render endpoint whose shared mix layout is used for process capture.
+        #[arg(long, value_name = "NAME", requires = "app")]
+        discard_output: Option<String>,
         /// Enable the ASIO input alongside the capture source.
         #[arg(long)]
         asio: bool,
@@ -1050,6 +1064,16 @@ fn localized_command(language: Language) -> clap::Command {
         .mut_subcommand("play", |subcommand| {
             subcommand
                 .mut_arg("source", |arg| arg.help(live::play_source_help(language)))
+                .mut_arg("app", |arg| arg.help(live::play_app_help(language)))
+                .mut_arg("music_app", |arg| {
+                    arg.help(live::play_music_app_help(language))
+                })
+                .mut_arg("activation_timeout_ms", |arg| {
+                    arg.help(live::play_activation_timeout_ms_help(language))
+                })
+                .mut_arg("discard_output", |arg| {
+                    arg.help(live::play_discard_output_help(language))
+                })
                 .mut_arg("asio", |arg| arg.help(live::play_asio_help(language)))
                 .mut_arg("silence", |arg| arg.help(live::play_silence_help(language)))
                 .mut_arg("endpoints", |arg| {
@@ -1258,6 +1282,10 @@ fn main() -> ExitCode {
         } => platform::record(source, &out, seconds),
         Command::Play {
             source,
+            app,
+            music_app,
+            activation_timeout_ms,
+            discard_output,
             asio,
             silence,
             endpoints,
@@ -1281,6 +1309,10 @@ fn main() -> ExitCode {
             direct_layouts,
         } => platform::play(platform::PlayOptions {
             source,
+            app,
+            music_app,
+            activation_timeout_ms,
+            discard_output,
             asio,
             silence,
             endpoints,
@@ -1362,7 +1394,13 @@ mod platform {
     use ssr_sys::driver_ring::DriverRing;
     use ssr_sys::mmcss;
     use ssr_sys::output::WasapiOpener;
-    use ssr_sys::{WindowsHost, devices, qpc, sal::SalRing};
+    use ssr_sys::{
+        WindowsHost, devices,
+        loopback::{AppLoopback, AppTarget},
+        loopback_format::LoopbackLayout,
+        qpc,
+        sal::SalRing,
+    };
     use ssr_types::{
         CaptureError, CaptureSource, DeviceId, Host, Role, SetupTask, TrimUnsupported,
     };
@@ -1374,6 +1412,10 @@ mod platform {
 
     pub struct PlayOptions {
         pub source: CaptureKind,
+        pub app: Option<String>,
+        pub music_app: Option<String>,
+        pub activation_timeout_ms: u64,
+        pub discard_output: Option<String>,
         pub asio: bool,
         pub silence: bool,
         pub endpoints: Option<String>,
@@ -1428,6 +1470,11 @@ mod platform {
                 )
             }
             CaptureKind::Sal => (Source::Sal(open_sal()?), qpc::frequency(), "SAL"),
+            CaptureKind::App => {
+                return Err(
+                    ssr_i18n::live::app_source_play_only(ssr_i18n::cli_language()).to_owned(),
+                );
+            }
         };
         let tee = supervisor::TeeCapture::new(ring, qpc::now);
         let (mut ring, recorder) = supervisor::Recorder::start(
@@ -1510,6 +1557,7 @@ mod platform {
     enum Source {
         Driver(DriverRing),
         Sal(SalRing),
+        App(AppLoopback),
         Dump(DumpCapture),
         Silence(super::silence::SilenceCapture),
     }
@@ -1519,6 +1567,7 @@ mod platform {
             match self {
                 Self::Driver(ring) => ring.read(buf, wait),
                 Self::Sal(ring) => ring.read(buf, wait),
+                Self::App(loopback) => loopback.read(buf, wait),
                 Self::Dump(dump) => dump.read(buf, wait),
                 Self::Silence(silence) => silence.read(buf, wait),
             }
@@ -1528,6 +1577,7 @@ mod platform {
             match self {
                 Self::Driver(ring) => ring.now_qpc(),
                 Self::Sal(ring) => ring.now_qpc(),
+                Self::App(loopback) => loopback.now_qpc(),
                 Self::Dump(dump) => dump.now_qpc(),
                 Self::Silence(silence) => silence.now_qpc(),
             }
@@ -1537,6 +1587,7 @@ mod platform {
             match self {
                 Self::Driver(ring) => ring.set_rate_trim(ppm),
                 Self::Sal(ring) => ring.set_rate_trim(ppm),
+                Self::App(loopback) => loopback.set_rate_trim(ppm),
                 Self::Dump(dump) => dump.set_rate_trim(ppm),
                 Self::Silence(silence) => silence.set_rate_trim(ppm),
             }
@@ -1546,6 +1597,7 @@ mod platform {
             match self {
                 Self::Driver(ring) => ring.reconnect(),
                 Self::Sal(ring) => ring.reconnect(),
+                Self::App(loopback) => loopback.reconnect(),
                 Self::Dump(dump) => dump.reconnect(),
                 Self::Silence(silence) => silence.reconnect(),
             }
@@ -1553,6 +1605,63 @@ mod platform {
     }
 
     type OpenedSource = (Source, u64, Option<Box<dyn supervisor::DriverStatsSource>>);
+
+    fn resolve_app_target(value: &str, apps: &[ssr_types::AudioApp]) -> Result<u32, String> {
+        if let Ok(pid) = value.parse::<u32>() {
+            return (pid != 0).then_some(pid).ok_or_else(|| {
+                ssr_i18n::live::app_target_invalid(ssr_i18n::cli_language(), value)
+            });
+        }
+        let lowercase = value.to_ascii_lowercase();
+        let normalized = lowercase.strip_suffix(".exe").unwrap_or(&lowercase);
+        let mut candidates = BTreeMap::new();
+        for app in apps {
+            let exe = app.exe.to_ascii_lowercase();
+            let stem = exe.strip_suffix(".exe").unwrap_or(&exe);
+            if stem == normalized {
+                candidates.entry(app.pid).or_insert_with(|| app.exe.clone());
+            }
+        }
+        if candidates.len() == 1 {
+            return Ok(*candidates.first_key_value().expect("one candidate").0);
+        }
+        let names = if candidates.is_empty() {
+            let available: BTreeMap<_, _> =
+                apps.iter().map(|app| (app.pid, app.exe.as_str())).collect();
+            available
+                .into_iter()
+                .map(|(pid, exe)| format!("{exe} ({pid})"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        } else {
+            candidates
+                .into_iter()
+                .map(|(pid, exe)| format!("{exe} ({pid})"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        Err(ssr_i18n::live::app_target_not_unique(
+            ssr_i18n::cli_language(),
+            value,
+            if names.is_empty() { "none" } else { &names },
+        ))
+    }
+
+    fn loopback_layout(discard_output: Option<&str>) -> Result<LoopbackLayout, String> {
+        let Some(pattern) = discard_output else {
+            return Ok(LoopbackLayout::STEREO);
+        };
+        let endpoint = devices::find(Some(pattern)).map_err(|error| error.to_string())?;
+        let format = devices::render_endpoint_formats()
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .find(|format| format.endpoint.id == endpoint.id)
+            .ok_or_else(|| ssr_types::OutputError::NotFound.to_string())?;
+        Ok(LoopbackLayout::from_mix(
+            format.mix.channels,
+            format.mix.channel_mask,
+        ))
+    }
 
     fn open_source(options: &PlayOptions, ended: Arc<AtomicBool>) -> Result<OpenedSource, String> {
         if options.silence {
@@ -1584,6 +1693,30 @@ mod platform {
                 Ok((Source::Driver(ring), frequency, Some(Box::new(observer))))
             }
             CaptureKind::Sal => Ok((Source::Sal(open_sal()?), qpc::frequency(), None)),
+            CaptureKind::App => {
+                let apps = ssr_sys::app_routing::audio_apps();
+                let main = options.app.as_deref().ok_or_else(|| {
+                    ssr_i18n::live::app_target_required(ssr_i18n::cli_language()).to_owned()
+                })?;
+                let mut targets = vec![AppTarget {
+                    pid: resolve_app_target(main, &apps)?,
+                    endpoint: 0,
+                }];
+                if let Some(music) = options.music_app.as_deref() {
+                    targets.push(AppTarget {
+                        pid: resolve_app_target(music, &apps)?,
+                        endpoint: 1,
+                    });
+                }
+                let layout = loopback_layout(options.discard_output.as_deref())?;
+                let loopback = AppLoopback::open(
+                    &targets,
+                    layout,
+                    Duration::from_millis(options.activation_timeout_ms),
+                )
+                .map_err(|error| error.to_string())?;
+                Ok((Source::App(loopback), qpc::frequency(), None))
+            }
         }
     }
 
@@ -2464,6 +2597,26 @@ mod platform {
         }
 
         #[test]
+        fn app_target_names_ignore_case_and_exe_suffix_but_reject_ambiguity() {
+            let app = |pid, exe: &str| ssr_types::AudioApp {
+                pid,
+                exe: exe.into(),
+                display_name: exe.into(),
+                device: DeviceId("device".into()),
+                active: true,
+            };
+            let apps = [app(10, "player.exe"), app(20, "other.exe")];
+            assert_eq!(resolve_app_target("PLAYER", &apps), Ok(10));
+            assert_eq!(resolve_app_target("Player.EXE", &apps), Ok(10));
+            assert_eq!(resolve_app_target("20", &apps), Ok(20));
+            assert!(resolve_app_target("0", &apps).is_err());
+            let ambiguous = [app(10, "player.exe"), app(30, "PLAYER.EXE")];
+            let error = resolve_app_target("player", &ambiguous).unwrap_err();
+            assert!(error.contains("player.exe (10)"));
+            assert!(error.contains("PLAYER.EXE (30)"));
+        }
+
+        #[test]
         fn paced_dump_releases_records_at_their_pace_and_restamps_them() {
             // 10 MHz dump clock: a stream start at 0, data at 10 and 20 ms.
             let mut dump = dump_header_bytes(10_000_000);
@@ -2691,6 +2844,10 @@ mod platform {
     #[allow(dead_code)]
     pub struct PlayOptions {
         pub source: CaptureKind,
+        pub app: Option<String>,
+        pub music_app: Option<String>,
+        pub activation_timeout_ms: u64,
+        pub discard_output: Option<String>,
         pub asio: bool,
         pub silence: bool,
         pub endpoints: Option<String>,
