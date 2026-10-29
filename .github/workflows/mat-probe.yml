@@ -161,6 +161,15 @@ jobs:
           Start-Sleep -Seconds 5
           ./tools/ci/ks-trace.ps1 -Stop -Label spatial
 
+      # The trace showed that refusing the home theater format asked our
+      # filters nothing (only the Windows Sonic fallback proposed 48 kHz
+      # stereo PCM), so the refusal comes from what the endpoint builder
+      # stored. Every property of our endpoints, encoded formats included.
+      - name: What the endpoint builder stored for our endpoints (tools/ci/audio-diagnostics.ps1)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./tools/ci/audio-diagnostics.ps1 -InstanceId 'ROOT\MEDIA\0000'
+
       - name: WER local dumps for ssr-live and ssr-replay (tools/ci/crash-dumps.ps1)
         if: ${{ !cancelled() }}
         shell: pwsh
