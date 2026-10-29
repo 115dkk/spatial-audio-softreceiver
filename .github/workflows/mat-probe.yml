@@ -62,7 +62,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2022, windows-2025]
+        # windows-2022 answers AccessDenied to choosing any spatial format,
+        # Windows Sonic included (first runs, 2026-10-30).
+        os: [windows-2025]
     steps:
       - uses: actions/checkout@v7
 
@@ -144,6 +146,19 @@ jobs:
         if: ${{ !cancelled() }}
         shell: pwsh
         run: ./tools/ci/crash-dumps.ps1 -Folder (Join-Path $env:RUNNER_TEMP 'dumps')
+
+      # mat-probe ended with 0xC0000374 (heap corruption) after 1.2 s and
+      # printed nothing. Full page heap puts a guard page after every block,
+      # so the overrunning write faults at once and leaves a dump and a stack
+      # (as soak.ps1 -PageHeap does).
+      - name: Full page heap for ssr-live.exe
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $ifeo = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\ssr-live.exe'
+          New-Item -Force -Path $ifeo | Out-Null
+          Set-ItemProperty -Path $ifeo -Name GlobalFlag -Value 0x02000000 -Type DWord
+          Set-ItemProperty -Path $ifeo -Name PageHeapFlags -Value 0x3 -Type DWord
 
       - name: mat-probe on endpoint 0, then mat-analyze
         id: probe
