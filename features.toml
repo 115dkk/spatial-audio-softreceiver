@@ -256,8 +256,9 @@ status = "implemented"
 tests = [
   "decode::sixty_four_channel_direct_configure_push_and_reset_do_not_allocate",
   "engine::ended_input_drains_a_sixty_four_channel_ring_below_the_priming_threshold",
+  "engine::crossing_ring_holds_its_capacity_up_to_32_channels_and_less_beyond",
 ]
-note = "ADR 0042: mask-zero PCM, engine output, speaker profiles and upmixers accept up to 64 channels; the Windows speaker mask remains 18 bits."
+note = "ADR 0042: mask-zero PCM, engine output, speaker profiles and upmixers accept up to 64 channels; the Windows speaker mask remains 18 bits. The crossing ring holds capacity_ms of 32 channels (2026-10-29), so outputs wider than 32 channels hold capacity_ms × 32 / channels."
 
 [[feature]]
 id = "types.extended_speaker_layouts"

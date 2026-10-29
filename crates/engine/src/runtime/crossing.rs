@@ -140,6 +140,12 @@ impl CrossingConsumer {
             capacity_frames,
         }
     }
+    /// Frames of `channels`-wide audio the ring holds: the configured
+    /// capacity, or less for a layout wider than the ring was sized for.
+    pub(super) fn capacity_frames_for(&self, channels: usize) -> usize {
+        self.capacity_frames
+            .min(self.audio.buffer().capacity() / channels.max(1))
+    }
     pub(super) fn refresh_markers(&mut self) {
         while let Ok(marker) = self.timing.pop() {
             debug_assert!(self.marker_queue.len() < TIMING_QUEUE_CAPACITY);

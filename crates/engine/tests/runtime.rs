@@ -3596,8 +3596,9 @@ fn ended_input_drains_a_sixty_four_channel_ring_below_the_priming_threshold() {
     };
     let mut runtime = lockstep_config(ClockPreference::Trim, Arc::clone(&lockstep));
     runtime.target_ms = 0.0;
+    // The ring holds capacity_ms of 32 channels, so at 64 channels 80 ms is
     // 1,920 frames: one decoder delivery (max_block) above an empty target.
-    runtime.capacity_ms = 40.0;
+    runtime.capacity_ms = 80.0;
     let engine = start_with(
         runtime,
         capture,
