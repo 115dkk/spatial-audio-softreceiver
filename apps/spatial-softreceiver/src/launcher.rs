@@ -55,6 +55,9 @@ impl<T: ssr_types::OutputSink> ssr_types::OutputSink for DiscoveryFallback<T> {
     fn played_frames(&self) -> Option<u64> {
         self.0.played_frames()
     }
+    fn handoff_qpc(&self) -> Option<u64> {
+        self.0.handoff_qpc()
+    }
 }
 
 /// Starts the engine for the supervisor on Windows.

@@ -118,8 +118,9 @@ fn finish_dump(path: &Path, records: &[u8]) {
     std::fs::write(path, file).expect("write dump");
 }
 
-/// Two seconds of 7.1 float PCM, one tone per channel, in 10 ms records.
-fn write_pcm_dump(path: &Path) {
+/// Two seconds of 7.1 float PCM, one tone per channel, in records of
+/// `record_frames` frames. Each record carries the QPC at its end.
+fn write_pcm_dump(path: &Path, record_frames: usize) {
     let channels = 8_usize;
     let format = SourceFormat::Pcm(PcmFormat {
         channels: channels as u16,
@@ -129,8 +130,9 @@ fn write_pcm_dump(path: &Path) {
         sample_type: SampleType::Float,
         channel_mask: 0x63f,
     });
-    let block = (RATE / 100) as usize;
-    let blocks = 200;
+    assert_eq!((2 * RATE as usize) % record_frames, 0);
+    let block = record_frames;
+    let blocks = 2 * RATE as usize / block;
     let mut stream =
         vec![0_u8; record_size(0) + record_size(52) + blocks * record_size(block * channels * 4)];
     let mut w = RecordWriter::new(&mut stream);
@@ -147,7 +149,7 @@ fn write_pcm_dump(path: &Path) {
                 payload[at..at + 4].copy_from_slice(&s.to_le_bytes());
             }
         }
-        let qpc = (b as u64 + 1) * QPC_HZ / 100;
+        let qpc = (b as u64 + 1) * block as u64 * QPC_HZ / u64::from(RATE);
         let pos = (b * payload.len()) as u64;
         assert!(w.data(1, pos, qpc, &payload));
     }
@@ -203,7 +205,8 @@ fn main() {
     let eac3 = manifest.join("../../crates/decode/tests/fixtures/ddp/tones-5.1.eac3");
     write_brir_set(&out.join("brir"));
     write_profile(&out.join("profile.toml"));
-    write_pcm_dump(&out.join("pcm71.ssrdump"));
+    write_pcm_dump(&out.join("pcm71.ssrdump"), (RATE / 100) as usize);
+    write_pcm_dump(&out.join("pcm71-1ms.ssrdump"), (RATE / 1_000) as usize);
     write_ddp_dump(&out.join("ddp51.ssrdump"), &eac3);
     println!("{}", out.display());
 }

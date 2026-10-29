@@ -188,6 +188,16 @@ unattributed_chain_errors: ChainErrorMap;
  */
 skipped_records: number; latency: LatencyStats;
 /**
+ * Latency from the source record to writing its output period into the
+ * device buffer.
+ */
+handoff_latency: LatencyStats;
+/**
+ * Latency from writing an output period into the device buffer until its
+ * frames play.
+ */
+device_latency: LatencyStats;
+/**
  * Lowest crossing-ring level over the last control window, in
  * milliseconds of rendered signal: the margin the clock controller holds
  * at the configured target.

@@ -116,6 +116,13 @@ impl OutputSink for KsOrWasapiSink {
         }
     }
 
+    fn handoff_qpc(&self) -> Option<u64> {
+        match self {
+            Self::Ks(sink) => sink.handoff_qpc(),
+            Self::Wasapi { sink, .. } => sink.handoff_qpc(),
+        }
+    }
+
     fn played_frames(&self) -> Option<u64> {
         match self {
             Self::Ks(sink) => sink.played_frames(),

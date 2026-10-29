@@ -310,6 +310,12 @@ pub struct EngineStatus {
     /// Records naming an endpoint beyond the driver's range.
     pub skipped_records: u64,
     pub latency: LatencyStats,
+    /// Latency from the source record to writing its output period into the
+    /// device buffer.
+    pub handoff_latency: LatencyStats,
+    /// Latency from writing an output period into the device buffer until its
+    /// frames play.
+    pub device_latency: LatencyStats,
     /// Lowest crossing-ring level over the last control window, in
     /// milliseconds of rendered signal: the margin the clock controller holds
     /// at the configured target.

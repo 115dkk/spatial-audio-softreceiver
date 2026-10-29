@@ -713,7 +713,11 @@ impl OutputState {
         }
     }
 
-    pub(super) fn finish_period(&mut self, playback_qpc: u64) -> Option<(f64, f64)> {
+    pub(super) fn finish_period(
+        &mut self,
+        playback_qpc: u64,
+        handoff_qpc: Option<u64>,
+    ) -> Option<(f64, f64)> {
         let scene_rate = self.shared.scene_rate.load(Ordering::Acquire);
         if scene_rate == 0 {
             return None;
@@ -763,7 +767,7 @@ impl OutputState {
                 }
             }
         }
-        self.consume_markers(playback_qpc);
+        self.consume_markers(playback_qpc, handoff_qpc);
         completed
     }
 
@@ -793,11 +797,12 @@ impl OutputState {
         self.reprime(Reprime::CrossingDiscarded { overflow_frames });
     }
 
-    fn consume_markers(&mut self, playback_qpc: u64) {
+    fn consume_markers(&mut self, playback_qpc: u64, handoff_qpc: Option<u64>) {
         let period = PeriodPlayback {
             start: self.period_stream_start,
             frames: self.period_source_frames,
             qpc: playback_qpc,
+            handoff_qpc,
             mode: self.strategy_mode,
             device_rate: self.device_rate,
             qpc_frequency: self.qpc_frequency,
@@ -805,7 +810,9 @@ impl OutputState {
         let shared = &self.shared;
         let latency = &mut self.latency;
         self.crossing
-            .consume_markers(period, |value| latency.push(value, shared));
+            .consume_markers(period, |total, handoff, device| {
+                latency.push(total, handoff, device, shared);
+            });
     }
 
     pub(super) fn reconfigure(

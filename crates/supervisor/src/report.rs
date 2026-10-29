@@ -1,6 +1,6 @@
 use engine::StopReport;
 use serde_json::{Map, Value};
-use ssr_types::{ChainErrorCounts, ClockStatus, OutputMode};
+use ssr_types::{ChainErrorCounts, ClockStatus, LatencyStats, OutputMode};
 
 use crate::driver_stats::DriverStatsTotals;
 
@@ -96,6 +96,12 @@ pub struct SessionReport {
     pub driver_stats_error: Option<String>,
 }
 
+/// A latency the run measured, or `None` (null in the report) when its sink
+/// could not tell the handoff time and no sample was taken (ADR 0044).
+fn measured(latency: LatencyStats) -> Option<LatencyStats> {
+    (latency.samples > 0).then_some(latency)
+}
+
 pub fn chain_errors_json(counts: ChainErrorCounts) -> Value {
     counts
         .iter()
@@ -187,6 +193,10 @@ impl SessionReport {
             "faults": faults,
             "latency_p50_ms": status.latency.p50_ms,
             "latency_p99_ms": status.latency.p99_ms,
+            "handoff_latency_p50_ms": measured(status.handoff_latency).map(|l| l.p50_ms),
+            "handoff_latency_p99_ms": measured(status.handoff_latency).map(|l| l.p99_ms),
+            "device_latency_p50_ms": measured(status.device_latency).map(|l| l.p50_ms),
+            "device_latency_p99_ms": measured(status.device_latency).map(|l| l.p99_ms),
             "ring_trough_min_ms": self.figures.ring_trough_min_ms,
             "clock_ppm": status.clock_ppm,
             "clock_ppm_max_abs": self.figures.clock_ppm_max_abs,

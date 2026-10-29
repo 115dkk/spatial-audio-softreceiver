@@ -55,6 +55,7 @@ pub struct KsSink {
     frequency: u64,
     clock: PlaybackTiming,
     late_resyncs: u64,
+    latest_handoff_qpc: u64,
 }
 impl fmt::Debug for KsSink {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -322,6 +323,7 @@ impl KsOpener {
                     frequency: qpc::frequency(),
                     clock: PlaybackTiming::default(),
                     late_resyncs: 0,
+                    latest_handoff_qpc: 0,
                 };
                 sink.control
                     .state(&sink.pin, KSSTATE_ACQUIRE)
@@ -718,6 +720,9 @@ impl OutputSink for KsSink {
     fn played_frames(&self) -> Option<u64> {
         self.played
     }
+    fn handoff_qpc(&self) -> Option<u64> {
+        (self.latest_handoff_qpc != 0).then_some(self.latest_handoff_qpc)
+    }
     fn late_resyncs(&self) -> u64 {
         self.late_resyncs
     }
@@ -794,6 +799,7 @@ impl OutputSink for KsSink {
                 *write_bytes += self.converted.len() as u64;
             }
         }
+        self.latest_handoff_qpc = qpc::now();
         self.submitted = first_frame.saturating_add(self.format.period_frames as u64);
         Ok(self.clock.next(
             first_frame,

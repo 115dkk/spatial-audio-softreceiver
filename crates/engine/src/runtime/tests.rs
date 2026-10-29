@@ -489,7 +489,7 @@ fn simulate_clock_with(
         output.fill(&mut period_buffer);
         let playback_qpc =
             ((index + 1) as f64 * period_seconds * DEFAULT_QPC_FREQUENCY as f64).round() as u64;
-        if let Some((trough, ppm)) = output.finish_period(playback_qpc) {
+        if let Some((trough, ppm)) = output.finish_period(playback_qpc, None) {
             if ppm.abs() >= PI_LIMIT_PPM {
                 run.clamped += 1;
                 if index * 2 >= periods {
@@ -623,7 +623,7 @@ fn simulate_stalling_source(seconds: f64, stalls_until_seconds: f64) -> StallRun
         output.fill(&mut period_buffer);
         let playback_qpc =
             ((index + 1) as f64 * period_seconds * DEFAULT_QPC_FREQUENCY as f64).round() as u64;
-        let completed = output.finish_period(playback_qpc);
+        let completed = output.finish_period(playback_qpc, None);
         if index == 400 {
             underruns_after_second_stall = shared.underruns.load(Ordering::Acquire);
         }
@@ -1178,7 +1178,7 @@ fn play_output(block: usize, period: usize, periods: usize) -> (u64, usize) {
         }
         output.fill(&mut buffer);
         played += usize::from(output.period_had_audio);
-        output.finish_period(index as u64 * 200_000);
+        output.finish_period(index as u64 * 200_000, None);
     }
     (shared.underruns.load(Ordering::Acquire), played)
 }
@@ -1229,7 +1229,7 @@ fn the_end_of_a_source_drains_without_underruns() {
             stream_frame += block as u64;
         }
         output.fill(&mut buffer);
-        output.finish_period(index as u64 * 100_000);
+        output.finish_period(index as u64 * 100_000, None);
     }
     assert_eq!(shared.underruns.load(Ordering::Acquire), 0);
     assert!(
@@ -1242,7 +1242,7 @@ fn the_end_of_a_source_drains_without_underruns() {
         periods += 1;
         assert!(periods <= 20, "the ring did not drain");
         output.fill(&mut buffer);
-        output.finish_period(0);
+        output.finish_period(0, None);
     }
     assert_eq!(shared.underruns.load(Ordering::Acquire), 0);
 }
@@ -1610,7 +1610,7 @@ fn latency_writer_matches_previous_percentiles_and_resets_by_generation() {
     let shared = Shared::new();
     let mut writer = LatencyWriter::new(&shared);
     for value in 1..=100 {
-        writer.push(value as f32, &shared);
+        writer.push(value as f32, None, None, &shared);
     }
     let status = shared.status();
     assert_eq!(status.latency.samples, 100);
@@ -1618,7 +1618,7 @@ fn latency_writer_matches_previous_percentiles_and_resets_by_generation() {
     assert_eq!(status.latency.p99_ms, 99.0);
 
     writer.reset(&shared);
-    writer.push(7.0, &shared);
+    writer.push(7.0, None, None, &shared);
     assert_eq!(
         shared.status().latency,
         LatencyStats {
@@ -1633,19 +1633,22 @@ fn latency_writer_matches_previous_percentiles_and_resets_by_generation() {
 fn latency_slot_sequences_do_not_alias_across_the_u32_wrap() {
     let shared = Shared::new();
     let mut writer = LatencyWriter::new(&shared);
-    writer.next = u64::from(u32::MAX) - 511;
-    shared.latency_next.store(writer.next, Ordering::Release);
+    writer.total.next = u64::from(u32::MAX) - 511;
+    shared
+        .latency
+        .next
+        .store(writer.total.next, Ordering::Release);
     for _ in 0..LATENCY_SAMPLES {
-        writer.push(7.0, &shared);
+        writer.push(7.0, None, None, &shared);
     }
 
-    assert_eq!(shared.latency().samples, LATENCY_SAMPLES as u32);
-    assert_eq!(shared.latency().p50_ms, 7.0);
-    assert_eq!(shared.latency().p99_ms, 7.0);
+    assert_eq!(shared.latency.stats().samples, LATENCY_SAMPLES as u32);
+    assert_eq!(shared.latency.stats().p50_ms, 7.0);
+    assert_eq!(shared.latency.stats().p99_ms, 7.0);
     let sequence = u64::from(u32::MAX) + 511;
     let index = sequence as usize % LATENCY_SAMPLES;
     assert_eq!(
-        shared.latency_sequences[index].load(Ordering::Acquire),
+        shared.latency.sequences[index].load(Ordering::Acquire),
         sequence.wrapping_add(1)
     );
 }
@@ -1657,18 +1660,18 @@ fn latency_status_never_observes_a_slot_while_its_value_is_being_published() {
     let writer = std::thread::spawn(move || {
         let mut writer = LatencyWriter::new(&writer_shared);
         for value in 1..=100_000_u32 {
-            writer.push(value as f32, &writer_shared);
+            writer.push(value as f32, None, None, &writer_shared);
         }
     });
     while !writer.is_finished() {
-        let latency = shared.latency();
+        let latency = shared.latency.stats();
         if latency.samples != 0 {
             assert!(latency.p50_ms >= 1.0, "{latency:?}");
             assert!(latency.p99_ms >= latency.p50_ms, "{latency:?}");
         }
     }
     writer.join().unwrap();
-    assert_eq!(shared.latency().samples, LATENCY_SAMPLES as u32);
+    assert_eq!(shared.latency.stats().samples, LATENCY_SAMPLES as u32);
 }
 
 #[test]
@@ -1681,12 +1684,12 @@ fn latency_status_never_mixes_samples_across_concurrent_resets() {
             writer.reset(&writer_shared);
             let value = generation as f32;
             for _ in 0..32 {
-                writer.push(value, &writer_shared);
+                writer.push(value, None, None, &writer_shared);
             }
         }
     });
     while !writer.is_finished() {
-        let latency = shared.latency();
+        let latency = shared.latency.stats();
         if latency.samples != 0 {
             assert_eq!(latency.p50_ms, latency.p99_ms, "{latency:?}");
         }
@@ -2413,7 +2416,7 @@ fn partially_consumed_marker_is_discarded_from_its_remaining_frame() {
     let mut period = vec![0.0; 144 * 2];
     output.fill(&mut period);
     assert_eq!(output.crossing.stream_frame, 144);
-    output.finish_period(0);
+    output.finish_period(0, None);
 
     assert_eq!(output.discard_pending_layout(rejected), 336);
     assert_eq!(output.crossing.stream_frame, 480);
@@ -2594,7 +2597,7 @@ fn trough_is_the_ring_left_after_the_period() {
             let ring = output.crossing.audio.slots() / 2;
             assert_eq!(output.period_trough_frames, ring, "{label}, period {n}");
             taken += output.period_source_frames;
-            output.finish_period(n * period_frames as u64);
+            output.finish_period(n * period_frames as u64, None);
         }
         assert_eq!(shared.underruns.load(Ordering::Acquire), 0, "{label}");
     }
@@ -2804,9 +2807,9 @@ fn zero_qpc_tail_marker_does_not_enter_latency_statistics() {
     output.fade_in_remaining = 0;
     let mut period = [0.0; 2];
     output.fill(&mut period);
-    output.finish_period(DEFAULT_QPC_FREQUENCY);
+    output.finish_period(DEFAULT_QPC_FREQUENCY, None);
 
-    assert_eq!(shared.latency().samples, 0);
+    assert_eq!(shared.latency.stats().samples, 0);
 }
 
 #[test]
@@ -2824,7 +2827,7 @@ fn any_endpoint_epoch_requests_an_output_owned_latency_reset() {
         channel_mask: 3,
     });
     let mut latency = LatencyWriter::new(&shared);
-    latency.push(12.0, &shared);
+    latency.push(12.0, None, None, &shared);
 
     handle_chain_event(
         ChainEvent::FormatChanged {
@@ -2837,12 +2840,12 @@ fn any_endpoint_epoch_requests_an_output_owned_latency_reset() {
         &mut events,
         &shared,
     );
-    assert_eq!(shared.latency().samples, 1);
+    assert_eq!(shared.latency.stats().samples, 1);
     assert_eq!(shared.latency_reset_requested.load(Ordering::Acquire), 1);
     latency.apply_requested_reset(&shared);
-    assert_eq!(shared.latency().samples, 0);
+    assert_eq!(shared.latency.stats().samples, 0);
 
-    latency.push(13.0, &shared);
+    latency.push(13.0, None, None, &shared);
     handle_chain_event(
         ChainEvent::FormatChanged {
             endpoint: 0,
@@ -2854,25 +2857,25 @@ fn any_endpoint_epoch_requests_an_output_owned_latency_reset() {
         &mut events,
         &shared,
     );
-    assert_eq!(shared.latency().samples, 1);
+    assert_eq!(shared.latency.stats().samples, 1);
     assert_eq!(shared.latency_reset_requested.load(Ordering::Acquire), 2);
     latency.apply_requested_reset(&shared);
-    assert_eq!(shared.latency().samples, 0);
+    assert_eq!(shared.latency.stats().samples, 0);
 }
 
 #[test]
 fn requested_reset_racing_with_output_reset_never_republishes_old_samples() {
     let shared = Shared::new();
     let mut writer = LatencyWriter::new(&shared);
-    writer.push(91.0, &shared);
+    writer.push(91.0, None, None, &shared);
     shared.request_latency_reset();
     writer.reset(&shared);
     shared.request_latency_reset();
     writer.apply_requested_reset(&shared);
-    writer.push(7.0, &shared);
+    writer.push(7.0, None, None, &shared);
 
     assert_eq!(
-        shared.latency(),
+        shared.latency.stats(),
         LatencyStats {
             p50_ms: 7.0,
             p99_ms: 7.0,

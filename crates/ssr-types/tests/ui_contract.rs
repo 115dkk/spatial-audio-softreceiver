@@ -778,6 +778,16 @@ fn engine_status(language: Language) -> EngineStatus {
             p99_ms: 18.9,
             samples: 300,
         },
+        handoff_latency: LatencyStats {
+            p50_ms: 8.4,
+            p99_ms: 14.9,
+            samples: 300,
+        },
+        device_latency: LatencyStats {
+            p50_ms: 4.0,
+            p99_ms: 4.0,
+            samples: 300,
+        },
         ring_level_ms: 9.6,
         underruns: 1,
         last_underrun: Some(UnderrunSnapshot {

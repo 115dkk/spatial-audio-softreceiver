@@ -8,7 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use brir::{AnglePreset, BrirSource, DirectionFile, LfePolicy, Profile};
 use engine::{Chain, ChainConfig, ChainEvent, OutputProfile, Prepared};
 use serde_json::Value;
-use ssr_abi::{RecordWriter, dump_header, dump_header_bytes, reads, wave_format_bytes};
+use ssr_abi::{
+    RecordWriter, dump_header, dump_header_bytes, reads, record_size, wave_format_bytes,
+};
 use ssr_types::{BitstreamCodec, BitstreamFormat, PcmFormat, SampleType, SourceFormat};
 
 struct TempDir(PathBuf);
@@ -156,6 +158,47 @@ fn write_dump(path: &Path) {
     assert!(writer.data(5, 0, 2, &pcm));
     let length = writer.len();
     let mut dump = dump_header_bytes(10_000_000);
+    dump.extend_from_slice(&records[..length]);
+    std::fs::write(path, dump).unwrap();
+}
+
+fn write_pcm71_dump(path: &Path, record_frames: usize) {
+    const RATE: u32 = 48_000;
+    const CHANNELS: usize = 8;
+    const QPC_HZ: u64 = 10_000_000;
+    let format = SourceFormat::Pcm(PcmFormat {
+        channels: CHANNELS as u16,
+        sample_rate: RATE,
+        bits_per_sample: 32,
+        valid_bits: 32,
+        sample_type: SampleType::Float,
+        channel_mask: 0x63f,
+    });
+    assert_eq!((2 * RATE as usize) % record_frames, 0);
+    let records_count = 2 * RATE as usize / record_frames;
+    let payload_bytes = record_frames * CHANNELS * 4;
+    let mut records =
+        vec![0; record_size(0) + record_size(52) + records_count * record_size(payload_bytes)];
+    let mut writer = RecordWriter::new(&mut records);
+    assert!(writer.stream_start(1, 0));
+    assert!(writer.format_change(1, 0, &wave_format_bytes(&format)));
+    let mut payload = vec![0_u8; payload_bytes];
+    for record in 0..records_count {
+        for frame in 0..record_frames {
+            let timeline_frame = record * record_frames + frame;
+            let time = timeline_frame as f32 / RATE as f32;
+            for channel in 0..CHANNELS {
+                let frequency = 220.0 * (channel as f32 + 1.0);
+                let sample = (std::f32::consts::TAU * frequency * time).sin() * 0.2;
+                let at = (frame * CHANNELS + channel) * 4;
+                payload[at..at + 4].copy_from_slice(&sample.to_le_bytes());
+            }
+        }
+        let qpc = (record as u64 + 1) * record_frames as u64 * QPC_HZ / u64::from(RATE);
+        assert!(writer.data(1, (record * payload_bytes) as u64, qpc, &payload));
+    }
+    let length = writer.len();
+    let mut dump = dump_header_bytes(QPC_HZ);
     dump.extend_from_slice(&records[..length]);
     std::fs::write(path, dump).unwrap();
 }
@@ -538,6 +581,44 @@ fn render_is_deterministic_and_inspect_still_works() {
     assert!(inspected.status.success());
     let summary: Value = serde_json::from_slice(&inspected.stdout).unwrap();
     assert!(summary["epochs"]["0:5"].as_str().unwrap().contains("Pcm"));
+}
+
+#[test]
+fn one_ms_pcm71_records_render_exactly_the_same_samples_as_ten_ms_records() {
+    let temp = TempDir::new();
+    write_ir(&temp.0.join("FL.wav"));
+    write_ir(&temp.0.join("FR.wav"));
+    let profile = temp.0.join("profile.toml");
+    write_profile(&profile);
+    let ten_ms_dump = temp.0.join("pcm71.ssrdump");
+    let one_ms_dump = temp.0.join("pcm71-1ms.ssrdump");
+    let ten_ms_output = temp.0.join("pcm71.wav");
+    let one_ms_output = temp.0.join("pcm71-1ms.wav");
+    write_pcm71_dump(&ten_ms_dump, 480);
+    write_pcm71_dump(&one_ms_dump, 48);
+
+    for (dump, output) in [
+        (&ten_ms_dump, &ten_ms_output),
+        (&one_ms_dump, &one_ms_output),
+    ] {
+        let result = Command::new(env!("CARGO_BIN_EXE_ssr-replay"))
+            .arg("render")
+            .arg(dump)
+            .args(["--profile"])
+            .arg(&profile)
+            .args(["--out"])
+            .arg(output)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}: {}",
+            dump.display(),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+
+    assert_eq!(wav_samples(&one_ms_output), wav_samples(&ten_ms_output));
 }
 
 #[test]

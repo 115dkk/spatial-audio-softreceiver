@@ -562,6 +562,48 @@ jobs:
           fi
           exit $status
 
+      # Our side's latency (ADR 0044): source QPC to the handoff into the
+      # device buffer, without the device's own buffer. pcm71-1ms has the
+      # driver's 1 ms records, so the 10 ms the engine waits to fill a block
+      # counts as it does behind the driver. tools/ci/latency_bench_check.py
+      # fails a run whose handoff p50 is more than 10 ms above the value the
+      # code predicts for its period, and notes one that is more than 2 ms off.
+      - name: Latency benchmark (our side, exclusive at 10 and 20 ms; tools/ci/latency_bench_check.py)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          fx="$RUNNER_TEMP/fx"
+          out="$RUNNER_TEMP/latency-bench"
+          mkdir -p "$out"
+          status=0
+          {
+            echo "## Latency benchmark (${{ matrix.os }})"
+            echo
+            echo "pcm71-1ms through the headphone profile, exclusive, 60 s each. Handoff is our side (source to the device buffer); device is the rest up to playback."
+            echo
+            echo "| run | period | handoff p50 / p99 | expected | limit | device p50 | total p50 | verdict |"
+            echo "| --- | --- | --- | --- | --- | --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for period in 10 20; do
+            name="exclusive-${period}ms"
+            target/release/ssr-live.exe play --from-dump "$fx/pcm71-1ms.ssrdump" --loop \
+              --profile "$fx/profile.toml" --output "VB-Audio Virtual Cable" \
+              --period-ms "$period" --seconds 60 \
+              --report "$out/$name.json" > "$out/$name.log" 2>&1
+            code=$?
+            tail -n 5 "$out/$name.log"
+            if [ "$code" != 0 ]; then
+              echo "::error::ssr-live ($name) exited $code"
+              echo "| $name | $period ms | | | | | | ssr-live exited $code |" >> "$GITHUB_STEP_SUMMARY"
+              status=1
+              continue
+            fi
+            python tools/ci/latency_bench_check.py "$out/$name.json" \
+              --summary "$GITHUB_STEP_SUMMARY" --name "$name" || status=1
+          done
+          exit $status
+
       - name: Soaks (exclusive 5 min, exclusive at 10 ms 2 min, shared 2 min, DD+ 2 min, exclusive under CPU load 2 min, under full page heap 1 min)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: pwsh
@@ -732,6 +774,7 @@ jobs:
             ${{ runner.temp }}/soak-*.log
             ${{ runner.temp }}/restart-*.json
             ${{ runner.temp }}/app-capture
+            ${{ runner.temp }}/latency-bench
             ${{ runner.temp }}/dumps
             ${{ runner.temp }}/asio/*.json
             ${{ runner.temp }}/asio/*.log

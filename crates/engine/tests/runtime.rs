@@ -715,6 +715,7 @@ struct SinkState {
     restart_every: AtomicU64,
     restart_below_period_frames: AtomicU64,
     restart_limit_per_sink: AtomicU64,
+    handoff_before_playback_frames: AtomicU64,
 }
 
 impl SinkState {
@@ -751,6 +752,7 @@ impl SinkState {
             restart_every: AtomicU64::new(0),
             restart_below_period_frames: AtomicU64::new(0),
             restart_limit_per_sink: AtomicU64::new(u64::MAX),
+            handoff_before_playback_frames: AtomicU64::new(u64::MAX),
         })
     }
 }
@@ -788,6 +790,7 @@ impl OutputOpener for TestOpener {
             buffer: vec![0.0; format.period_frames * usize::from(format.channels)],
             periods: 0,
             restarts: 0,
+            handoff_qpc: None,
         })
     }
 
@@ -817,6 +820,7 @@ struct TestSink {
     buffer: Vec<f32>,
     periods: u64,
     restarts: u64,
+    handoff_qpc: Option<u64>,
 }
 
 impl OutputSink for TestSink {
@@ -891,7 +895,17 @@ impl OutputSink for TestSink {
         if self.state.lockstep.is_none() {
             std::thread::yield_now();
         }
-        Ok(playback_qpc + self.state.delay_frames)
+        let playback_qpc = playback_qpc.saturating_add(self.state.delay_frames);
+        let before = self
+            .state
+            .handoff_before_playback_frames
+            .load(Ordering::Acquire);
+        self.handoff_qpc = (before != u64::MAX).then(|| playback_qpc.saturating_sub(before));
+        Ok(playback_qpc)
+    }
+
+    fn handoff_qpc(&self) -> Option<u64> {
+        self.handoff_qpc
     }
 
     fn restarts(&self) -> u64 {
@@ -2076,6 +2090,74 @@ fn latency_uses_playback_qpc_and_source_qpc() {
         "latency was {:?}",
         status.latency
     );
+    assert_eq!(status.handoff_latency, Default::default());
+    assert_eq!(status.device_latency, Default::default());
+}
+
+#[test]
+fn handoff_and_device_latency_sum_to_total_within_one_qpc_tick() {
+    let delay = 960_u64;
+    let lockstep = Arc::new(Lockstep::default());
+    let state = SinkState::lockstep(delay, Arc::clone(&lockstep));
+    state
+        .handoff_before_playback_frames
+        .store(BLOCK as u64, Ordering::Release);
+    let mut records = vec![format_record(RATE)];
+    for block in 0..20_u64 {
+        records.push(data_record(block * BLOCK as u64, 0.25));
+    }
+    let capture = RecordsCapture {
+        records,
+        next: 0,
+        trim_supported: true,
+        trims: None,
+        gate: None,
+        paced_by: None,
+        lockstep: Some(Arc::clone(&lockstep)),
+        stay_open: true,
+    };
+    let engine = start_with(
+        lockstep_config(ClockPreference::Trim, Arc::clone(&lockstep)),
+        capture,
+        opener(Arc::clone(&state), RATE),
+        StartOptions {
+            qpc_frequency: QPC_FREQUENCY,
+            prepared: Some(prepared(RATE)),
+        },
+    )
+    .unwrap();
+    lockstep.step_read(1);
+    for _ in 0..12 {
+        lockstep.step_read(1);
+        lockstep.step_period(1);
+    }
+    let status = engine.status();
+    lockstep.release();
+    drop(engine);
+
+    assert!(status.latency.samples >= 5, "status was {status:?}");
+    assert_eq!(status.handoff_latency.samples, status.latency.samples);
+    assert_eq!(status.device_latency.samples, status.latency.samples);
+    let one_tick_ms = 1_000.0 / QPC_FREQUENCY as f32;
+    for (total, handoff, device) in [
+        (
+            status.latency.p50_ms,
+            status.handoff_latency.p50_ms,
+            status.device_latency.p50_ms,
+        ),
+        (
+            status.latency.p99_ms,
+            status.handoff_latency.p99_ms,
+            status.device_latency.p99_ms,
+        ),
+    ] {
+        assert!(
+            (handoff + device - total).abs() <= one_tick_ms,
+            "handoff {handoff} + device {device} != total {total}: {status:?}"
+        );
+    }
+    assert_eq!(status.device_latency.p50_ms, 10.0);
+    assert_eq!(status.device_latency.p99_ms, 10.0);
 }
 
 #[test]

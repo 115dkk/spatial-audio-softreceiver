@@ -1006,6 +1006,81 @@ impl EndpointShared {
     }
 }
 
+/// A lock-free, single-writer latency sample ring. Each slot publishes its
+/// sequence after its value; `generation` is odd while a reset is in progress.
+#[derive(Debug)]
+struct LatencySamples {
+    generation: AtomicU64,
+    next: AtomicU64,
+    sequences: [AtomicU64; LATENCY_SAMPLES],
+    values: [AtomicU32; LATENCY_SAMPLES],
+}
+
+impl LatencySamples {
+    fn new() -> Self {
+        Self {
+            generation: AtomicU64::new(2),
+            next: AtomicU64::new(0),
+            sequences: std::array::from_fn(|_| AtomicU64::new(0)),
+            values: std::array::from_fn(|_| AtomicU32::new(0)),
+        }
+    }
+
+    fn reset(&self) -> u64 {
+        // Odd generations are an in-progress reset. Clearing the published
+        // length before making the next even generation visible prevents a
+        // status reader from pairing a fresh generation with stale samples.
+        let resetting = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
+        debug_assert_ne!(resetting & 1, 0);
+        self.next.store(0, Ordering::Release);
+        let generation = resetting.wrapping_add(1);
+        self.generation.store(generation, Ordering::Release);
+        generation
+    }
+
+    fn stats(&self) -> LatencyStats {
+        loop {
+            let generation = self.generation.load(Ordering::Acquire);
+            if generation & 1 != 0 {
+                std::hint::spin_loop();
+                continue;
+            }
+            let next = self.next.load(Ordering::Acquire);
+            let len = usize::try_from(next.min(LATENCY_SAMPLES as u64)).unwrap_or(LATENCY_SAMPLES);
+            if len == 0 {
+                if generation == self.generation.load(Ordering::Acquire) {
+                    return LatencyStats::default();
+                }
+                continue;
+            }
+            let start = next.saturating_sub(len as u64);
+            let mut values = Vec::with_capacity(len);
+            let mut complete = true;
+            for sequence in start..next {
+                let index = sequence as usize % LATENCY_SAMPLES;
+                if self.sequences[index].load(Ordering::Acquire) != sequence.wrapping_add(1) {
+                    complete = false;
+                    break;
+                }
+                values.push(f32::from_bits(self.values[index].load(Ordering::Relaxed)));
+                std::sync::atomic::fence(Ordering::Acquire);
+                if self.sequences[index].load(Ordering::Relaxed) != sequence.wrapping_add(1) {
+                    complete = false;
+                    break;
+                }
+            }
+            if complete && generation == self.generation.load(Ordering::Acquire) {
+                values.sort_unstable_by(f32::total_cmp);
+                return LatencyStats {
+                    p50_ms: values[percentile_index(len, 50)],
+                    p99_ms: values[percentile_index(len, 99)],
+                    samples: len as u32,
+                };
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Shared {
     stop: AtomicBool,
@@ -1051,11 +1126,10 @@ struct Shared {
     output_cadence_faults: AtomicU64,
     target_ms_bits: AtomicU32,
     max_target_ms_bits: AtomicU32,
-    latency_generation: AtomicU64,
     latency_reset_requested: AtomicU64,
-    latency_next: AtomicU64,
-    latency_sequences: [AtomicU64; LATENCY_SAMPLES],
-    latency_values: [AtomicU32; LATENCY_SAMPLES],
+    latency: LatencySamples,
+    handoff_latency: LatencySamples,
+    device_latency: LatencySamples,
     lost_bytes: AtomicU64,
     lane_underrun_frames: AtomicU64,
     /// Frames per channel of the largest recent capture-step delivery into
@@ -1424,11 +1498,10 @@ impl Shared {
             output_cadence_faults: AtomicU64::new(0),
             target_ms_bits: AtomicU32::new(10.0_f32.to_bits()),
             max_target_ms_bits: AtomicU32::new(0.0_f32.to_bits()),
-            latency_generation: AtomicU64::new(2),
             latency_reset_requested: AtomicU64::new(0),
-            latency_next: AtomicU64::new(0),
-            latency_sequences: std::array::from_fn(|_| AtomicU64::new(0)),
-            latency_values: std::array::from_fn(|_| AtomicU32::new(0)),
+            latency: LatencySamples::new(),
+            handoff_latency: LatencySamples::new(),
+            device_latency: LatencySamples::new(),
             lost_bytes: AtomicU64::new(0),
             lane_underrun_frames: AtomicU64::new(0),
             arrival_frames: AtomicU64::new(0),
@@ -1547,64 +1620,6 @@ impl Shared {
 
     fn request_latency_reset(&self) {
         self.latency_reset_requested.fetch_add(1, Ordering::Release);
-    }
-
-    fn reset_latency(&self) -> u64 {
-        // Odd generations are an in-progress reset. Clearing the published
-        // length before making the next even generation visible prevents a
-        // status reader from pairing a fresh generation with stale samples.
-        let resetting = self.latency_generation.fetch_add(1, Ordering::AcqRel) + 1;
-        debug_assert_ne!(resetting & 1, 0);
-        self.latency_next.store(0, Ordering::Release);
-        let generation = resetting.wrapping_add(1);
-        self.latency_generation.store(generation, Ordering::Release);
-        generation
-    }
-
-    fn latency(&self) -> LatencyStats {
-        loop {
-            let generation = self.latency_generation.load(Ordering::Acquire);
-            if generation & 1 != 0 {
-                std::hint::spin_loop();
-                continue;
-            }
-            let next = self.latency_next.load(Ordering::Acquire);
-            let len = usize::try_from(next.min(LATENCY_SAMPLES as u64)).unwrap_or(LATENCY_SAMPLES);
-            if len == 0 {
-                if generation == self.latency_generation.load(Ordering::Acquire) {
-                    return LatencyStats::default();
-                }
-                continue;
-            }
-            let start = next.saturating_sub(len as u64);
-            let mut values = Vec::with_capacity(len);
-            let mut complete = true;
-            for sequence in start..next {
-                let index = sequence as usize % LATENCY_SAMPLES;
-                if self.latency_sequences[index].load(Ordering::Acquire) != sequence.wrapping_add(1)
-                {
-                    complete = false;
-                    break;
-                }
-                values.push(f32::from_bits(
-                    self.latency_values[index].load(Ordering::Relaxed),
-                ));
-                std::sync::atomic::fence(Ordering::Acquire);
-                if self.latency_sequences[index].load(Ordering::Relaxed) != sequence.wrapping_add(1)
-                {
-                    complete = false;
-                    break;
-                }
-            }
-            if complete && generation == self.latency_generation.load(Ordering::Acquire) {
-                values.sort_unstable_by(f32::total_cmp);
-                return LatencyStats {
-                    p50_ms: values[percentile_index(len, 50)],
-                    p99_ms: values[percentile_index(len, 99)],
-                    samples: len as u32,
-                };
-            }
-        }
     }
 
     fn publish_format(
@@ -1733,7 +1748,9 @@ impl Shared {
             endpoints: std::array::from_fn(|endpoint| self.read_endpoint(endpoint)),
             unattributed_chain_errors: self.read_unattributed_chain_errors(),
             skipped_records: self.skipped_records.load(Ordering::Acquire),
-            latency: self.latency(),
+            latency: self.latency.stats(),
+            handoff_latency: self.handoff_latency.stats(),
+            device_latency: self.device_latency.stats(),
             ring_level_ms: f32::from_bits(self.ring_level_bits.load(Ordering::Acquire)),
             underruns: self.underruns.load(Ordering::Acquire),
             last_underrun: self.last_underrun(),
@@ -2468,6 +2485,7 @@ fn output_rt_step<S: OutputSink>(
         Ok(qpc) => qpc,
         Err(error) => return OutputStep::Lost(error),
     };
+    let handoff_qpc = sink.handoff_qpc();
     shared.output_periods.fetch_add(1, Ordering::Relaxed);
     let restarts = sink.restarts();
     if restarts > sink_baseline.restarts {
@@ -2487,7 +2505,7 @@ fn output_rt_step<S: OutputSink>(
             .fetch_add(late_resyncs - sink_baseline.late_resyncs, Ordering::Relaxed);
         sink_baseline.late_resyncs = late_resyncs;
     }
-    output.finish_period(qpc);
+    output.finish_period(qpc, handoff_qpc);
     if let Some(ratio) =
         output
             .cadence
@@ -3087,25 +3105,66 @@ fn output_thread_main<O: OutputOpener>(
     }
 }
 
-struct LatencyWriter {
+struct LatencySampleWriter {
     generation: u64,
-    reset_request: u64,
     next: u64,
+}
+
+impl LatencySampleWriter {
+    fn new(samples: &LatencySamples) -> Self {
+        Self {
+            generation: samples.generation.load(Ordering::Acquire),
+            next: 0,
+        }
+    }
+
+    fn reset(&mut self, samples: &LatencySamples) {
+        self.generation = samples.reset();
+        self.next = 0;
+    }
+
+    fn push(&mut self, value: f32, samples: &LatencySamples) {
+        if !value.is_finite() {
+            return;
+        }
+        let generation = samples.generation.load(Ordering::Acquire);
+        if generation != self.generation {
+            self.generation = generation;
+            self.next = 0;
+        }
+        let sequence = self.next;
+        let index = sequence as usize % LATENCY_SAMPLES;
+        samples.sequences[index].store(0, Ordering::Relaxed);
+        std::sync::atomic::fence(Ordering::Release);
+        samples.values[index].store(value.to_bits(), Ordering::Relaxed);
+        samples.sequences[index].store(sequence.wrapping_add(1), Ordering::Release);
+        self.next = sequence.wrapping_add(1);
+        samples.next.store(self.next, Ordering::Release);
+    }
+}
+
+struct LatencyWriter {
+    reset_request: u64,
+    total: LatencySampleWriter,
+    handoff: LatencySampleWriter,
+    device: LatencySampleWriter,
 }
 
 impl LatencyWriter {
     fn new(shared: &Shared) -> Self {
         Self {
-            generation: shared.latency_generation.load(Ordering::Acquire),
             reset_request: shared.latency_reset_requested.load(Ordering::Acquire),
-            next: 0,
+            total: LatencySampleWriter::new(&shared.latency),
+            handoff: LatencySampleWriter::new(&shared.handoff_latency),
+            device: LatencySampleWriter::new(&shared.device_latency),
         }
     }
 
     fn reset(&mut self, shared: &Shared) {
-        self.generation = shared.reset_latency();
+        self.total.reset(&shared.latency);
+        self.handoff.reset(&shared.handoff_latency);
+        self.device.reset(&shared.device_latency);
         self.reset_request = shared.latency_reset_requested.load(Ordering::Acquire);
-        self.next = 0;
     }
 
     fn apply_requested_reset(&mut self, shared: &Shared) {
@@ -3116,23 +3175,14 @@ impl LatencyWriter {
         }
     }
 
-    fn push(&mut self, value: f32, shared: &Shared) {
-        if !value.is_finite() {
-            return;
+    fn push(&mut self, total: f32, handoff: Option<f32>, device: Option<f32>, shared: &Shared) {
+        self.total.push(total, &shared.latency);
+        if let Some(handoff) = handoff {
+            self.handoff.push(handoff, &shared.handoff_latency);
         }
-        let generation = shared.latency_generation.load(Ordering::Acquire);
-        if generation != self.generation {
-            self.generation = generation;
-            self.next = 0;
+        if let Some(device) = device {
+            self.device.push(device, &shared.device_latency);
         }
-        let sequence = self.next;
-        let index = sequence as usize % LATENCY_SAMPLES;
-        shared.latency_sequences[index].store(0, Ordering::Relaxed);
-        std::sync::atomic::fence(Ordering::Release);
-        shared.latency_values[index].store(value.to_bits(), Ordering::Relaxed);
-        shared.latency_sequences[index].store(sequence.wrapping_add(1), Ordering::Release);
-        self.next = sequence.wrapping_add(1);
-        shared.latency_next.store(self.next, Ordering::Release);
     }
 }
 
