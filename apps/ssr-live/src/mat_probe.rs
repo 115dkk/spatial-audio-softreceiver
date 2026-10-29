@@ -35,11 +35,7 @@ pub fn run(endpoint: u16, seconds: f64, out: &Path, truth_path: &Path) -> Result
         OpenError::Endpoint(detail) => detail,
     })?;
     let info = client.info.clone();
-    let count = info.static_mask.count_ones() as usize + info.max_dynamic as usize;
-    if count == 0 || count > probe::MAX_OBJECTS {
-        return Err(ssr_i18n::live::mat_invalid(language).into());
-    }
-    let mut objects = Vec::with_capacity(count);
+    let mut objects = Vec::new();
     for p in &info.positions {
         if info.static_mask & p.object_type != 0 {
             objects.push(ProbeObject {
@@ -57,6 +53,12 @@ pub fn run(endpoint: u16, seconds: f64, out: &Path, truth_path: &Path) -> Result
             seed: (objects.len() + 1) as u16,
             static_position: None,
         });
+    }
+    // Count what is driven, not the mask: a mask bit with no known name is never
+    // activated, and every event must hold exactly one state per truth object.
+    let count = objects.len();
+    if count == 0 || count > probe::MAX_OBJECTS {
+        return Err(ssr_i18n::live::mat_invalid(language).into());
     }
     let mut truth = Truth {
         version: 1,
@@ -172,7 +174,9 @@ pub fn run(endpoint: u16, seconds: f64, out: &Path, truth_path: &Path) -> Result
     });
     // All event/metadata storage is prepared before entering the rendering loop.
     // The API's minimum update can be shorter than 10 ms; provision 1 ms slots.
-    let capacity = ((seconds * 1000.0).ceil() as usize + 100).min(1_000_000 / count);
+    // The state cap (about 128 MB) still leaves 147 objects the 76.5 s that full
+    // coverage asks for at 3 ms updates; Windows 11 updated every 10 ms here.
+    let capacity = ((seconds * 1000.0).ceil() as usize + 100).min(4_000_000 / count);
     let mut events: Vec<_> = (0..capacity)
         .map(|_| ProbeEvent {
             qpc: 0,
@@ -258,7 +262,10 @@ pub fn run(endpoint: u16, seconds: f64, out: &Path, truth_path: &Path) -> Result
     truth.events = events;
     truth.completed = render.is_ok() && captured.is_ok();
     truth.error = render.as_ref().err().or(captured.as_ref().err()).cloned();
-    serde_json::to_writer_pretty(truth_file, &truth).map_err(|e| e.to_string())?;
+    // Compact: one state per object and update makes the pretty form hundreds of MB.
+    let mut writer = std::io::BufWriter::new(truth_file);
+    serde_json::to_writer(&mut writer, &truth).map_err(|e| e.to_string())?;
+    std::io::Write::flush(&mut writer).map_err(|e| e.to_string())?;
     render?;
     let (bursts, formats, lost) = captured?;
     println!(

@@ -90,6 +90,10 @@ impl Client {
             "BottomBackLeft",
             "BottomBackRight",
             "BackCenter",
+            // 1 << 18 and 1 << 19 in spatialaudioclient.h; the windows crate has no
+            // names for them yet, and Windows 11 reports both in the native mask.
+            "StereoLeft",
+            "StereoRight",
         ];
         let mut positions = Vec::new();
         for (index, kind) in names.into_iter().enumerate() {
