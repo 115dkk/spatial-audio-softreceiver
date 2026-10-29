@@ -16,7 +16,9 @@ use std::sync::Arc;
 
 use brir::PreparedBrir;
 use convolver::{Binauralizer, MonoConvolver};
-use decode::{DecodeConfig, DecodeError, Decoders, DeferredInput, MAX_SCENE_FRAMES, Route};
+use decode::{
+    DecodeConfig, DecodeError, Decoders, DeferredInput, MAX_SCENE_FRAMES, MatPart, Route,
+};
 use render::{PanGeometry, Ramp};
 use speakers::{BiquadCoefficients, CrossoverCoefficients, PreparedSpeakers};
 use ssr_abi::{
@@ -83,6 +85,8 @@ pub struct ChainConfig {
     pub endpoints: EndpointFilter,
     /// Time retained after an interval ends, in 48 kHz timeline frames.
     pub arrival_slack_frames: u64,
+    /// Decode MAT-carried TrueHD at R-MAT instead of waiting for the full burst.
+    pub mat_early_decode: bool,
 }
 
 impl Default for ChainConfig {
@@ -92,6 +96,7 @@ impl Default for ChainConfig {
             direct: decode::direct::DirectLayouts::default(),
             endpoints: EndpointFilter::All,
             arrival_slack_frames: 96,
+            mat_early_decode: true,
         }
     }
 }
@@ -974,6 +979,7 @@ struct Front {
     transport_remainder: u128,
     block_align: usize,
     deframer_bytes: u64,
+    mat_first_submitted: bool,
     deferred: DeferredLane,
 }
 
@@ -1178,7 +1184,7 @@ fn submit_deferred_burst(
             bitstream::DataType::Mat,
             "a non-TrueHD burst in a raw TrueHD epoch",
         ),
-        DeferredInput::TrueHdMat => (bitstream::DataType::Mat, "a non-MAT burst in a MAT epoch"),
+        DeferredInput::TrueHdMat(_) => (bitstream::DataType::Mat, "a non-MAT burst in a MAT epoch"),
     };
     let submitted = if burst.data_type == data_type {
         queue.submit_burst(
@@ -1373,6 +1379,7 @@ impl Front {
             transport_remainder: 0,
             block_align: 1,
             deframer_bytes: 0,
+            mat_first_submitted: false,
             deferred: DeferredLane::default(),
         }
     }
@@ -1384,6 +1391,7 @@ impl Front {
         self.decoders.reset();
         self.transport_remainder = 0;
         self.deframer_bytes = 0;
+        self.mat_first_submitted = false;
         self.deferred.restart();
     }
 
@@ -2868,6 +2876,7 @@ impl Chain {
         out: &mut dyn FnMut(ChainEvent<'_>),
     ) {
         let frequency = self.qpc_frequency;
+        let mat_early_decode = self.config.mat_early_decode;
         let mut decoding = self.decoding_lanes();
         let Self {
             fronts,
@@ -2897,13 +2906,62 @@ impl Chain {
             let chunk_end = front.deframer_bytes.saturating_add(chunk.len() as u64);
             let transport_frames = front.advance_bytes(chunk.len());
             let mut transport_advanced = false;
-            let (deframer, decoders, lane) = (
+            let (deframer, decoders, lane, mat_first_submitted) = (
                 &mut front.deframer,
                 &mut front.decoders,
                 &mut front.deferred,
+                &mut front.mat_first_submitted,
             );
             let mut reported_error = None;
-            deframer.push(chunk, &mut |burst| {
+            let early_mat = mat_early_decode
+                && matches!(
+                    decoders.deferred(),
+                    Some(DeferredInput::TrueHdMat(MatPart::Whole))
+                );
+            let mut handle = |event: bitstream::DeframeEvent<'_>| {
+                // Both parts of an early MAT burst keep its Pa offset in
+                // `start`, so their scenes carry the burst's arrival time as a
+                // whole burst's do (ADR 0045). The latency then drops by what
+                // early decoding saves and no more.
+                let (input_override, burst) = match event {
+                    bitstream::DeframeEvent::Partial(prefix) => {
+                        if !early_mat || *mat_first_submitted {
+                            return;
+                        }
+                        // A first part that does not validate is left to the
+                        // completed burst, which then goes whole and reports
+                        // the error once.
+                        let Ok(content) = decode::mat_frame::first_content(prefix.payload) else {
+                            return;
+                        };
+                        *mat_first_submitted = true;
+                        (
+                            Some(DeferredInput::TrueHdMat(MatPart::First)),
+                            bitstream::Burst {
+                                payload: content,
+                                ..prefix
+                            },
+                        )
+                    }
+                    bitstream::DeframeEvent::Burst(complete) => {
+                        let rest = std::mem::replace(mat_first_submitted, false)
+                            .then(|| decode::mat_frame::rest_content(complete.payload).ok())
+                            .flatten();
+                        match rest {
+                            Some(content) => (
+                                Some(DeferredInput::TrueHdMat(MatPart::Rest)),
+                                bitstream::Burst {
+                                    payload: content,
+                                    ..complete
+                                },
+                            ),
+                            // A completion that does not validate goes whole:
+                            // the decode thread reports it and resets the
+                            // front, as for any MAT error.
+                            None => (None, complete),
+                        }
+                    }
+                };
                 // Burst.start is Pa's byte offset since the deframer's reset.
                 // Re-anchor to the completing chunk's observed DMA end, not a
                 // once-per-stream origin: later records observe clock trim and
@@ -2927,7 +2985,8 @@ impl Chain {
                         transport_advanced = true;
                     }
                 };
-                let error = if let Some(input) = decoders.deferred() {
+                let deferred = input_override.or_else(|| decoders.deferred());
+                let error = if let Some(input) = deferred {
                     submit_deferred_burst(
                         decoders,
                         lane,
@@ -2988,7 +3047,19 @@ impl Chain {
                     transport_advanced = true;
                 }
                 mixer.lane_discontinuity(endpoint, 0);
-            });
+            };
+            if early_mat {
+                deframer.push_with_partial(
+                    chunk,
+                    bitstream::DataType::Mat,
+                    decode::mat_frame::FIRST_READY_BYTES,
+                    &mut handle,
+                );
+            } else {
+                deframer.push(chunk, &mut |burst| {
+                    handle(bitstream::DeframeEvent::Burst(burst))
+                });
+            }
             fronts[index].deframer_bytes = fronts[index]
                 .deframer_bytes
                 .saturating_add(chunk.len() as u64);

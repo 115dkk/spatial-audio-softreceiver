@@ -263,6 +263,37 @@ fn partial_mat_exposes_only_the_received_codec_order_prefix() {
 }
 
 #[test]
+fn partial_callback_fires_once_at_the_requested_codec_prefix() {
+    let bytes = payload(61_424);
+    let mut stream = Vec::new();
+    frame_burst(DataType::Mat, &bytes, 61_440, &mut stream);
+    for cut in [30_727, 30_728, 40_000, stream.len()] {
+        let mut deframer = Deframer::new();
+        let mut partials = 0;
+        let mut bursts = 0;
+        deframer.push_with_partial(
+            &stream[..cut],
+            DataType::Mat,
+            30_720,
+            &mut |event| match event {
+                DeframeEvent::Partial(prefix) => {
+                    partials += 1;
+                    assert_eq!(prefix.data_type, DataType::Mat);
+                    assert_eq!(prefix.start, 0);
+                    assert_eq!(prefix.payload, &bytes[..30_720]);
+                }
+                DeframeEvent::Burst(burst) => {
+                    bursts += 1;
+                    assert_eq!(burst.payload, bytes);
+                }
+            },
+        );
+        assert_eq!(partials, usize::from(cut >= 30_728), "cut {cut}");
+        assert_eq!(bursts, usize::from(cut == stream.len()), "cut {cut}");
+    }
+}
+
+#[test]
 fn reset_mid_burst_forgets_payload_sync_offsets_and_stats() {
     let mut stream = Vec::new();
     frame_burst(DataType::Mat, &[1, 2, 3, 4, 5], 61_440, &mut stream);

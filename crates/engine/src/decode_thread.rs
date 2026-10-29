@@ -349,7 +349,7 @@ impl DecodeWorker {
                             codec: match input {
                                 DeferredInput::Ddp => "E-AC-3",
                                 DeferredInput::TrueHdRaw => "TrueHD",
-                                DeferredInput::TrueHdMat => "TrueHD in MAT 2.x",
+                                DeferredInput::TrueHdMat(_) => "TrueHD in MAT 2.x",
                             },
                             detail: "the decoder panicked on this access unit",
                         })

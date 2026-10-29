@@ -321,6 +321,24 @@ tests = [
 note = "MLP inside MAT decodes through the TrueHD adapter; the uncompressed MAT PCM layout remains unknown and awaits clean-room black-box dumps. Burst payload markers are validated in codec byte order before extraction."
 
 [[feature]]
+id = "decode.mat_reference_point"
+kind = "pipeline"
+milestone = "M1"
+status = "implemented"
+tests = [
+  "bitstream::partial_callback_fires_once_at_the_requested_codec_prefix",
+  "decode::mat_first_and_rest_match_whole_burst_pcm_and_keep_delivery_qpcs",
+  "decode::access_unit_straddling_mat_reference_decodes_once_after_rest",
+  "engine::mat_reference_point_emits_before_completion_for_exact_and_crossing_records",
+  "engine::disabling_mat_reference_point_keeps_the_whole_burst_path",
+  "engine::mat_cut_after_reference_keeps_early_samples_on_stream_stop",
+  "engine::early_mat_parts_keep_the_burst_arrival_time",
+  "engine::truehd_mat_burst_placement_does_not_allocate_on_the_capture_path",
+  "ssr-replay::mat_render_samples_are_identical_with_reference_decode_on_and_off",
+]
+note = "TrueHD carried in MAT is handed to the decode thread as ordered first/rest jobs at the IEC 61937-9 R-MAT marker (ADR 0045). Both jobs carry the burst's Pa arrival time, so the latency drops by the 10 ms saved and no more. The default-on ChainConfig switch retains the whole-burst path for comparison. MAT PCM remains refused."
+
+[[feature]]
 id = "decode.ddp"
 kind = "pipeline"
 milestone = "M1"

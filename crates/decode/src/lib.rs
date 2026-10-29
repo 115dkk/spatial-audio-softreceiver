@@ -125,20 +125,32 @@ pub enum DeferredCodec {
     TrueHd,
 }
 
-/// The selected deferred input syntax. This travels with each job so MAT marker
-/// extraction runs on the decode thread rather than the capture thread.
+/// Which part of an IEC 61937-9 MAT payload a decode job carries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MatPart {
+    /// The complete MAT payload (early decoding disabled).
+    Whole,
+    /// The first content span, available when the middle marker arrives.
+    First,
+    /// The second content span, available when the burst completes.
+    Rest,
+}
+
+/// The selected deferred input syntax. MAT first/rest jobs carry marker-free
+/// content spans validated by the capture-side framing adapter; whole jobs
+/// retain the complete payload for the compatibility path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeferredInput {
     Ddp,
     TrueHdRaw,
-    TrueHdMat,
+    TrueHdMat(MatPart),
 }
 
 impl DeferredInput {
     pub fn codec(self) -> DeferredCodec {
         match self {
             Self::Ddp => DeferredCodec::Ddp,
-            Self::TrueHdRaw | Self::TrueHdMat => DeferredCodec::TrueHd,
+            Self::TrueHdRaw | Self::TrueHdMat(_) => DeferredCodec::TrueHd,
         }
     }
 }
@@ -253,7 +265,7 @@ impl Decoders {
         match self.active {
             Active::Ddp => Some(DeferredInput::Ddp),
             Active::TrueHdRaw => Some(DeferredInput::TrueHdRaw),
-            Active::TrueHdMat => Some(DeferredInput::TrueHdMat),
+            Active::TrueHdMat => Some(DeferredInput::TrueHdMat(MatPart::Whole)),
             Active::None | Active::Pcm => None,
         }
     }
@@ -333,6 +345,35 @@ pub struct FrontDecoders {
     ddp: ddp::DdpFront,
     truehd: truehd::TrueHdFront,
     mat_storage: Box<[u8; mat_frame::MAT_CONTENT_BYTES]>,
+    mat_sync: MatSync,
+}
+
+#[derive(Debug, Default)]
+struct MatSync {
+    word: [u8; 4],
+    received: usize,
+    found: bool,
+}
+
+impl MatSync {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    fn push(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            if self.received < self.word.len() {
+                self.word[self.received] = byte;
+                self.received += 1;
+            } else {
+                self.word.copy_within(1.., 0);
+                self.word[3] = byte;
+            }
+            if self.received == self.word.len() && self.word == [0xf8, 0x72, 0x6f, 0xba] {
+                self.found = true;
+            }
+        }
+    }
 }
 
 impl Default for FrontDecoders {
@@ -347,6 +388,7 @@ impl FrontDecoders {
             ddp: ddp::DdpFront::new(),
             truehd: truehd::TrueHdFront::new(),
             mat_storage: Box::new([0; mat_frame::MAT_CONTENT_BYTES]),
+            mat_sync: MatSync::default(),
         }
     }
 
@@ -354,6 +396,7 @@ impl FrontDecoders {
     pub fn reset(&mut self) {
         self.ddp.reset();
         self.truehd.reset();
+        self.mat_sync.reset();
     }
 
     /// Decodes one burst payload of `codec` into `into`. On error the codec's
@@ -370,7 +413,7 @@ impl FrontDecoders {
         let result = match input {
             DeferredInput::Ddp => self.ddp.decode(payload, &mut into.ddp),
             DeferredInput::TrueHdRaw => self.truehd.decode(payload, &mut into.truehd),
-            DeferredInput::TrueHdMat => {
+            DeferredInput::TrueHdMat(MatPart::Whole) => {
                 let burst = Burst {
                     data_type: bitstream::DataType::Mat,
                     pc: 22,
@@ -381,10 +424,20 @@ impl FrontDecoders {
                     mat_frame::MatPayload::TrueHd(content) => {
                         self.truehd.decode(content, &mut into.truehd)
                     }
-                    mat_frame::MatPayload::Unknown(_) => Err(DecodeError::Unsupported {
-                        codec: "MAT 2.x",
-                        detail: "PCM inside MAT is not decoded yet",
-                    }),
+                    mat_frame::MatPayload::Unknown(_) => Err(mat_pcm_unsupported()),
+                }
+            }
+            DeferredInput::TrueHdMat(MatPart::First) => {
+                self.mat_sync.reset();
+                self.mat_sync.push(payload);
+                self.truehd.decode(payload, &mut into.truehd)
+            }
+            DeferredInput::TrueHdMat(MatPart::Rest) => {
+                self.mat_sync.push(payload);
+                if self.mat_sync.found {
+                    self.truehd.decode(payload, &mut into.truehd)
+                } else {
+                    Err(mat_pcm_unsupported())
                 }
             }
         };
@@ -400,6 +453,13 @@ pub struct Decoded {
     codec: Option<DeferredCodec>,
     ddp: ddp::DdpDecoded,
     truehd: truehd::TrueHdDecoded,
+}
+
+fn mat_pcm_unsupported() -> DecodeError {
+    DecodeError::Unsupported {
+        codec: "MAT 2.x",
+        detail: "PCM inside MAT is not decoded yet",
+    }
 }
 
 impl Decoded {

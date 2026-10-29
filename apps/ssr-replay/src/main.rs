@@ -650,7 +650,30 @@ fn render_dump_logged(
     endpoint: EndpointArg,
     arrival_slack_ms: f64,
     overrides: &[engine::DirectLayoutOverride],
+    scene_log: Option<scene_log::SceneLogWriter>,
+) -> Result<RenderReport, String> {
+    render_dump_logged_with_mat_early(
+        bytes,
+        profile_path,
+        output_path,
+        endpoint,
+        arrival_slack_ms,
+        overrides,
+        scene_log,
+        true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_dump_logged_with_mat_early(
+    bytes: &[u8],
+    profile_path: &Path,
+    output_path: &Path,
+    endpoint: EndpointArg,
+    arrival_slack_ms: f64,
+    overrides: &[engine::DirectLayoutOverride],
     mut scene_log: Option<scene_log::SceneLogWriter>,
+    mat_early_decode: bool,
 ) -> Result<RenderReport, String> {
     let (header, stream) = split_dump(bytes).map_err(|error| error.to_string())?;
     if !arrival_slack_ms.is_finite() || arrival_slack_ms < 0.0 {
@@ -674,6 +697,7 @@ fn render_dump_logged(
         direct,
         endpoints: endpoint.filter(),
         arrival_slack_frames: arrival_slack_frames.round() as u64,
+        mat_early_decode,
         ..ChainConfig::default()
     };
     let mut chain = Chain::with_qpc_frequency(config, header.qpc_frequency);
@@ -1031,6 +1055,103 @@ mod tests {
     #[test]
     fn english_help_is_the_derived_help_and_korean_help_is_complete() {
         ssr_i18n::clap_help::verify(Cli::command(), localized_command);
+    }
+
+    #[test]
+    fn mat_render_samples_are_identical_with_reference_decode_on_and_off() {
+        use ssr_types::{BitstreamCodec, BitstreamFormat};
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!(
+            "ssr-replay-mat-reference-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&temp).unwrap();
+        for name in ["FL.wav", "FR.wav"] {
+            let mut writer = hound::WavWriter::create(
+                temp.join(name),
+                hound::WavSpec {
+                    channels: 2,
+                    sample_rate: 48_000,
+                    bits_per_sample: 32,
+                    sample_format: hound::SampleFormat::Float,
+                },
+            )
+            .unwrap();
+            writer.write_sample(1.0_f32).unwrap();
+            writer.write_sample(1.0_f32).unwrap();
+            writer.finalize().unwrap();
+        }
+        let profile = temp.join("profile.toml");
+        std::fs::write(
+            &profile,
+            r#"name = "mat-reference"
+gain_db = 0
+limiter_ceiling_dbfs = 0
+
+[brir]
+directions = [
+  { name = "FL", azimuth = 30, elevation = 0, file = "FL.wav" },
+  { name = "FR", azimuth = -30, elevation = 0, file = "FR.wav" },
+]
+"#,
+        )
+        .unwrap();
+
+        let mat =
+            include_bytes!("../../../crates/decode/tests/fixtures/truehd/tones-5.1-48k.spdif");
+        let format = SourceFormat::Bitstream(BitstreamFormat {
+            codec: BitstreamCodec::Mat21,
+            container_rate: 192_000,
+            container_channels: 8,
+            encoded_rate: 48_000,
+            encoded_channels: 6,
+        });
+        let mut records = vec![0; 200_000];
+        let mut writer = RecordWriter::new(&mut records);
+        assert!(writer.format_change(1, 0, &wave_format_bytes(&format)));
+        for (index, period) in mat.chunks(61_440).enumerate() {
+            assert!(writer.data(
+                1,
+                (index * 61_440) as u64,
+                (index as u64 + 1) * 200_000,
+                period,
+            ));
+        }
+        let length = writer.len();
+        let mut dump = dump_header_bytes(10_000_000);
+        dump.extend_from_slice(&records[..length]);
+
+        let early = temp.join("early.wav");
+        let whole = temp.join("whole.wav");
+        let early_report = render_dump_logged_with_mat_early(
+            &dump,
+            &profile,
+            &early,
+            EndpointArg::All,
+            2.0,
+            &[],
+            None,
+            true,
+        )
+        .unwrap();
+        let whole_report = render_dump_logged_with_mat_early(
+            &dump,
+            &profile,
+            &whole,
+            EndpointArg::All,
+            2.0,
+            &[],
+            None,
+            false,
+        )
+        .unwrap();
+        assert_eq!(early_report.output_sha256, whole_report.output_sha256);
+        assert_eq!(std::fs::read(early).unwrap(), std::fs::read(whole).unwrap());
+        std::fs::remove_dir_all(temp).unwrap();
     }
 
     #[test]
