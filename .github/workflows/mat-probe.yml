@@ -33,6 +33,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  # Line numbers in cdb's stacks when ssr-live ends without a word.
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
 
 jobs:
   build:
@@ -91,6 +93,16 @@ jobs:
           $json
           Add-Content $env:GITHUB_STEP_SUMMARY "## MAT probe (${{ matrix.os }})`n`nBefore Dolby Access: ``$json```n"
 
+      # Whether choosing a format works at all here: Windows Sonic ships
+      # with Windows, so a refusal of it is about the runner, not Dolby.
+      - name: Choose Windows Sonic (the built-in format) as a control
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: |
+          $json = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/ci/spatial-format.ps1 -Endpoint 0 -Set WindowsSonic
+          $json
+          Add-Content $env:GITHUB_STEP_SUMMARY "Choosing Windows Sonic (control): ``$json```n"
+
       # The Store is not on Server images; winget's msstore source fetches the
       # package without it where the image allows. The user accepted the
       # Store and package agreements for this job (2026-10-30).
@@ -122,35 +134,54 @@ jobs:
           Add-Content $env:GITHUB_STEP_SUMMARY "After Dolby Access, choosing home theater: ``$json```n"
           $state = $json | ConvertFrom-Json
           if ($state.active -ne 'DolbyAtmosForHomeTheater') {
-            Add-Content $env:GITHUB_STEP_SUMMARY "Dolby Atmos for home theater is not active; the probe below shows what Windows sends instead."
+            # The probe still runs, on Windows Sonic, so the spatial stream
+            # path of mat-probe is checked even where MAT cannot be had.
+            $sonic = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/ci/spatial-format.ps1 -Endpoint 0 -Set WindowsSonic
+            Add-Content $env:GITHUB_STEP_SUMMARY "Dolby Atmos for home theater is not active; the probe runs on Windows Sonic instead: ``$sonic```n"
           }
+
+      - name: WER local dumps for ssr-live and ssr-replay (tools/ci/crash-dumps.ps1)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./tools/ci/crash-dumps.ps1 -Folder (Join-Path $env:RUNNER_TEMP 'dumps')
 
       - name: mat-probe on endpoint 0, then mat-analyze
         id: probe
         if: ${{ !cancelled() }}
-        shell: bash
+        shell: pwsh
         env:
           SSR_LANG: en
         run: |
-          set -uo pipefail
-          out="$(cygpath -u "$RUNNER_TEMP")/mat"
-          mkdir -p "$out"
-          report() { # name, exit code, log
-            echo "$1: exit $2" >> "$GITHUB_STEP_SUMMARY"
-            tail -n 8 "$3" | sed 's/^/    /' >> "$GITHUB_STEP_SUMMARY"
+          $out = Join-Path $env:RUNNER_TEMP 'mat'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          # Start-Process keeps the whole exit code: bash keeps only its low
+          # byte, and showed a process Windows ended on an exception as 127.
+          function Invoke-Logged([string] $name, [string] $exe, [string[]] $arguments) {
+            $stdout = Join-Path $out "$name.out"
+            $stderr = Join-Path $out "$name.err"
+            $p = Start-Process -Wait -PassThru -NoNewWindow -FilePath $exe -ArgumentList $arguments `
+              -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+            $log = Join-Path $out "$name.log"
+            Get-Content $stdout, $stderr -ErrorAction SilentlyContinue | Set-Content $log
+            Get-Content $log | Write-Host
+            $code = '0x{0:X8}' -f $p.ExitCode
+            Write-Host "${name}: exit $code"
+            Add-Content $env:GITHUB_STEP_SUMMARY "${name}: exit $code"
+            Get-Content $log -Tail 8 | ForEach-Object { Add-Content $env:GITHUB_STEP_SUMMARY "    $_" }
+            return [int64]$p.ExitCode
           }
-          target/release/ssr-live.exe mat-probe --endpoint 0 --seconds 12 \
-            --out "$out/mat-probe-ep0.ssrdump" --truth "$out/mat-probe-ep0.truth.json" > "$out/mat-probe.log" 2>&1
-          code=$?
-          cat "$out/mat-probe.log"
-          report mat-probe "$code" "$out/mat-probe.log"
-          [ "$code" = 0 ] || exit "$code"
-          target/release/ssr-replay.exe mat-analyze "$out/mat-probe-ep0.ssrdump" "$out/mat-probe-ep0.truth.json" \
-            --json "$out/mat-probe-ep0.analysis.json" > "$out/mat-analyze.log" 2>&1
-          code=$?
-          cat "$out/mat-analyze.log"
-          report mat-analyze "$code" "$out/mat-analyze.log"
-          exit "$code"
+          $dump = Join-Path $out 'mat-probe-ep0.ssrdump'
+          $truth = Join-Path $out 'mat-probe-ep0.truth.json'
+          $probe = Invoke-Logged 'mat-probe' 'target/release/ssr-live.exe' @('mat-probe', '--endpoint', '0', '--seconds', '12', '--out', $dump, '--truth', $truth)
+          if ($probe -ne 0) { exit 1 }
+          $analysis = Join-Path $out 'mat-probe-ep0.analysis.json'
+          $analyze = Invoke-Logged 'mat-analyze' 'target/release/ssr-replay.exe' @('mat-analyze', $dump, $truth, '--json', $analysis)
+          if ($analyze -ne 0) { exit 1 }
+
+      - name: Crash stacks (cdb on any dump)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./tools/ci/crash-dumps.ps1 -Folder (Join-Path $env:RUNNER_TEMP 'dumps') -Report -Symbols (Resolve-Path target/release).Path
 
       # AES-256-CBC with PBKDF2 (200,000 rounds) through the openssl that
       # comes with Git for Windows. The key is the secret with surrounding
