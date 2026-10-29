@@ -41,6 +41,13 @@ class GrowthTests(unittest.TestCase):
             "slow periods stayed",
         ])
 
+    def test_a_growth_the_cadence_started_passes_with_fewer_restarts(self):
+        # windows-2022 at #92: two restarts, then cadence faults at 0.301 and
+        # 0.603 grew 3 -> 6 -> 12 ms, which held at 49 ms.
+        self.assertEqual(growth_problems(report(output_restarts=2, output_reopens=2,
+                                                output_cadence_ratio=1.0,
+                                                latency_p99_ms=57.0)), [])
+
     def test_a_cable_that_held_its_minimum_did_not_exercise_the_growth(self):
         problems = growth_problems(report(output_restarts=0, output_reopens=0,
                                           output_period_frames=144))
