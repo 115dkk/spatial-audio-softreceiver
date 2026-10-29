@@ -125,6 +125,16 @@ jobs:
           Add-Content $env:GITHUB_STEP_SUMMARY "winget install Dolby Access: exit $code"
           if ($code -ne 0) { throw "winget exited $code" }
 
+      # windows-2025 refuses the home theater format for our endpoint 0
+      # (NotSupportedOnAudioEndpoint) although it reports the format supported.
+      # The trace shows whether choosing it asks our filters anything (which
+      # format, from which process, and what we answered) or is decided from
+      # the endpoint's properties alone.
+      - name: Start the KS request trace for the format choice (tools/ci/ks-trace.ps1)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ./tools/ci/ks-trace.ps1 -Start -Label spatial
+
       - name: Spatial sound after Dolby Access; choose Dolby Atmos for home theater
         id: spatial
         if: ${{ !cancelled() }}
@@ -141,6 +151,15 @@ jobs:
             $sonic = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/ci/spatial-format.ps1 -Endpoint 0 -Set WindowsSonic
             Add-Content $env:GITHUB_STEP_SUMMARY "Dolby Atmos for home theater is not active; the probe runs on Windows Sonic instead: ``$sonic```n"
           }
+
+      # Stopped before mat-probe opens the stream, so the trace holds only the
+      # format choice (and the Windows Sonic fallback after it).
+      - name: What choosing the format asked our filters (tools/ci/ks-trace.ps1)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          Start-Sleep -Seconds 5
+          ./tools/ci/ks-trace.ps1 -Stop -Label spatial
 
       - name: WER local dumps for ssr-live and ssr-replay (tools/ci/crash-dumps.ps1)
         if: ${{ !cancelled() }}
