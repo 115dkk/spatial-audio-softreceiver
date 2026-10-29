@@ -26,9 +26,9 @@ pub const END_MARKER: [u8; 16] = [
 ];
 
 const FBA_MAJOR_SYNC: [u8; 4] = [0xf8, 0x72, 0x6f, 0xba];
-const FIRST_CONTENT: std::ops::Range<usize> = START_MARKER.len()..MIDDLE_MARKER_OFFSET;
-const SECOND_CONTENT: std::ops::Range<usize> =
-    MIDDLE_MARKER_OFFSET + MIDDLE_MARKER.len()..END_MARKER_OFFSET;
+pub const FIRST_READY_BYTES: usize = MIDDLE_MARKER_OFFSET + MIDDLE_MARKER.len();
+pub const FIRST_CONTENT: std::ops::Range<usize> = START_MARKER.len()..MIDDLE_MARKER_OFFSET;
+pub const SECOND_CONTENT: std::ops::Range<usize> = FIRST_READY_BYTES..END_MARKER_OFFSET;
 
 /// The content carried between the three fixed MAT records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,6 +47,36 @@ impl MatPayload<'_> {
     }
 }
 
+/// Validates the fixed records available at R-MAT and returns the first
+/// content span. `payload` may contain bytes beyond the middle marker. No
+/// allocation is performed.
+pub fn first_content(payload: &[u8]) -> Result<&[u8], DecodeError> {
+    if payload.len() < FIRST_READY_BYTES {
+        return Err(corrupt("the payload has not reached the middle marker"));
+    }
+    if payload[..START_MARKER.len()] != START_MARKER {
+        return Err(corrupt("the start marker is invalid"));
+    }
+    if payload[MIDDLE_MARKER_OFFSET..FIRST_READY_BYTES] != MIDDLE_MARKER {
+        return Err(corrupt("the middle marker is invalid"));
+    }
+    Ok(&payload[FIRST_CONTENT])
+}
+
+/// Validates a complete IEC 61937-9 MAT payload and returns only its second
+/// content span. This is the completion call paired with [`first_content`]. No
+/// allocation is performed.
+pub fn rest_content(payload: &[u8]) -> Result<&[u8], DecodeError> {
+    if payload.len() != MAT_PAYLOAD_BYTES {
+        return Err(corrupt("the payload is not 61,424 bytes"));
+    }
+    first_content(payload)?;
+    if payload[END_MARKER_OFFSET..] != END_MARKER {
+        return Err(corrupt("the end marker is invalid"));
+    }
+    Ok(&payload[SECOND_CONTENT])
+}
+
 /// Validates one complete IEC 61937-9 MAT payload and copies only its two
 /// content spans into caller-owned storage. No allocation is performed.
 pub fn extract<'a>(
@@ -56,32 +86,23 @@ pub fn extract<'a>(
     if burst.data_type != DataType::Mat {
         return Err(DecodeError::WrongRoute("a non-MAT burst in a MAT epoch"));
     }
-    let payload = burst.payload;
-    if payload.len() != MAT_PAYLOAD_BYTES {
-        return Err(corrupt("the payload is not 61,424 bytes"));
-    }
-    if payload[..START_MARKER.len()] != START_MARKER {
-        return Err(corrupt("the start marker is invalid"));
-    }
-    if payload[MIDDLE_MARKER_OFFSET..MIDDLE_MARKER_OFFSET + MIDDLE_MARKER.len()] != MIDDLE_MARKER {
-        return Err(corrupt("the middle marker is invalid"));
-    }
-    if payload[END_MARKER_OFFSET..] != END_MARKER {
-        return Err(corrupt("the end marker is invalid"));
-    }
-
-    let split = FIRST_CONTENT.len();
-    storage[..split].copy_from_slice(&payload[FIRST_CONTENT]);
-    storage[split..].copy_from_slice(&payload[SECOND_CONTENT]);
+    let first = first_content(burst.payload)?;
+    let rest = rest_content(burst.payload)?;
+    let split = first.len();
+    storage[..split].copy_from_slice(first);
+    storage[split..].copy_from_slice(rest);
     let content = &storage[..];
-    if content
-        .windows(FBA_MAJOR_SYNC.len())
-        .any(|window| window == FBA_MAJOR_SYNC)
-    {
+    if contains_major_sync(content) {
         Ok(MatPayload::TrueHd(content))
     } else {
         Ok(MatPayload::Unknown(content))
     }
+}
+
+pub fn contains_major_sync(content: &[u8]) -> bool {
+    content
+        .windows(FBA_MAJOR_SYNC.len())
+        .any(|window| window == FBA_MAJOR_SYNC)
 }
 
 fn corrupt(detail: &'static str) -> DecodeError {

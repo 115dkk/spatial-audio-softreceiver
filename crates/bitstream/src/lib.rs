@@ -63,6 +63,15 @@ pub struct Burst<'a> {
     pub start: u64,
 }
 
+/// An in-progress payload reference point or a complete burst.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeframeEvent<'a> {
+    /// The burst so far: `payload` is the received prefix (codec byte order)
+    /// and `start` is Pa's offset, as for the complete burst.
+    Partial(Burst<'a>),
+    Burst(Burst<'a>),
+}
+
 /// Counters for diagnostics and tests.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DeframerStats {
@@ -142,44 +151,79 @@ impl Deframer {
     /// padding up to the next preamble.
     pub fn push(&mut self, bytes: &[u8], out: &mut dyn FnMut(Burst<'_>)) {
         for &byte in bytes {
-            let position = self.offset;
-            self.offset += 1;
-            match self.state {
-                State::Search => self.search(byte, position),
-                State::Header { received } => {
-                    self.header[received] = byte;
-                    if received + 1 == self.header.len() {
-                        self.pc = u16::from_le_bytes([self.header[0], self.header[1]]);
-                        let pd = u16::from_le_bytes([self.header[2], self.header[3]]);
-                        let length = if byte_count(DataType::from_pc(self.pc)) {
-                            usize::from(pd)
-                        } else {
-                            usize::from(pd).div_ceil(8)
-                        };
-                        self.begin_payload(length, out);
+            self.push_byte(byte, out);
+        }
+    }
+
+    fn push_byte(&mut self, byte: u8, out: &mut dyn FnMut(Burst<'_>)) {
+        let position = self.offset;
+        self.offset += 1;
+        match self.state {
+            State::Search => self.search(byte, position),
+            State::Header { received } => {
+                self.header[received] = byte;
+                if received + 1 == self.header.len() {
+                    self.pc = u16::from_le_bytes([self.header[0], self.header[1]]);
+                    let pd = u16::from_le_bytes([self.header[2], self.header[3]]);
+                    let length = if byte_count(DataType::from_pc(self.pc)) {
+                        usize::from(pd)
                     } else {
-                        self.state = State::Header {
-                            received: received + 1,
-                        };
-                    }
-                }
-                State::Payload { length, received } => {
-                    if received.is_multiple_of(2) {
-                        self.low_byte = byte;
-                    } else {
-                        self.payload[received - 1] = byte;
-                        if received < length {
-                            self.payload[received] = self.low_byte;
-                        }
-                    }
-                    let received = received + 1;
-                    if received == length.next_multiple_of(2) {
-                        self.finish(length, out);
-                    } else {
-                        self.state = State::Payload { length, received };
-                    }
+                        usize::from(pd).div_ceil(8)
+                    };
+                    self.begin_payload(length, out);
+                } else {
+                    self.state = State::Header {
+                        received: received + 1,
+                    };
                 }
             }
+            State::Payload { length, received } => {
+                if received.is_multiple_of(2) {
+                    self.low_byte = byte;
+                } else {
+                    self.payload[received - 1] = byte;
+                    if received < length {
+                        self.payload[received] = self.low_byte;
+                    }
+                }
+                let received = received + 1;
+                if received == length.next_multiple_of(2) {
+                    self.finish(length, out);
+                } else {
+                    self.state = State::Payload { length, received };
+                }
+            }
+        }
+    }
+
+    /// Feeds bytes and calls `partial_out` once when each matching in-progress
+    /// payload first reaches `prefix_bytes`. Complete bursts still go to `out`.
+    /// Like [`Self::push`], this method does not allocate.
+    pub fn push_with_partial(
+        &mut self,
+        bytes: &[u8],
+        data_type: DataType,
+        prefix_bytes: usize,
+        out: &mut dyn FnMut(DeframeEvent<'_>),
+    ) {
+        let mut ready = self
+            .partial()
+            .is_some_and(|(kind, payload)| kind == data_type && payload.len() >= prefix_bytes);
+        for &byte in bytes {
+            self.push_byte(byte, &mut |burst| out(DeframeEvent::Burst(burst)));
+            let partial = self
+                .partial()
+                .filter(|(kind, payload)| *kind == data_type && payload.len() >= prefix_bytes);
+            let now_ready = partial.is_some();
+            if !ready && let Some((data_type, payload)) = partial {
+                out(DeframeEvent::Partial(Burst {
+                    data_type,
+                    pc: self.pc,
+                    payload,
+                    start: self.start,
+                }));
+            }
+            ready = now_ready;
         }
     }
 

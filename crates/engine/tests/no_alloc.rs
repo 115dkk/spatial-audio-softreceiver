@@ -374,6 +374,8 @@ fn truehd_mat_burst_placement_does_not_allocate_on_the_capture_path() {
         },
         &mut |_| {},
     );
+    // R-MAT ends 8 preamble bytes later, so the second record crosses it.
+    let crossing = decode::mat_frame::FIRST_READY_BYTES;
     assert_no_alloc(|| {
         chain.push_record(
             Record::Data {
@@ -381,15 +383,27 @@ fn truehd_mat_burst_placement_does_not_allocate_on_the_capture_path() {
                 epoch: 1,
                 flags: 0,
                 pos: 0,
+                qpc: 99_000,
+                qpc_written: 0,
+                bytes: &burst[..crossing],
+            },
+            &mut |_| {},
+        );
+        chain.push_record(
+            Record::Data {
+                endpoint: 0,
+                epoch: 1,
+                flags: 0,
+                pos: crossing as u64,
                 qpc: 200_000,
                 qpc_written: 0,
-                bytes: &burst[..61_440],
+                bytes: &burst[crossing..61_440],
             },
             &mut |_| {},
         );
     });
-    assert_eq!(chain.decode_in_flight(), 1);
-    assert!(worker.run_one());
+    assert_eq!(chain.decode_in_flight(), 2);
+    while worker.run_one() {}
     assert_no_alloc(|| chain.idle(200_000, &mut |_| {}));
     assert_eq!(chain.decode_in_flight(), 0);
 }

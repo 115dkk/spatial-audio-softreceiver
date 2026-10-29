@@ -4114,6 +4114,167 @@ fn find_samples(haystack: &[f32], needle: &[f32]) -> Option<usize> {
         .position(|window| window == needle.as_slice())
 }
 
+fn mat_record<'a>(bytes: &'a [u8], pos: u64, qpc: u64) -> Record<'a> {
+    Record::Data {
+        endpoint: ENDPOINT_PRIMARY,
+        epoch: 1,
+        flags: 0,
+        pos,
+        qpc,
+        qpc_written: 0,
+        bytes,
+    }
+}
+
+fn mat_chain(early: bool) -> (Chain, Rendered) {
+    let mut chain = Chain::new(ChainConfig {
+        mat_early_decode: early,
+        ..ChainConfig::default()
+    });
+    chain.set_prepared(identity_prepared("mat-reference"));
+    let mut rendered = Rendered::default();
+    chain.push_record(truehd_format_change(BitstreamCodec::Mat21), &mut |event| {
+        rendered.event(event)
+    });
+    (chain, rendered)
+}
+
+#[test]
+fn mat_reference_point_emits_before_completion_for_exact_and_crossing_records() {
+    const REFERENCE_WIRE_BYTES: usize = 8 + decode::mat_frame::FIRST_READY_BYTES;
+    let periods = truehd_mat_periods();
+    let period = &periods[0];
+    assert_eq!(REFERENCE_WIRE_BYTES, 30_728);
+    assert_eq!(period.len(), 61_440);
+
+    for cuts in [vec![REFERENCE_WIRE_BYTES], vec![30_720, 30_736]] {
+        let (mut chain, mut rendered) = mat_chain(true);
+        let mut start = 0;
+        for &end in &cuts {
+            chain.push_record(
+                mat_record(&period[start..end], start as u64, end as u64),
+                &mut |event| rendered.event(event),
+            );
+            if end < REFERENCE_WIRE_BYTES {
+                assert_eq!(rendered.audible(), 0, "cut at {end}");
+            }
+            start = end;
+        }
+        assert!(rendered.audible() > 0, "cuts {cuts:?}");
+        let early_audible = rendered.audible();
+        chain.push_record(
+            mat_record(&period[start..], start as u64, period.len() as u64),
+            &mut |event| rendered.event(event),
+        );
+        chain.finish(&mut |event| rendered.event(event));
+        assert!(rendered.audible() >= early_audible);
+        assert!(rendered.errors.is_empty(), "{:?}", rendered.errors);
+    }
+
+    // The reference point is 30,704 carrier bytes before burst completion:
+    // 9.9948 ms at the 3,072,000-byte/s MAT carrier rate.
+    assert_eq!(61_432 - REFERENCE_WIRE_BYTES, 30_704);
+}
+
+#[test]
+fn disabling_mat_reference_point_keeps_the_whole_burst_path() {
+    const CUT: usize = 8 + decode::mat_frame::FIRST_READY_BYTES;
+    let periods = truehd_mat_periods();
+    let period = &periods[0];
+    let (mut chain, mut rendered) = mat_chain(false);
+    chain.push_record(mat_record(&period[..CUT], 0, 100_000), &mut |event| {
+        rendered.event(event)
+    });
+    assert_eq!(rendered.audible(), 0);
+    assert!(chain.layout(ENDPOINT_PRIMARY).is_none());
+    chain.push_record(
+        mat_record(&period[CUT..], CUT as u64, 200_000),
+        &mut |event| rendered.event(event),
+    );
+    chain.finish(&mut |event| rendered.event(event));
+    assert!(rendered.audible() > 0);
+    assert!(rendered.errors.is_empty(), "{:?}", rendered.errors);
+}
+
+/// The latency of each audible block of the MAT fixture fed in 1 ms records:
+/// the QPC of the record it came out on minus its source QPC.
+fn mat_block_latencies(early: bool) -> Vec<u64> {
+    const BYTE_RATE: u64 = 192_000 * 8 * 2;
+    const RECORD_BYTES: usize = 3_072;
+    let stream = truehd_mat_periods().concat();
+    let (mut chain, _) = mat_chain(early);
+    let mut latencies = Vec::new();
+    for (index, bytes) in stream.chunks(RECORD_BYTES).enumerate() {
+        let start = (index * RECORD_BYTES) as u64;
+        let end = start + bytes.len() as u64;
+        let qpc = 1_000_000 + end * 10_000_000 / BYTE_RATE;
+        chain.push_record(mat_record(bytes, start, qpc), &mut |event| {
+            if let ChainEvent::Block(block) = event
+                && block.source_qpc != 0
+                && block
+                    .channel(0)
+                    .iter()
+                    .chain(block.channel(1))
+                    .any(|sample| *sample != 0.0)
+            {
+                assert!(
+                    qpc >= block.source_qpc,
+                    "a block came out before its source"
+                );
+                latencies.push(qpc - block.source_qpc);
+            }
+        });
+    }
+    latencies
+}
+
+#[test]
+fn early_mat_parts_keep_the_burst_arrival_time() {
+    // The first part goes at R-MAT, 10 ms before the burst completes. Both
+    // parts keep the time Pa arrived, as a whole burst's scenes do, so the
+    // latency drops by those 10 ms (less a part of the 1 ms record R-MAT falls
+    // in) and no more. Stamping a part at its own arrival would show 10 to
+    // 20 ms more.
+    let whole = mat_block_latencies(false);
+    let early = mat_block_latencies(true);
+    assert!(!whole.is_empty() && !early.is_empty());
+    // The first block, and the last block of a burst, which a scene's single
+    // arrival time counts from Pa.
+    let largest = |latencies: &[u64]| *latencies.iter().max().unwrap();
+    for (whole, early) in [(whole[0], early[0]), (largest(&whole), largest(&early))] {
+        let saved_ms = (whole as f64 - early as f64) / 10_000.0;
+        assert!(
+            (8.0..=11.0).contains(&saved_ms),
+            "whole {whole}, early {early}: {saved_ms} ms saved"
+        );
+    }
+}
+
+#[test]
+fn mat_cut_after_reference_keeps_early_samples_on_stream_stop() {
+    const CUT: usize = 8 + decode::mat_frame::FIRST_READY_BYTES;
+    let periods = truehd_mat_periods();
+    let period = &periods[0];
+    let (mut chain, mut rendered) = mat_chain(true);
+    chain.push_record(mat_record(&period[..CUT], 0, 100_000), &mut |event| {
+        rendered.event(event)
+    });
+    let audible = rendered.audible();
+    assert!(audible > 0);
+    chain.push_record(
+        Record::StreamStop {
+            endpoint: ENDPOINT_PRIMARY,
+            epoch: 1,
+            repeat: false,
+            qpc: 100_000,
+        },
+        &mut |event| rendered.event(event),
+    );
+    chain.finish(&mut |event| rendered.event(event));
+    assert!(rendered.audible() >= audible);
+    assert!(rendered.errors.is_empty(), "{:?}", rendered.errors);
+}
+
 #[test]
 fn raw_truehd_and_mat_use_the_same_deferred_scene_path() {
     for (codec, bursts) in [
