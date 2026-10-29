@@ -143,7 +143,9 @@ export function mountWith(root: HTMLElement, api: Api, options: AppOptions, rend
   }
 
   function render() {
-    if (snapshot === null) return;
+    // A send waits up to SETTLE_MS for the snapshot, and may finish after its
+    // root has left the document (a test that ended); nothing is shown there.
+    if (snapshot === null || !root.isConnected) return;
     setLanguage(snapshot.language);
     document.documentElement.lang = snapshot.language;
     document.title = text.product;
