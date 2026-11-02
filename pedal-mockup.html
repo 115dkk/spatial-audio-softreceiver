@@ -47,6 +47,23 @@
   --sheen-layer: radial-gradient(120% 90% at 0% 0%, rgba(255, 255, 255, 0.38), transparent 62%);
   --mled-off: #8a8d90;
   --mled-edge: rgba(0, 0, 0, 0.3);
+  --spill: 38%;
+  --etch: rgba(0, 0, 0, 0.1);
+  --etch-lip: rgba(255, 255, 255, 0.55);
+  /* the nameplate: black anodised, engraving shows bright aluminium */
+  --plate-1: #2a2c2f;
+  --plate-2: #161719;
+  --plate-ink: #e4e6e8;
+  --plate-ink-2: #b9bcbf;
+  /* the slide switch: a dark slot, a bright machined actuator */
+  --slot-1: #040405;
+  --slot-2: #151617;
+  --slot-edge: rgba(255, 255, 255, 0.05);
+  --act-1: #f5f6f7;
+  --act-2: #b9bcbf;
+  --act-3: #8a8d90;
+  --act-rib-dark: rgba(0, 0, 0, 0.3);
+  --act-rib-light: rgba(255, 255, 255, 0.35);
   --box-shadow:
     0 18px 36px rgba(0, 0, 0, 0.2),
     0 3px 8px rgba(0, 0, 0, 0.16),
@@ -84,6 +101,26 @@
     radial-gradient(90% 70% at 0% 0%, rgba(255, 255, 255, 0.07), transparent 60%);
   --mled-off: #121315;
   --mled-edge: rgba(255, 255, 255, 0.16);
+  --spill: 46%;
+  --etch: rgba(255, 255, 255, 0.08);
+  --etch-lip: rgba(0, 0, 0, 0.45);
+  /* the nameplate inverted: brushed silver, engraving cut dark */
+  --plate-1: #d9dcdf;
+  --plate-2: #a2a6aa;
+  --plate-ink: #17191b;
+  --plate-ink-2: #2b2e31;
+  /*
+   * The slide switch inverted: the slot is a bright machined channel with its
+   * own brushed sheen, the actuator dark metal with lit edges and ribs.
+   */
+  --slot-1: #9a9da1;
+  --slot-2: #d4d6d9;
+  --slot-edge: rgba(255, 255, 255, 0.5);
+  --act-1: #5b5f64;
+  --act-2: #2c2f33;
+  --act-3: #17191b;
+  --act-rib-dark: rgba(0, 0, 0, 0.55);
+  --act-rib-light: rgba(255, 255, 255, 0.22);
   --box-shadow:
     0 34px 64px rgba(0, 0, 0, 0.8),
     0 8px 18px rgba(0, 0, 0, 0.65),
@@ -165,28 +202,57 @@ p { margin: 0; }
 }
 
 /* ---------- LEDs ---------- */
+/*
+ * A panel LED is a part, not a hole: a machined holder ring seated in the
+ * plate, and in it a domed lens tinted with its colour even when dark. Lit,
+ * the light fills the lens, catches the inside of the ring and spills onto
+ * the metal around it.
+ */
 .led {
+  /* the element is the holder ring, lit from the top left like the plate */
   --c: var(--led-on);
+  --lens: 9px;
+  --rim: 2.5px;
+  position: relative;
+  isolation: isolate;
   display: inline-block;
   flex: none;
-  width: 9px;
-  height: 9px;
+  width: calc(var(--lens) + 2 * var(--rim));
+  height: calc(var(--lens) + 2 * var(--rim));
+  border-radius: 50%;
+  vertical-align: middle;
+  background: conic-gradient(from 200deg, var(--nut-1), var(--nut-3) 30%, var(--nut-2) 55%, var(--nut-1) 80%, var(--nut-1));
+  box-shadow: 0.5px 1px 1.5px var(--cast), 0 0 0 0.5px rgba(0, 0, 0, 0.4);
+}
+.led::before {
+  /* the lens: tinted with its colour even when dark, a gloss at the top left */
+  content: "";
+  position: absolute;
+  inset: var(--rim);
   border-radius: 50%;
   background:
-    radial-gradient(circle at 36% 30%, rgba(255, 255, 255, 0.45), transparent 42%),
-    color-mix(in srgb, var(--c) 18%, #17181a);
-  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.32), 0 1px 0 1.5px var(--edge-hi);
-  vertical-align: middle;
+    radial-gradient(circle at 36% 28%, rgba(255, 255, 255, 0.75) 0 14%, transparent 40%),
+    radial-gradient(circle at 50% 60%, color-mix(in srgb, var(--c) 48%, #3a3b3d) 0 45%, color-mix(in srgb, var(--c) 26%, #141516) 100%);
+  box-shadow: inset 0 -1px 1px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(0, 0, 0, 0.55);
 }
-.led.on {
-  background: radial-gradient(circle at 42% 38%, #fff 0 16%, var(--c) 46%, color-mix(in srgb, var(--c) 72%, #000) 100%);
-  box-shadow:
-    0 0 0 1.5px rgba(0, 0, 0, 0.25),
-    0 0 5px 1px color-mix(in srgb, var(--c) 85%, transparent),
-    0 0 14px 4px color-mix(in srgb, var(--c) 40%, transparent);
+.led.on::before {
+  background: radial-gradient(circle at 40% 34%, #fff 0 22%, color-mix(in srgb, var(--c) 55%, #fff) 42%, var(--c) 72%, color-mix(in srgb, var(--c) 80%, #000) 100%);
+  box-shadow: 0 0 4px 1px color-mix(in srgb, var(--c) 90%, transparent);
 }
-.led.lg { width: 11px; height: 11px; }
-.led.sm { width: 7px; height: 7px; }
+.led.on::after {
+  /* the light: over the ring's inside and onto the metal around it */
+  content: "";
+  position: absolute;
+  inset: -9px;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--c) 70%, transparent) 0 26%, color-mix(in srgb, var(--c) var(--spill), transparent) 34%, transparent 70%);
+}
+.led.lg { --lens: 11px; }
+.led.sm { --lens: 7px; --rim: 2px; }
+/* Ring LEDs sit flush behind a diffuser, no holder of their own. */
+.led.flush { --rim: 0px; background: none; box-shadow: none; }
+.led.flush.on::after { inset: -5px; }
 
 /* ---------- segment readout ---------- */
 .seg {
@@ -202,7 +268,7 @@ p { margin: 0; }
 .digits .on { fill: var(--seg-on); }
 .digits .lit { filter: drop-shadow(0 0 1.6px var(--seg-glow)); }
 .readout { display: flex; align-items: flex-end; gap: 6px; }
-.unit { font-size: 11px; font-weight: 600; color: var(--ink-2); padding-bottom: 2px; }
+.unit { font-size: 11px; font-weight: 600; color: var(--ink-2); padding-bottom: 2px; white-space: nowrap; }
 
 /* ---------- jacks (top-mounted, seen from above) ---------- */
 .strip { padding: 18px 32px 0; }
@@ -214,34 +280,97 @@ p { margin: 0; }
 .flow { align-self: center; justify-self: center; color: var(--rule); }
 
 /* ---------- the face area ---------- */
-.face { overflow: auto; padding: 12px 32px 6px; scrollbar-width: thin; }
+.face { overflow: auto; padding: 12px 32px 6px; scrollbar-width: thin; isolation: isolate; }
+/* A bigger window makes every part bigger, up to half again (set by fit()). */
+.strip, .face, .foot { zoom: var(--k, 1); }
+
+/*
+ * Laser etching: the sound field spreading from the listening place, cut
+ * into the metal around the map. Etched lines are not ink; on aluminium they
+ * read a shade darker with a bright lip, on dark metal a shade lighter.
+ */
+.etch { position: absolute; left: 50%; top: 50%; width: 1600px; height: 1600px; margin: -800px 0 0 -800px; z-index: -1; pointer-events: none;
+  -webkit-mask: radial-gradient(circle, #000 0 9%, rgba(0, 0, 0, 0.9) 12%, transparent 46%);
+  mask: radial-gradient(circle, #000 0 9%, rgba(0, 0, 0, 0.9) 12%, transparent 46%); }
+.etch .cut { fill: none; stroke: var(--etch); stroke-width: 1; }
+.etch .lip { fill: none; stroke: var(--etch-lip); stroke-width: 1; }
+.mapcol { position: relative; }
+.mapwrap { position: relative; width: 100%; max-width: 300px; }
+
+/*
+ * The settings face's spare room: the machine's signal flow etched as line
+ * art, no words (etched lines are not read). Drawn only when the room is
+ * there; a short window keeps the face as it is.
+ */
+.pair { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 16px; }
+.cols2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.cols2 > div { display: grid; gap: 16px; }
+.flowroom { container-type: size; min-height: 0; display: grid; place-items: center; }
+.flowart { width: 100%; height: 100%; max-height: 170px; display: block; }
+.flowart .cut { fill: none; stroke: var(--etch); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.flowart .lip { fill: none; stroke: var(--etch-lip); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+@container (max-height: 80px) { .flowart { display: none; } }
+
+/* ---------- the plate's screws and nameplate ---------- */
+.screw { position: absolute; width: 11px; height: 11px; border-radius: 50%; z-index: 1;
+  background: radial-gradient(circle at 38% 32%, var(--nut-1), var(--nut-2) 55%, var(--nut-3));
+  box-shadow: 0.5px 1px 1.5px var(--cast), inset 0 0 0 0.5px rgba(0, 0, 0, 0.4); }
+.screw::after { content: ""; position: absolute; inset: 3px; border-radius: 1px; background: #1a1b1d;
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); opacity: 0.8; }
+.screw.tl { left: 14px; top: 14px; } .screw.tr { right: 14px; top: 14px; }
+.screw.bl { left: 14px; bottom: 14px; } .screw.br { right: 14px; bottom: 14px; }
+.plate { position: relative; padding: 9px 30px 8px; border-radius: 4px; text-align: center;
+  background: linear-gradient(135deg, var(--plate-1), var(--plate-2));
+  box-shadow: 1px 2px 4px var(--cast), inset 1px 1px 0 rgba(255, 255, 255, 0.25), inset -1px -1px 0 rgba(0, 0, 0, 0.4); }
+.mark.plate { padding: 7px 28px 6px; }
+.mark.plate b { display: block; font-size: 14px; font-weight: 700; letter-spacing: 0.18em; color: var(--plate-ink); }
+.mark.plate span { font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em; color: var(--plate-ink-2); }
+.plate i { position: absolute; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, var(--nut-1), var(--nut-3)); box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.5); }
+.plate i:first-of-type { left: 10px; } .plate i:last-of-type { right: 10px; }
 .rule { height: 0; border-top: 1.5px solid var(--rule); margin: 14px 0 0; }
 
 /* Status face: the input channels hang under their jacks and run its full height. */
-.status { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; min-height: 100%; }
+.status { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; min-height: 100%; position: relative; overflow: clip; }
 /* The channels share their rows, so every meter starts and ends on the same line. */
 .status-main { align-items: stretch; grid-template-rows: auto auto auto minmax(150px, 1fr); row-gap: 6px; }
 .status-main > * { grid-row: 1 / span 4; }
 .ch { display: grid; grid-template-rows: subgrid; padding-top: 2px; min-width: 0; }
 .ch .ep { font-size: 11px; color: var(--ink-2); font-weight: 500; line-height: 1.3; }
 .ch .ladder-row { padding-top: 8px; }
-.ch .ladder-row { display: flex; gap: 10px; align-items: stretch; min-height: 0; }
-.ch .ladder-row .readout { align-self: flex-end; }
-.ladder { display: flex; flex-direction: column-reverse; justify-content: flex-start; gap: 3px; }
+.ch .ladder-row { display: flex; gap: 8px; align-items: stretch; min-height: 0; }
+.ch .ladder-row .readout { align-self: flex-end; gap: 4px; }
+/*
+ * The level meter is one LED bar-graph part: a black housing seated in the
+ * plate, its segments tinted lenses that stay faintly coloured when dark.
+ */
+.ladder {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #1d1e20, #0c0c0d);
+  box-shadow: 1px 2px 3px var(--cast), 0 0 0 1px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  align-self: flex-end;
+  height: 100%;
+  /* 24 segments of at most 10 px, their gaps and the housing's lip */
+  max-height: 292px;
+}
 .ladder i {
   --c: var(--lane-0);
   display: block;
   flex: 1 1 0;
   min-height: 3px;
   max-height: 10px;
-  width: 16px;
-  border-radius: 1.5px;
-  background: color-mix(in srgb, var(--c) 16%, #18191b);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3);
+  width: 14px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 30%, #2a2b2d), color-mix(in srgb, var(--c) 18%, #18191a));
 }
 .ladder i.on {
-  background: color-mix(in srgb, var(--c) 92%, #fff);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), 0 0 6px 1px color-mix(in srgb, var(--c) 55%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 55%, #fff), var(--c));
+  box-shadow: 0 0 5px 1px color-mix(in srgb, var(--c) 60%, transparent);
 }
 .ch .fmt { font-size: 12.5px; font-weight: 600; line-height: 1.4; }
 .ch .note { display: flex; gap: 6px; align-items: baseline; }
@@ -319,7 +448,7 @@ p { margin: 0; }
   background: #121314;
 }
 .ring { position: absolute; inset: 0; }
-.ring .led { position: absolute; width: 6px; height: 6px; margin: -3px 0 0 -3px; --c: var(--led-white); }
+.ring .led { position: absolute; --lens: 6px; margin: -3px 0 0 -3px; --c: var(--led-white); }
 .ticks { position: absolute; inset: 0; overflow: visible; }
 .ticks line { stroke: var(--rule); stroke-width: 1.4; }
 .ticks text { fill: var(--ink-2); font: 600 10.5px var(--font); }
@@ -340,12 +469,14 @@ p { margin: 0; }
   width: calc((var(--n) - 1) * var(--step) + 24px);
   height: 22px;
   border-radius: 4px;
-  background: linear-gradient(180deg, #040405, #151617);
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 2px),
+    linear-gradient(180deg, var(--slot-1), var(--slot-2));
   box-shadow:
-    inset 2px 3px 4px rgba(0, 0, 0, 0.95),
-    inset -1px -1px 0 rgba(255, 255, 255, 0.05),
+    inset 2px 3px 4px rgba(0, 0, 0, 0.75),
+    inset -1px -1px 0 var(--slot-edge),
     0 1px 0 1px var(--edge-hi),
-    0 0 0 1px rgba(0, 0, 0, 0.4);
+    0 0 0 1px rgba(0, 0, 0, 0.45);
   cursor: pointer;
 }
 .slide-knob {
@@ -356,16 +487,17 @@ p { margin: 0; }
   height: 18px;
   border-radius: 2.5px;
   background:
-    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.3) 0 1px, rgba(255, 255, 255, 0.35) 1px 2px, transparent 2px 4px),
-    linear-gradient(135deg, #f5f6f7, #b9bcbf 55%, #8a8d90);
-  background-size: 12px 100%, 100% 100%;
-  background-position: center, 0 0;
+    repeating-linear-gradient(90deg, var(--act-rib-dark) 0 1px, var(--act-rib-light) 1px 2px, transparent 2px 4px),
+    radial-gradient(120% 90% at 30% 20%, rgba(255, 255, 255, 0.35), transparent 60%),
+    linear-gradient(135deg, var(--act-1), var(--act-2) 55%, var(--act-3));
+  background-size: 12px 100%, 100% 100%, 100% 100%;
+  background-position: center, 0 0, 0 0;
   background-repeat: no-repeat;
   box-shadow:
     2px 3px 3px rgba(0, 0, 0, 0.7),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
-    inset 1px 0 0 rgba(255, 255, 255, 0.4);
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+    inset 1px 0 0 rgba(255, 255, 255, 0.3);
   transform: translateX(calc(var(--at) * var(--step)));
   transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -411,8 +543,8 @@ p { margin: 0; }
 .foot-switch svg { display: block; filter: drop-shadow(3px 5px 4px var(--cast)); }
 
 /* ---------- settings face ---------- */
-.groups { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: start; padding-top: 6px; }
-.groups > div { display: grid; gap: 16px; }
+.groups { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: stretch; padding-top: 6px; }
+.groups > div { display: grid; gap: 16px; align-content: start; }
 .group {
   border: 1.5px solid var(--rule);
   border-radius: 12px;
@@ -477,13 +609,16 @@ p { margin: 0; }
   .box { inset: 8px; border-radius: 18px; }
   .strip { padding: 12px 20px 0; }
   .face { padding: 10px 20px 6px; }
-  .foot { padding: 8px 20px 12px; }
+  .foot { padding: 8px 32px 14px; }
+  .screw.bl, .screw.br { bottom: 10px; }
+  .screw.bl { left: 10px; } .screw.br { right: 10px; }
   .cols { grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.3fr); column-gap: 10px; }
   .cols .flow, .strip .gap { display: none; }
   .status-main { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: auto auto auto minmax(150px, auto) auto; }
   .status-main .mapcol { grid-column: 1 / 3; grid-row: 5; margin-top: 14px; }
   .status-main .outcol { grid-column: 3 / 5; grid-row: 5; margin-top: 14px; }
   .groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .groups > .pair { grid-column: 1 / -1; }
   .mark { display: none; }
   .foot-switch svg { width: 56px; height: 56px; }
   .jack svg { width: 30px; height: 30px; }
@@ -636,7 +771,7 @@ function knob({ size = 74, value = 0.5, ring = 0, ticks = null, chosen = -1 }) {
     for (let i = 0; i < ring; i++) {
       const a = ((start + (sweep * i) / (ring - 1)) * Math.PI) / 180;
       const lit = i / (ring - 1) <= value + 1e-6;
-      ringHtml += `<span class="led ${lit ? 'on' : ''}" style="left:${c + outer * Math.sin(a)}px;top:${c - outer * Math.cos(a)}px"></span>`;
+      ringHtml += `<span class="led flush ${lit ? 'on' : ''}" style="left:${c + outer * Math.sin(a)}px;top:${c - outer * Math.cos(a)}px"></span>`;
     }
   }
   let tickHtml = '';
@@ -697,7 +832,7 @@ function foot(current) {
   const pages = [['status', '상태'], ['profile', '프로필'], ['upmix', '업믹스'], ['settings', '설정']];
   return `<div class="foot">
     <div class="pages">${pages.map(([k, n]) => button(n, k === current, k === current)).join('')}</div>
-    <div class="mark"><b>SPATIAL SOFTRECEIVER</b><span>공간 소프트리시버</span></div>
+    <div class="mark plate"><i></i><b>SPATIAL SOFTRECEIVER</b><span>공간 소프트리시버</span><i></i></div>
     <div class="power">
       <div class="say"><span class="label">켜짐</span>${led('var(--led-on)', true, 'lg')}</div>
       <div class="btn foot-switch">${footSwitchSvg()}<span class="small">전원</span></div>
@@ -763,20 +898,30 @@ function soundMap() {
   </svg>`;
 }
 
+/* The etched sound field: rings every 16 px from just outside the printed plan. */
+function etch() {
+  let cuts = '', lips = '';
+  for (let r = 152; r <= 780; r += 16) {
+    lips += `<circle cx="800.7" cy="800.9" r="${r}"/>`;
+    cuts += `<circle cx="800" cy="800" r="${r}"/>`;
+  }
+  return `<svg class="etch" viewBox="0 0 1600 1600" aria-hidden="true"><g class="lip">${lips}</g><g class="cut">${cuts}</g></svg>`;
+}
+
 function statusFace() {
   const chans = [
     channel(lanes[0], {
       fmt: 'DD+ JOC · 7.1.4<br>48 kHz',
-      meter: `<div class="ladder-row">${ladder(lanes[0].c, 17)}<div class="readout">${seg('-6.0', 3, 20)}<span class="unit">dB</span></div></div>`,
+      meter: `<div class="ladder-row">${ladder(lanes[0].c, 17)}<div class="readout">${seg('-6.0', 3, 18)}<span class="unit">dB</span></div></div>`,
     }),
     channel(lanes[1], {
       fmt: 'PCM · 2채널<br>44.1 kHz',
       note: `<p class="note fine">${led('var(--led-on)', true, 'sm')}<span>업믹스: Spatial Upmix</span></p>`,
-      meter: `<div class="ladder-row">${ladder(lanes[1].c, 12)}<div class="readout">${seg('-12.0', 3, 20)}<span class="unit">dB</span></div></div>`,
+      meter: `<div class="ladder-row">${ladder(lanes[1].c, 12)}<div class="readout">${seg('-12.0', 3, 18)}<span class="unit">dB</span></div></div>`,
     }),
     channel(lanes[2], {
       fmt: '입력 없음',
-      meter: `<div class="ladder-row">${ladder(lanes[2].c, 0)}<div class="readout">${seg('', 3, 20)}<span class="unit">dB</span></div></div>`,
+      meter: `<div class="ladder-row">${ladder(lanes[2].c, 0)}<div class="readout">${seg('', 3, 18)}<span class="unit">dB</span></div></div>`,
     }),
     channel(lanes[3], {
       fmt: 'DAW가 연결되지 않았습니다.',
@@ -786,7 +931,7 @@ function statusFace() {
   return `<div class="status"><div class="cols status-main">
       ${chans}
       ${arrow}
-      <div class="mapcol">${soundMap()}<p class="fine" style="text-align:center">방향 단추를 누르면 그 방향에서 시험용 신호를 재생합니다.</p></div>
+      <div class="mapcol"><div class="mapwrap">${etch()}${soundMap()}</div><p class="fine" style="text-align:center">방향 단추를 누르면 그 방향에서 시험용 신호를 재생합니다.</p></div>
       ${arrow}
       <div class="outcol">
         <div class="gain">${knob({ size: 74, value: 14 / 30, ring: 15 })}
@@ -853,19 +998,61 @@ function settingsFace() {
       <dt>드라이버</dt><dd>설치됨 · 실행 중</dd>
     </dl>`);
   return `<div class="groups">
-    <div>${dip}${entrance}${path}</div>
-    <div>${language}${skin}</div>
+    <div class="pair"><div class="cols2"><div>${dip}${entrance}${path}</div><div>${language}${skin}</div></div>
+      <div class="flowroom">${flowArt()}</div></div>
     <div>${routing}${asio}</div>
     <div>${update}${diag}${pc}</div>
   </div>`;
 }
 
+/*
+ * The signal flow as etched line art: four input jacks gathering into the
+ * decoder, two channels fanning out into many (upmix), the listening place
+ * with its rings (spatial rendering), one output jack.
+ */
+function flowArt() {
+  const parts = [];
+  // input jacks
+  [30, 62, 94, 126].forEach((y) => {
+    parts.push(`<circle cx="40" cy="${y}" r="11"/><circle cx="40" cy="${y}" r="4"/>`);
+    parts.push(`<path d="M51 ${y} C 110 ${y}, 120 78, 170 78"/>`);
+  });
+  // decoder: a block with its data lines
+  parts.push('<rect x="170" y="48" width="120" height="60" rx="8"/>');
+  [62, 72, 82, 92].forEach((y, i) => parts.push(`<path d="M186 ${y} H ${236 + i * 10}"/>`));
+  // two channels leave the decoder and fan out into eight
+  parts.push('<path d="M290 70 H 340"/><path d="M290 86 H 340"/>');
+  for (let i = 0; i < 8; i++) {
+    const y = 22 + i * 16;
+    parts.push(`<path d="M340 ${i < 4 ? 70 : 86} C 400 ${i < 4 ? 70 : 86}, 400 ${y}, 460 ${y} H 520"/>`);
+  }
+  // the listening place: head, nose, rings
+  parts.push('<path d="M520 22 C 560 22, 560 78, 600 78"/><path d="M520 134 C 560 134, 560 78, 600 78"/>');
+  for (const r of [22, 36, 50, 64]) parts.push(`<circle cx="680" cy="78" r="${r}"/>`);
+  parts.push('<circle cx="680" cy="78" r="10"/><path d="M675 69 L680 61 L685 69"/>');
+  // one output jack
+  parts.push('<path d="M744 78 H 880"/><circle cx="902" cy="78" r="15"/><circle cx="902" cy="78" r="5.5"/>');
+  const art = parts.join('');
+  return `<svg class="flowart" viewBox="0 0 940 156" aria-hidden="true">
+    <g class="lip" transform="translate(0.7 0.9)">${art}</g><g class="cut">${art}</g></svg>`;
+}
+
 function draw(which) {
   document.getElementById('box').innerHTML =
-    strip() + `<div class="face">${which === 'settings' ? settingsFace() : statusFace()}</div>` + foot(which);
+    strip() + `<div class="face">${which === 'settings' ? settingsFace() : statusFace()}</div>` + foot(which) +
+    ['tl', 'tr', 'bl', 'br'].map((c) => `<span class="screw ${c}" aria-hidden="true"></span>`).join('');
   wireSlides();
 }
 draw(face);
+
+/* Parts grow with the window, from the 1280 × 800 layout up to half again. */
+function fit() {
+  const box = document.getElementById('box').getBoundingClientRect();
+  const k = Math.min(1.5, Math.max(1, Math.min(box.width / 1256, box.height / 776)));
+  document.documentElement.style.setProperty('--k', k.toFixed(3));
+}
+fit();
+addEventListener('resize', fit);
 
 /* Opened without a query (a review copy): a bar above the box picks the face and the metal. */
 if (!params.has('face')) {
