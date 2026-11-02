@@ -13,7 +13,7 @@ import { text } from '../../text';
 import { type Context, type Drawn, described } from '../../screens/common';
 import { bypassReason } from '../../screens/upmix';
 import { upmixApply } from './controls';
-import { facts, fine, group, keyRow, led, mkey, pickKey, print } from './parts';
+import { facts, fine, flowRoom, group, keyRow, led, mkey, pickKey, print } from './parts';
 import type { Scope } from './scope';
 
 const CHOICES: readonly UpmixerChoice[] = ['first_party', 'plugin', 'off'];
@@ -239,6 +239,7 @@ export function upmixFace(scope: Scope): Drawn {
         : group('pd-upmix-apply', text.profile.upmixApply, [headphones, speakers, fine(text.profile.upmixApplyHint, 'upmix-apply-hint')]),
     ),
     h('div', { class: 'pd-upmix-inputs' }, ...ctx.snapshot.upmix.endpoints.map((view) => input(ctx, view))),
+    flowRoom(),
   );
   return { element };
 }

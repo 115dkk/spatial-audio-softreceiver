@@ -1025,3 +1025,11 @@ export function etchedFlow(): SVGSVGElement {
   };
   return etched('pd-etch-flow', '0 0 940 156', art(), art);
 }
+
+/**
+ * A face's spare room (법칙 11): it takes the height the parts leave, and
+ * the signal flow is etched there only when there is room to draw it whole.
+ */
+export function flowRoom(): HTMLElement {
+  return h('div', { class: 'pd-flowroom', 'aria-hidden': 'true' }, etchedFlow());
+}

@@ -6,7 +6,7 @@
 // the steps then follow the entrance chosen. The supervisor decides the
 // step; the face only explains it and offers the intent that moves it on.
 // After quitting the face prints the closing sentences and every light of
-// the box is dark.
+// the box is dark. The room the sentences leave has the signal flow etched.
 
 import type { EntranceKind, SetupStep } from '../../bindings';
 import { type Child, h } from '../../dom';
@@ -25,7 +25,7 @@ import {
 } from '../../screens/entrance';
 import { driverRows, platformRows } from '../../screens/facts';
 import { discardRow, outputRow } from './controls';
-import { facts, fine, intentKey, led, print, sr } from './parts';
+import { facts, fine, flowRoom, intentKey, led, print, sr } from './parts';
 
 function steps(labels: readonly string[], current: number): HTMLElement {
   return h(
@@ -154,6 +154,7 @@ export function wizardFace(ctx: Context, step: SetupStep): Drawn {
     steps(stepLabels(entrance), stepIndex(step, entrance)),
     h('div', { class: 'pd-rule', 'aria-hidden': 'true' }),
     h('div', { class: 'pd-wizard-body' }, h('h1', { class: 'pd-title' }, title), ...children),
+    flowRoom(),
   );
   return { element };
 }
@@ -164,6 +165,7 @@ export function quitFace(): Drawn {
       'div',
       { class: 'pd-wizard pd-quit' },
       h('div', { class: 'pd-wizard-body' }, h('h1', { class: 'pd-title' }, text.wizard.quitTitle), h('p', { class: 'pd-body' }, text.wizard.quitBody)),
+      flowRoom(),
     ),
   };
 }

@@ -45,10 +45,12 @@
   /*
    * Light: bead-blasted silver aluminium, black print.
    *
-   * Contrast (WCAG 2.x relative luminance), against the darkest point of
-   * the metal: the gradient's end #c4c7c9 under the multiply grain at its
-   * densest (0.18 × 0.95 of 50 % grey) is #b3b6b8. --pd-ink #121416 is
-   * 9.06:1 there and --pd-ink-2 #1f2225 is 7.84:1. The sheen only lightens.
+   * Contrast (WCAG 2.x relative luminance), measured on the skin at
+   * 1280 × 800 and 1920 × 1080: the darkest metal under any printed letter
+   * (its strokes and a pixel round them, the grain averaged over 3 × 3
+   * pixels, etchings and the light of LEDs included, the rails' shadow left
+   * out) is #b8babc under --pd-ink #121416, 9.48:1, and #babcbe under
+   * --pd-ink-2 #1f2225, 8.39:1. Bare metal at its darkest is #c3c6c8.
    */
   --pd-room: #d4d4d1;
   --pd-metal-1: #dfe1e2;
@@ -62,15 +64,15 @@
   --pd-mled-off: #8a8d90;
   --pd-mled-edge: rgba(0, 0, 0, 0.3);
   --pd-spill: 38%;
-  --pd-under: rgba(0, 0, 0, 0.26);
+  --pd-under: rgba(0, 0, 0, 0.34);
   --pd-rail-edge: rgba(0, 0, 0, 0.4);
   --pd-etch: rgba(0, 0, 0, 0.1);
   --pd-etch-lip: rgba(255, 255, 255, 0.55);
-  /* The nameplate: black anodised, the engraving shows bright aluminium. */
+  /* The nameplate: black anodised, the engraving shows bright aluminium (the Korean line 8.6:1 at the plate's lightest corner). */
   --pd-plate-1: #2a2c2f;
   --pd-plate-2: #161719;
   --pd-plate-ink: #e4e6e8;
-  --pd-plate-ink-2: #b9bcbf;
+  --pd-plate-ink-2: #c8cbce;
   /* The slide switch and the momentary key: a dark slot, a bright machined actuator. */
   --pd-slot-1: #040405;
   --pd-slot-2: #151617;
@@ -103,12 +105,12 @@
     /*
      * Dark: dark metal, white print.
      *
-     * Contrast against the lightest point of the metal (white print reads
-     * worst there): the sheen band's peak (8 % white over the gradient's
-     * middle, under the screen grain at its densest) is #46494c, and the top
-     * left corner (#303336 with the 4.5 % radial light) is #44474a.
-     * --pd-ink #f5f3ee is 8.18:1 at the band and 8.45:1 at the corner;
-     * --pd-ink-2 #e9e7e2 is 7.34:1 and 7.58:1.
+     * Contrast, measured the same way against the lightest metal under a
+     * letter (white print reads worst there): #44474a under --pd-ink
+     * #f5f3ee, 8.43:1, and under --pd-ink-2 #e9e7e2 the amber light a note's
+     * LED casts by its line, #504735, 7.41:1. Bare metal at its lightest (the
+     * sheen band) is #414345. Print keeps out of the brighter part of an
+     * LED's light: the gaps by LEDs and lit keys are set for that.
      */
     --pd-room: #101112;
     --pd-metal-1: #303336;
@@ -129,11 +131,11 @@
     --pd-rail-edge: rgba(255, 255, 255, 0.2);
     --pd-etch: rgba(255, 255, 255, 0.08);
     --pd-etch-lip: rgba(0, 0, 0, 0.45);
-    /* The nameplate inverted: brushed silver, the engraving cut dark. */
+    /* The nameplate inverted: brushed silver, the engraving cut dark (the Korean line 7.2:1 at the plate's darkest corner). */
     --pd-plate-1: #d9dcdf;
     --pd-plate-2: #a2a6aa;
-    --pd-plate-ink: #17191b;
-    --pd-plate-ink-2: #2b2e31;
+    --pd-plate-ink: #0f1112;
+    --pd-plate-ink-2: #17191b;
     /* The slide switch inverted: a bright machined channel, a dark actuator with lit edges. */
     --pd-slot-1: #9a9da1;
     --pd-slot-2: #d4d6d9;
@@ -352,7 +354,7 @@ html[data-skin="pedal"] #app {
 .pd-tag {
   display: inline-block;
   margin-left: 6px;
-  padding: 0 5px;
+  padding: 1px 5px;
   border: 1px solid var(--pd-rule);
   border-radius: 3px;
   font-size: 10.5px;
@@ -578,7 +580,8 @@ html[data-skin="pedal"] #app {
   display: inline-grid;
   justify-items: center;
   align-content: start;
-  gap: 6px;
+  /* The print under a key stands clear of its ring's light on the metal. */
+  gap: 8px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -1250,6 +1253,12 @@ html[data-skin="pedal"] #app {
   mask: radial-gradient(circle, #000 0 9%, rgba(0, 0, 0, 0.9) 12%, transparent 46%);
 }
 
+/* Off, nothing stands under the columns: the rings run on to the face's edges. */
+.pd-status.is-standby .pd-etch-field {
+  -webkit-mask: radial-gradient(circle, #000 0 9%, rgba(0, 0, 0, 0.9) 30%, transparent 68%);
+  mask: radial-gradient(circle, #000 0 9%, rgba(0, 0, 0, 0.9) 30%, transparent 68%);
+}
+
 .pd-etch-flow {
   display: block;
   width: 100%;
@@ -1321,19 +1330,23 @@ html[data-skin="pedal"] #app {
   min-height: 0;
 }
 
+/* Each in its own row whichever are there, so the face alone gives way when a band comes. */
 .pd-top {
+  grid-row: 1;
   display: grid;
   gap: 8px;
   padding: 10px 40px 0 32px;
 }
 
 .pd-refusals {
+  grid-row: 3;
   display: grid;
   gap: 8px;
   padding: 6px 40px 4px 32px;
 }
 
 .pd-facewin {
+  grid-row: 2;
   position: relative;
   min-height: 0;
 }
@@ -1605,6 +1618,11 @@ html[data-skin="pedal"] #app {
   grid-row: 1 / span 4;
 }
 
+/* Off or stopped the channels have no bar graphs, so nothing holds their last row open. */
+.pd-status.is-standby .pd-status-main {
+  grid-template-rows: repeat(4, auto);
+}
+
 .pd-chs {
   display: contents;
 }
@@ -1628,6 +1646,11 @@ html[data-skin="pedal"] #app {
   display: grid;
   gap: 4px;
   align-content: start;
+}
+
+/* A lane's app key keeps its ring's light off the lane's printed name above it. */
+.pd-ch-format > .pd-key:first-child {
+  margin-top: 6px;
 }
 
 .pd-fmt {
@@ -1667,7 +1690,8 @@ html[data-skin="pedal"] #app {
 .pd-ladder-row {
   display: flex;
   align-items: stretch;
-  gap: 8px;
+  /* The print by the bar graph stays out of its segments' light. */
+  gap: 12px;
   min-height: 0;
   padding-top: 8px;
 }
@@ -1751,7 +1775,8 @@ html[data-skin="pedal"] #app {
 .pd-meter .pd-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  /* The name stays out of its LED's light. */
+  gap: 10px;
 }
 
 .pd-sep {
@@ -1921,7 +1946,8 @@ html[data-skin="pedal"] #app {
 
 .pd-map-point {
   position: absolute;
-  width: calc(17 / 300 * 100%);
+  /* The button's width in the drawing's 300 units (map.ts: smaller for many directions or close ones). */
+  width: calc(var(--pd-point, 17) / 300 * 100%);
   aspect-ratio: 1;
   margin: 0;
   padding: 0;
@@ -1931,10 +1957,6 @@ html[data-skin="pedal"] #app {
   box-shadow: 1px 1.6px 1px var(--pd-cast), 0 0 0 0.6px rgba(0, 0, 0, 0.35);
   transform: translate(-50%, -50%);
   cursor: pointer;
-}
-
-.pd-map.is-dense .pd-map-point {
-  width: calc(12 / 300 * 100%);
 }
 
 .pd-map-point:disabled {
@@ -1974,13 +1996,14 @@ html[data-skin="pedal"] #app {
   gap: 6px;
 }
 
+/* The legend's marks are printed, a dot for a direction's button and the plan's rings round it. */
 .pd-swatch {
   position: relative;
   display: inline-block;
-  width: 11px;
-  height: 11px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: radial-gradient(circle at 38% 32%, var(--pd-nut-1), var(--pd-nut-2) 60%, var(--pd-nut-3));
+  background: var(--pd-ink-2);
 }
 
 .pd-swatch.is-up,
@@ -2001,7 +2024,8 @@ html[data-skin="pedal"] #app {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
+  min-height: 100%;
   padding-top: 8px;
 }
 
@@ -2009,7 +2033,20 @@ html[data-skin="pedal"] #app {
 .pd-profile-side {
   display: grid;
   gap: 16px;
+  align-content: start;
   min-width: 0;
+}
+
+/* The shorter column's spare room carries the etched signal flow. */
+.pd-profile-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.pd-profile-main > .pd-flowroom {
+  flex: 1 1 0;
+  align-items: start;
+  padding-top: 28px;
 }
 
 .pd-kindkeys {
@@ -2077,7 +2114,9 @@ html[data-skin="pedal"] #app {
 
 .pd-upmix {
   display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 18px;
+  min-height: 100%;
   padding-top: 8px;
 }
 
@@ -2155,6 +2194,7 @@ html[data-skin="pedal"] #app {
 .pd-flowroom {
   display: grid;
   place-items: center;
+  justify-self: stretch;
   min-height: 0;
   container-type: size;
 }
@@ -2213,8 +2253,9 @@ html[data-skin="pedal"] #app {
 
 .pd-wizard {
   display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 14px;
-  align-content: start;
+  min-height: 100%;
   max-width: 1040px;
   padding-top: 8px;
 }
@@ -2276,14 +2317,19 @@ html[data-skin="pedal"] #app {
 }
 
 .pd-quit {
-  min-height: 100%;
-  place-content: center;
+  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+  max-width: none;
   justify-items: center;
   text-align: center;
 }
 
 .pd-quit .pd-wizard-body {
+  grid-row: 2;
   justify-items: center;
+}
+
+.pd-quit > .pd-flowroom {
+  grid-row: 3;
 }
 
 /* ---------- motion ---------- */
@@ -2391,7 +2437,25 @@ html[data-skin="pedal"] #app {
   }
 
   .pd-plate {
-    display: none;
+    margin-bottom: 6px;
+    padding: 5px 20px 4px;
+  }
+
+  .pd-plate b {
+    font-size: 11.5px;
+    letter-spacing: 0.12em;
+  }
+
+  .pd-plate span {
+    font-size: 9.5px;
+  }
+
+  .pd-plate i:first-of-type {
+    left: 7px;
+  }
+
+  .pd-plate i:last-of-type {
+    right: 7px;
   }
 
   .pd-foot-drawing {

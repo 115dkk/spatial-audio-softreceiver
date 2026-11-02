@@ -16,7 +16,7 @@ import { type Context, type Drawn, described } from '../../screens/common';
 import { GAIN_MAX, GAIN_MIN } from '../../screens/profile';
 import { kindSlide, layoutFamilies, levelEncoder, upmixApply } from './controls';
 import { DENSE_DIRECTIONS, soundMap } from './map';
-import { facts, fine, group, ikey, intentKey, keyRow, mkey, pickKey, print } from './parts';
+import { facts, fine, flowRoom, group, ikey, intentKey, keyRow, mkey, pickKey, print } from './parts';
 import { type Scope, signed } from './scope';
 
 const KINDS: readonly ProfileKind[] = ['headphones', 'speakers'];
@@ -316,6 +316,7 @@ export function profileFace(scope: Scope, engineNow: EngineStatus | null): Drawn
         ),
         running && !snapshot.profile.from_file ? fine(text.profile.importRunning, RUNNING_HINT) : null,
       ]),
+      flowRoom(),
     ),
     h(
       'div',

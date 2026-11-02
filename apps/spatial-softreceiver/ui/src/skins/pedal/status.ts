@@ -507,7 +507,12 @@ function standby(scope: Scope): Drawn {
   const element = h(
     'div',
     { class: 'pd-status is-standby' },
-    columns(inputs, [h('div', { class: 'pd-plays' }, ...plays)], [levelEncoder(scope), kindSlide(scope), facts([[profileLabel, profileName]])]),
+    columns(
+      inputs,
+      // The sound field is etched round where it will play, as round the map while running.
+      [h('div', { class: 'pd-mapwrap' }, etchedField(), h('div', { class: 'pd-plays' }, ...plays))],
+      [levelEncoder(scope), kindSlide(scope), facts([[profileLabel, profileName]])],
+    ),
     under.length === 0 ? null : h('div', { class: 'pd-under' }, ...under),
     apps ? h('div', { class: 'pd-under pd-hints' }, ...laneHints(scope)) : null,
   );
