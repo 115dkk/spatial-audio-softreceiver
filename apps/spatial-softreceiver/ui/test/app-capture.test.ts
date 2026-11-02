@@ -15,16 +15,16 @@ import { createMockApi } from '../src/mock';
 import type { Tab } from '../src/screens/common';
 import type { App } from '../src/skins/types';
 import { mount as mountConsole } from '../src/skins/console';
-import { mount as mountPanel } from '../src/skins/panel';
+import { mount as mountPedal } from '../src/skins/pedal';
 import { en, ko } from '../src/text';
 
 const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힯]/;
 
-type SkinName = 'standard' | 'panel' | 'console';
-const SKINS: readonly SkinName[] = ['standard', 'panel', 'console'];
+type SkinName = 'standard' | 'pedal' | 'console';
+const SKINS: readonly SkinName[] = ['standard', 'pedal', 'console'];
 const MOUNT: Record<SkinName, (root: HTMLElement, api: Api, options: { tab?: Tab }) => App> = {
   standard: mountApp,
-  panel: mountPanel,
+  pedal: mountPedal,
   console: mountConsole,
 };
 
@@ -77,9 +77,9 @@ function withPlayer(name: string, language: Language = 'ko'): Snapshot {
   return snapshot;
 }
 
-/** Chooses a lane's app the way the skin offers it: a select, or the panel's row and list. */
+/** Chooses a lane's app the way the skin offers it: a select, or the pedal's key and its row of apps. */
 async function pickApp(skin: SkinName, lane: number, exe: string) {
-  if (skin === 'panel') {
+  if (skin === 'pedal') {
     $(`[data-key="capture-app-${lane}"]`)!.click();
     const list = $(`[data-region="capture-apps-${lane}"]`)!;
     const option = [...list.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes(exe));
@@ -333,26 +333,33 @@ describe('the console with the app-sound entrance', () => {
   });
 });
 
-describe('the front panel with the app-sound entrance', () => {
-  it('lights the lanes with an app and keeps PASS dark', () => {
-    mounted('panel', fixture('running-apps'), 'status');
-    const lamp = (lane: number) => $(`.pn-lamp[data-lane="${lane}"]`)!.dataset.signal;
-    expect(lamp(0)).not.toBe('none');
+describe('the pedal with the app-sound entrance', () => {
+  it('lights the jacks of the lanes with an app and keeps PASS dark', () => {
+    mounted('pedal', fixture('running-apps'), 'status');
+    const jack = (lane: number) => $(`.pd-jack[data-lane="${lane}"]`)!;
+    expect(jack(0).dataset.signal).not.toBe('none');
+    expect(jack(0).querySelector('.pd-led')?.getAttribute('data-glow')).not.toBe('off');
     // The fixture's engine has sound on the music and PASS endpoints, but no app feeds them.
-    expect(lamp(1)).toBe('none');
-    expect(lamp(2)).toBe('none');
+    expect(jack(1).dataset.signal).toBe('none');
+    expect(jack(2).dataset.signal).toBe('none');
+    expect(jack(2).querySelector('.pd-led')?.getAttribute('data-glow')).toBe('off');
   });
 
-  it('opens a lane’s list of apps in the display and closes it after a choice', async () => {
-    mounted('panel', withPlayer('ready-apps'), 'status');
+  it('opens a lane’s row of apps with its lit key and closes it after a choice', async () => {
+    mounted('pedal', withPlayer('ready-apps'), 'status');
     const toggle = $('[data-key="capture-app-1"]')!;
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.classList.contains('is-lit')).toBe(false);
     toggle.click();
-    expect($('[data-key="capture-app-1"]')!.getAttribute('aria-expanded')).toBe('true');
+    const opened = $('[data-key="capture-app-1"]')!;
+    expect(opened.getAttribute('aria-expanded')).toBe('true');
+    expect(opened.classList.contains('is-lit')).toBe(true);
     const list = $('[data-region="capture-apps-1"]')!;
     expect(list.getAttribute('role')).toBe('radiogroup');
-    // "None" is marked: the music lane has no app.
-    expect(list.querySelector('[aria-checked="true"]')?.textContent).toContain(ko.profile.none);
+    // "None" is lit: the music lane has no app.
+    const chosen = list.querySelector('[aria-checked="true"]')!;
+    expect(chosen.textContent).toContain(ko.profile.none);
+    expect(chosen.classList.contains('is-lit')).toBe(true);
     [...list.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('player.exe'))!.click();
     await tick();
     expect($('[data-region="capture-apps-1"]')).toBeNull();

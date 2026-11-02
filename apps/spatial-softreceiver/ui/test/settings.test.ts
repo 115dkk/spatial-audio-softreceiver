@@ -97,7 +97,7 @@ describe('the skin (ADR 0041)', () => {
   it.each<Language>(['ko', 'en'])('names every skin and shows the chosen one (%s)', (language) => {
     const catalog = language === 'ko' ? ko : en;
     mounted({ ...fixture('ready', language), skin: 'console' });
-    expect(optionLabels(select())).toEqual([catalog.skins.standard, catalog.skins.panel, catalog.skins.console]);
+    expect(optionLabels(select())).toEqual([catalog.skins.standard, catalog.skins.pedal, catalog.skins.console]);
     expect(chosen(select())).toBe('console');
   });
 
@@ -110,8 +110,8 @@ describe('the skin (ADR 0041)', () => {
   it('sends the choice in every phase the screen draws', () => {
     for (const name of ['ready', 'running', 'faulted']) {
       const { sent } = mounted(fixture(name));
-      choose(select(), 'panel');
-      expect(sent, name).toEqual([{ kind: 'set_skin', value: 'panel' }]);
+      choose(select(), 'pedal');
+      expect(sent, name).toEqual([{ kind: 'set_skin', value: 'pedal' }]);
     }
   });
 });

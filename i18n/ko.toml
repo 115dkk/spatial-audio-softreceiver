@@ -804,20 +804,27 @@ console = "콘솔"
 
 # 이펙터 스킨의 문구는 이 아래 [screen.pedal] 표에만 둡니다(src/skins/pedal/, ADR 0046).
 [screen.pedal]
-# 본체에 인쇄된 짧은 이름: 전원 단추, 입구별 신호 램프(게임, 음악, PASS, ASIO).
+# 함에 인쇄된 짧은 이름: 전원 풋스위치, 윗면의 입력 잭(게임, 음악, PASS, ASIO), 풋스위치 옆의 표시등.
 power = "전원"
 lamps = ["게임", "음악", "PASS", "ASIO"]
 lampsLabel = "입력 신호"
-lampsHint = "소리가 들어오는 입구의 램프는 밝게 켜집니다. 입력 형식만 있거나 ASIO가 대체 클럭으로 작동하면 흐리게 켜집니다."
+lampsHint = "잭 옆의 LED는 그 입구에 소리가 들어오면 밝게 켜집니다. 입력 형식만 있거나 ASIO가 대체 클럭으로 작동하면 흐리게 켜집니다."
 lampSound = "소리 있음"
 lampIdle = "소리 없음"
-# 표시부의 문구.
+indicators = "표시등"
+upmixLamp = "업믹스"
+brirLamp = "BRIR"
+options = "옵션"
+# 면이 창보다 길 때 면 오른쪽의 화살표 단추.
+scrollUp = "위로 넘기기"
+scrollDown = "아래로 넘기기"
+# 면에 인쇄하는 문구.
 standbyDevice = "켜면 재생할 장치"
 device = "출력 장치"
-mapTest = "점을 누르면 그 방향에서 시험용 신호를 재생합니다."
+mapTest = "방향 단추를 누르면 그 방향에서 시험용 신호를 재생합니다."
+mapBody = "위에서 내려다본 평면도입니다. 위쪽이 앞이고 가운데가 듣는 자리입니다. 소리가 나는 자리의 LED가 그 입구의 색으로 켜집니다."
 details = "세부 측정값"
-gainBody = "볼륨 노브로 현재 출력의 소리 크기를 조절하십시오. 노브를 놓으면 적용됩니다. 헤드폰과 스피커 설정은 따로 저장합니다."
-step = "단계"
+gainBody = "볼륨 노브로 지금 출력의 소리 크기를 조절하십시오. 노브를 놓으면 적용됩니다. 헤드폰과 스피커 설정은 따로 저장합니다."
 
 # 콘솔 스킨의 문구는 이 아래 [screen.console] 표에만 둡니다(src/skins/console/).
 [screen.console]

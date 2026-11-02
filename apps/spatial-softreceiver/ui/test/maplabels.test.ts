@@ -9,12 +9,12 @@ import { fixture } from '../src/fixtures';
 import { speakerDirections } from '../src/mock';
 import { type MapGeometry, directionHeight, heightOf, nameWidth, placeDirections } from '../src/screens/maplabels';
 import { MAP_GEOMETRY as STANDARD } from '../src/screens/objectmap';
-import { MAP_GEOMETRY as PANEL } from '../src/skins/panel/map';
+import { MAP_GEOMETRY as PEDAL } from '../src/skins/pedal/map';
 import { MAP_GEOMETRY as CONSOLE } from '../src/skins/console/map';
 
 const GEOMETRIES: [string, MapGeometry][] = [
   ['standard', STANDARD],
-  ['panel', PANEL],
+  ['pedal', PEDAL],
   ['console', CONSOLE],
 ];
 

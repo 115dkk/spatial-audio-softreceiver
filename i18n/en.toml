@@ -803,20 +803,27 @@ console = "Console"
 
 # The pedal skin's text lives only in the [screen.pedal] table below (src/skins/pedal/, ADR 0046).
 [screen.pedal]
-# Short names printed on the chassis: the power button and the signal lamp of each input (game, music, PASS, ASIO).
+# Short names printed on the enclosure: the power footswitch, the input jacks on top (game, music, PASS, ASIO), the indicators by the footswitch.
 power = "Power"
 lamps = ["Game", "Music", "PASS", "ASIO"]
 lampsLabel = "Input signals"
-lampsHint = "A lamp lights up when its input has sound. It glows dimly when the input has a format but no sound, or when ASIO uses a fallback clock."
+lampsHint = "The LED by a jack lights up when its input has sound. It glows dimly when the input has a format but no sound, or when ASIO runs on a fallback clock."
 lampSound = "Sound"
 lampIdle = "Silent"
-# Text in the display.
+indicators = "Indicators"
+upmixLamp = "Upmix"
+brirLamp = "BRIR"
+options = "Options"
+# The arrow buttons at the right of a face taller than the window.
+scrollUp = "Scroll up"
+scrollDown = "Scroll down"
+# Text printed on the faces.
 standbyDevice = "Playback device when on"
 device = "Output device"
-mapTest = "Press a point to play a test signal from that direction."
+mapTest = "Press a direction button to play a test signal from that direction."
+mapBody = "A plan seen from above: the front is at the top and the listening place in the middle. Where a sound is, an LED lights in its input's colour."
 details = "Detailed measurements"
 gainBody = "Turn the volume knob to adjust the output in use. Changes apply when you release it. Headphone and speaker settings are saved separately."
-step = "Step"
 
 # The console skin's text lives only in the [screen.console] table below (src/skins/console/).
 [screen.console]

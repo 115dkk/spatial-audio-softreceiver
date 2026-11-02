@@ -13,8 +13,8 @@ import { ASIO_LAYOUTS, SPEAKER_LAYOUTS } from '../src/guard';
 import { createMockApi } from '../src/mock';
 import type { Tab } from '../src/screens/common';
 import { mount as mountConsole } from '../src/skins/console';
-import { mount as mountPanel } from '../src/skins/panel';
-import { layoutFamilies } from '../src/skins/panel/ui';
+import { mount as mountPedal } from '../src/skins/pedal';
+import { layoutFamilies } from '../src/skins/pedal/controls';
 import type { App } from '../src/skins/types';
 import { ko } from '../src/text';
 
@@ -36,7 +36,7 @@ interface Skin {
   mount: Mount;
   /** A direction's point (its class says its height). */
   point: string;
-  /** The pool's object marks. */
+  /** The marks that show a sound object now (the pedal's lit LEDs). */
   object: string;
   /** The legend's lines and the below-ear swatch in one. */
   legendItem: string;
@@ -45,7 +45,7 @@ interface Skin {
 
 const SKINS: Skin[] = [
   { name: 'standard', mount: mountApp, point: '.map-direction', object: '.map-object', legendItem: '.map-legend li', belowSwatch: '.map-swatch.is-down' },
-  { name: 'panel', mount: mountPanel, point: '.pn-map-point', object: '.pn-map-object', legendItem: '.pn-map-legend li', belowSwatch: '.pn-swatch.is-down' },
+  { name: 'pedal', mount: mountPedal, point: '.pd-map-point', object: '.pd-mled.is-lit', legendItem: '.pd-map-legend li', belowSwatch: '.pd-swatch.is-down' },
   { name: 'console', mount: mountConsole, point: '.cn-map-direction', object: '.cn-map-object', legendItem: '.cn-map-legend li', belowSwatch: '.cn-map-key.is-down' },
 ];
 
@@ -71,6 +71,7 @@ function heights(skin: Skin): Record<string, string> {
 }
 
 const shownObjects = (skin: Skin) => $$(skin.object).filter((mark) => mark.getAttribute('display') !== 'none');
+const heightOfMark = (mark: Element) => (mark.classList.contains('is-down') ? 'down' : mark.classList.contains('is-up') ? 'up' : 'flat');
 const belowLine = (skin: Skin) => root.querySelector(skin.belowSwatch)?.closest('li') ?? null;
 const visibleLegend = (skin: Skin) => $$(skin.legendItem).filter((item) => !item.hidden).map((item) => item.textContent);
 
@@ -101,9 +102,8 @@ describe.each(SKINS)('the $name map', (skin) => {
     const scene = start.engine!.scene;
     const marks = shownObjects(skin);
     expect(marks).toHaveLength(scene.length);
-    expect(marks.map((mark) => (mark.classList.contains('is-down') ? 'down' : mark.classList.contains('is-up') ? 'up' : 'flat'))).toEqual(
-      scene.map((object) => (object.z <= -0.25 ? 'down' : object.z >= 0.25 ? 'up' : 'flat')),
-    );
+    // Each object as its own mark at its own height (the pedal's LEDs stand in the grid's order, not the scene's).
+    expect(marks.map(heightOfMark).sort()).toEqual(scene.map((object) => (object.z <= -0.25 ? 'down' : object.z >= 0.25 ? 'up' : 'flat')).sort());
     expect(marks.filter((mark) => mark.classList.contains('is-down'))).toHaveLength(3);
     expect(belowLine(skin)?.hidden).toBe(false);
   });
@@ -115,7 +115,7 @@ describe.each(SKINS)('the $name map', (skin) => {
     const engine: EngineStatus = structuredClone(start.engine!);
     engine.scene = [...engine.scene, { lane: 0, index: 9, x: 0, y: 0.866, z: -0.5, level_dbfs: -20 }];
     app.updateMeters(engine);
-    expect(shownObjects(skin).at(-1)?.classList.contains('is-down')).toBe(true);
+    expect(shownObjects(skin).filter((mark) => mark.classList.contains('is-down'))).toHaveLength(1);
     expect(belowLine(skin)?.hidden).toBe(false);
     // The meters move on without it; the line does not blink with them.
     app.updateMeters(start.engine!);
@@ -163,10 +163,10 @@ describe('the layouts to choose from', () => {
     expect(layoutFamilies(['7.1.4'])).toEqual([1]);
   });
 
-  it('the panel puts the 16 speaker layouts in four family lines of one radio group', async () => {
+  it('the pedal puts the 16 speaker layouts as lit keys in four family lines of one radio group', async () => {
     const { sent } = mounted(SKINS[1]!, fixture('ready-speakers-30-2'));
-    const group = $('[role="radiogroup"][aria-labelledby="pn-layout-title"]')!;
-    const lines = [...group.querySelectorAll('.pn-choice-line')].map((line) => [...line.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent));
+    const group = $('[role="radiogroup"][aria-labelledby="pd-layout-title"]')!;
+    const lines = [...group.querySelectorAll('.pd-keyline')].map((line) => [...line.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent));
     expect(lines).toEqual([
       ['2.0', '2.1', '4.0', '5.1', '7.1'],
       ['5.1.2', '5.1.4', '7.1.2', '7.1.4'],
@@ -178,6 +178,8 @@ describe('the layouts to choose from', () => {
     // One stop for Tab, on the chosen layout; the arrows cross the lines.
     expect(radios.filter((radio) => radio.tabIndex === 0).map((radio) => radio.textContent)).toEqual(['30.2']);
     expect(radios.find((radio) => radio.getAttribute('aria-checked') === 'true')?.textContent).toBe('30.2');
+    // The chosen layout's ring is the only one lit.
+    expect(radios.filter((radio) => radio.classList.contains('is-lit')).map((radio) => radio.textContent)).toEqual(['30.2']);
     const sevenOne = radios[4]!;
     sevenOne.focus();
     sevenOne.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
@@ -186,11 +188,11 @@ describe('the layouts to choose from', () => {
     expect(sent).toEqual([{ kind: 'set_speaker_layout', value: '22.2' }]);
   });
 
-  it('the panel puts the 11 ASIO layouts in three family lines with their channel counts', () => {
+  it('the pedal puts the 11 ASIO layouts in three family lines with their channel counts', () => {
     mounted(SKINS[1]!, fixture('ready-asio-24-1-10'), 'settings');
     const group = $('[role="radiogroup"][aria-labelledby="asio-layout-label"]')!;
-    const lines = [...group.querySelectorAll('.pn-choice-line')].map((line) =>
-      [...line.querySelectorAll('[role="radio"] .pn-row-label')].map((label) => label.textContent),
+    const lines = [...group.querySelectorAll('.pd-keyline')].map((line) =>
+      [...line.querySelectorAll('[role="radio"] .pd-key-label')].map((label) => label.textContent),
     );
     expect(lines).toEqual([
       ['2.0', '5.1', '7.1', '7.1.4'],
@@ -199,31 +201,31 @@ describe('the layouts to choose from', () => {
     ]);
     const chosen = group.querySelector('[aria-checked="true"]')!;
     expect(chosen.getAttribute('data-key')).toBe('asio-layout-24.1.10');
-    expect(chosen.querySelector('.pn-row-detail')?.textContent).toBe('35채널');
+    expect(chosen.querySelector('.pd-key-detail')?.textContent).toBe('35채널');
   });
 
-  it('the panel lists many test directions compactly, their angles in words for a screen reader', () => {
+  it('the pedal lists many test directions compactly, their angles in words for a screen reader', () => {
     const start = fixture('ready-headphones-24-1-10');
     mounted(SKINS[1]!, start);
-    const list = $('.pn-tests[role="group"]')!;
+    const list = $('.pd-tests[role="group"]')!;
     expect(list.classList.contains('is-dense')).toBe(true);
     const rsc = start.profile.directions.find((direction) => direction.name === 'Rsc')!;
     const row = $(`[data-key="direction-${rsc.id}"]`)!;
-    expect(row.querySelector('.pn-row-label')?.textContent).toBe('Rsc');
-    expect(row.querySelector('.pn-row-detail')?.textContent).toBe('-10° / 0°');
+    expect(row.querySelector('.pd-key-label')?.textContent).toBe('Rsc');
+    expect(row.querySelector('.pd-key-detail')?.textContent).toBe('-10° / 0°');
     expect(row.getAttribute('aria-label')).toBe(`Rsc, ${ko.profile.angles(-10, 0)}`);
     // A layout of a few directions keeps its rows as they were.
     root.replaceChildren();
     mounted(SKINS[1]!, fixture('running'));
-    expect($('.pn-tests[role="group"]')!.classList.contains('is-dense')).toBe(false);
+    expect($('.pd-tests[role="group"]')!.classList.contains('is-dense')).toBe(false);
     expect($('[data-key="direction-0"]')!.hasAttribute('aria-label')).toBe(false);
   });
 
-  it('the panel draws the names of a dense map in its small type', () => {
+  it('the pedal draws the buttons and names of a dense map smaller', () => {
     mounted(SKINS[1]!, fixture('ready-headphones-24-1-10'));
-    expect($('.pn-map')!.classList.contains('is-dense')).toBe(true);
+    expect($('.pd-map')!.classList.contains('is-dense')).toBe(true);
     root.replaceChildren();
     mounted(SKINS[1]!, fixture('ready-headphones'));
-    expect($('.pn-map')!.classList.contains('is-dense')).toBe(false);
+    expect($('.pd-map')!.classList.contains('is-dense')).toBe(false);
   });
 });
