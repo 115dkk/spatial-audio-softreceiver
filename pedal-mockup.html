@@ -424,29 +424,45 @@ p { margin: 0; }
   inset: 17%;
   border-radius: 50%;
   background:
+    /* the lathe's fine rings */
+    repeating-radial-gradient(circle, rgba(0, 0, 0, 0.07) 0 0.6px, rgba(255, 255, 255, 0.05) 0.6px 1.2px, transparent 1.2px 2.1px),
     radial-gradient(circle at 40% 35%, rgba(255, 255, 255, 0.5), transparent 55%),
     conic-gradient(from 20deg, #e9eaeb, #a7aaac, #f4f5f5, #9c9fa1, #e3e4e5, #a6a9ab, #e9eaeb);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
+/*
+ * The pointer is a line milled into the cap and filled, not a stroke laid
+ * on it: narrow, cut square at both ends, inside the cap. Its floor is dark
+ * metal, and the wall facing the light shows as a bright lip on the far
+ * side. The light stays at the top left however the knob turns, so the lip
+ * is the same line moved in screen space (translate before rotate), not a
+ * side of the rotated groove.
+ */
 .knob .ptr {
+  --pw: max(1.8px, 3%);
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 3px;
+  width: var(--pw);
   height: 50%;
-  margin-left: -1.5px;
+  margin-left: calc(var(--pw) / -2);
   transform-origin: 50% 0;
 }
 .knob .ptr::after {
+  /* from a third of the way out through the cap's rim, so the slot breaks the rim */
   content: "";
   position: absolute;
   left: 0;
-  bottom: 6%;
-  width: 3px;
-  height: 46%;
-  border-radius: 2px;
-  background: #121314;
+  right: 0;
+  top: 24%;
+  height: 44%;
+  border-radius: 0.4px;
+  /* the floor darkens the metal under it, so the cap's sheen still runs through it */
+  background: rgba(16, 17, 19, 0.82);
+  mix-blend-mode: multiply;
 }
+.knob .ptr.lip::after { background: rgba(255, 255, 255, 0.85); mix-blend-mode: screen; }
+.knob .ptr.shade::after { background: rgba(0, 0, 0, 0.3); }
 .ring { position: absolute; inset: 0; }
 .ring .led { position: absolute; --lens: 6px; margin: -3px 0 0 -3px; --c: var(--led-white); }
 .ticks { position: absolute; inset: 0; overflow: visible; }
@@ -539,7 +555,8 @@ p { margin: 0; }
 .mark b { display: block; font-size: 17px; font-weight: 700; letter-spacing: 0.16em; }
 .mark span { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--ink-2); }
 .power { display: flex; align-items: flex-end; gap: 14px; }
-.power .say { display: grid; justify-items: end; gap: 4px; padding-bottom: 10px; }
+.power .lamps { display: flex; gap: 16px; padding-bottom: 10px; }
+.power .say { display: grid; justify-items: center; gap: 5px; }
 .foot-switch svg { display: block; filter: drop-shadow(3px 5px 4px var(--cast)); }
 
 /* ---------- settings face ---------- */
@@ -797,6 +814,8 @@ function knob({ size = 74, value = 0.5, ring = 0, ticks = null, chosen = -1 }) {
     <div class="ring">${ringHtml}</div>
     <div class="knob" style="left:${c - size / 2}px;top:${c - size / 2}px;width:${size}px;height:${size}px">
       <div class="cap"></div>
+      <div class="ptr shade" style="transform:translate(-0.8px, -0.9px) rotate(${angle + 180}deg)"></div>
+      <div class="ptr lip" style="transform:translate(1px, 1.1px) rotate(${angle + 180}deg)"></div>
       <div class="ptr" style="transform:rotate(${angle + 180}deg)"></div>
     </div>
   </div>`;
@@ -828,13 +847,20 @@ function strip() {
   </div><div class="rule"></div></div>`;
 }
 
+/*
+ * The foot. The face keys carry no LED: which face is open, the face itself
+ * shows. The lamps by the power switch say what the face keys cannot: whether
+ * upmixing is applied, whether the headphones render through a BRIR set, and
+ * whether the engine is on.
+ */
 function foot(current) {
   const pages = [['status', '상태'], ['profile', '프로필'], ['upmix', '업믹스'], ['settings', '설정']];
+  const lamps = [['업믹스', true], ['BRIR', true], ['켜짐', true]];
   return `<div class="foot">
-    <div class="pages">${pages.map(([k, n]) => button(n, k === current, k === current)).join('')}</div>
+    <div class="pages">${pages.map(([k, n]) => `<div class="btn ${k === current ? 'chosen' : ''}"><span class="press"></span><span class="small">${n}</span></div>`).join('')}</div>
     <div class="mark plate"><i></i><b>SPATIAL SOFTRECEIVER</b><span>공간 소프트리시버</span><i></i></div>
     <div class="power">
-      <div class="say"><span class="label">켜짐</span>${led('var(--led-on)', true, 'lg')}</div>
+      <div class="lamps">${lamps.map(([n, on]) => `<div class="say"><span class="label">${n}</span>${led('var(--led-on)', on, 'lg')}</div>`).join('')}</div>
       <div class="btn foot-switch">${footSwitchSvg()}<span class="small">전원</span></div>
     </div>
   </div>`;
