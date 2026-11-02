@@ -22,6 +22,7 @@ import {
   entranceOf,
   stepIndex,
   stepLabels,
+  switchTarget,
 } from '../../screens/entrance';
 import { driverRows, platformRows } from '../../screens/facts';
 import { discardRow, outputRow } from './controls';
@@ -50,18 +51,12 @@ function platformFacts(ctx: Context): HTMLElement | null {
   return ctx.snapshot.platform === null ? null : facts(platformRows(ctx.snapshot.platform));
 }
 
-/** The key that chooses an entrance, with the reason under it when the PC cannot run that one (the key is then off). */
+/** The key that chooses an entrance; a blocked welcome choice keeps only its reason. */
 function entranceKeyFor(ctx: Context, kind: EntranceKind, label: string): Child[] {
   const blocked = entranceBlocked(ctx.snapshot, kind);
   const reasonId = `${entranceKey(kind)}-blocked`;
-  return [
-    intentKey(ctx, label, { kind: 'choose_entrance', value: kind }, {
-      key: entranceKey(kind),
-      off: blocked !== null,
-      describedBy: blocked === null ? null : reasonId,
-    }),
-    blocked === null ? null : fine(blocked, reasonId),
-  ];
+  if (blocked !== null) return [fine(blocked, reasonId)];
+  return [intentKey(ctx, label, { kind: 'choose_entrance', value: kind }, { key: entranceKey(kind) })];
 }
 
 /** An entrance at the first step: its name, what it receives and needs, and its key. */
@@ -83,7 +78,7 @@ function entranceBlock(ctx: Context, kind: EntranceKind): HTMLElement {
 
 function body(ctx: Context, step: SetupStep): [title: string, children: Child[]] {
   const w = text.wizard;
-  const apps = entranceOf(ctx.snapshot) === 'app_sound';
+  const target = switchTarget(ctx.snapshot);
   switch (step) {
     case 'welcome':
       return [
@@ -94,9 +89,9 @@ function body(ctx: Context, step: SetupStep): [title: string, children: Child[]]
         ],
       ];
     case 'unsupported':
-      return apps
+      return target === 'driver'
         ? [w.appUnsupportedTitle, [...paragraphs(w.appUnsupportedBody), platformFacts(ctx), ...entranceKeyFor(ctx, 'driver', w.switchToDriver)]]
-        : [w.unsupportedTitle, [...paragraphs(w.unsupportedBody), platformFacts(ctx), ...entranceKeyFor(ctx, 'app_sound', w.switchToAppSound)]];
+        : [w.unsupportedTitle, [...paragraphs(w.unsupportedBody), platformFacts(ctx), ...(target === 'app_sound' ? entranceKeyFor(ctx, 'app_sound', w.switchToAppSound) : [])]];
     case 'not_test_signing':
       return [
         w.testSigningTitle,
@@ -104,8 +99,8 @@ function body(ctx: Context, step: SetupStep): [title: string, children: Child[]]
           ...paragraphs(w.testSigningBody),
           platformFacts(ctx),
           intentKey(ctx, text.banner.recheck, { kind: 'recheck' }, { key: 'recheck' }),
-          h('p', { class: 'pd-body pd-other' }, w.testSigningOther),
-          ...entranceKeyFor(ctx, 'app_sound', w.switchToAppSound),
+          target === 'app_sound' ? h('p', { class: 'pd-body pd-other' }, w.testSigningOther) : null,
+          ...(target === 'app_sound' ? entranceKeyFor(ctx, 'app_sound', w.switchToAppSound) : []),
         ],
       ];
     case 'driver': {

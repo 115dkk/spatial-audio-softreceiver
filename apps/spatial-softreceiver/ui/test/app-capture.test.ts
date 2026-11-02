@@ -13,6 +13,7 @@ import type { Intent, Language, Snapshot } from '../src/bindings';
 import { fixture } from '../src/fixtures';
 import { createMockApi } from '../src/mock';
 import type { Tab } from '../src/screens/common';
+import { appSoundBlocked, entranceBlocked, switchTarget } from '../src/screens/entrance';
 import type { App } from '../src/skins/types';
 import { mount as mountConsole } from '../src/skins/console';
 import { mount as mountPedal } from '../src/skins/pedal';
@@ -31,6 +32,7 @@ const MOUNT: Record<SkinName, (root: HTMLElement, api: Api, options: { tab?: Tab
 const APP_FIXTURES = [
   'setup-welcome',
   'setup-apps-unsupported',
+  'setup-apps-unsupported-old',
   'setup-choose-discard',
   'setup-choose-discard-empty',
   'ready-apps',
@@ -135,8 +137,7 @@ describe.each(SKINS)('the %s skin', (skin) => {
     start.platform = { computer_name: 'PC', os_build: 19045, arch: 'x64', test_signing: false, secure_boot: 'enabled' };
     start.app_capture = { ...start.app_capture!, supported: false, min_build: 20348 };
     mounted(skin, start);
-    const apps = $<HTMLButtonElement>('[data-key="entrance-app-sound"]')!;
-    expect(apps.disabled).toBe(true);
+    expect($('[data-key="entrance-app-sound"]')).toBeNull();
     expect(root.textContent).toContain(ko.entrance.osRequirement(20348));
     expect(root.textContent).toContain(ko.entrance.unavailable);
     expect($<HTMLButtonElement>('[data-key="entrance-driver"]')!.disabled).toBe(false);
@@ -150,6 +151,66 @@ describe.each(SKINS)('the %s skin', (skin) => {
     $('[data-key="entrance-driver"]')!.click();
     await tick();
     expect(sent).toEqual([{ kind: 'choose_entrance', value: 'driver' }]);
+  });
+
+  for (const language of ['ko', 'en'] as const) {
+    for (const name of ['setup-unsupported', 'setup-apps-unsupported', 'setup-apps-unsupported-old']) {
+      it(`${name} (${language}) offers only an entrance this PC can run`, () => {
+        const start = fixture(name, language);
+        mounted(skin, start);
+        const t = language === 'ko' ? ko : en;
+        const canSwitch = name === 'setup-apps-unsupported';
+        const heading = $(skin === 'console' ? '.cn-step h3' : 'h1')!;
+        expect(heading.textContent).toBe(canSwitch ? t.wizard.appUnsupportedTitle : t.wizard.unsupportedTitle);
+        expect(root.textContent).toContain(canSwitch ? t.wizard.appUnsupportedBody : t.wizard.unsupportedBody);
+        expect(root.textContent).toContain(String(start.platform!.os_build));
+        expect($$('[data-intent="choose_entrance"]')).toHaveLength(canSwitch ? 1 : 0);
+        expect($('#entrance-driver-blocked, #entrance-app-sound-blocked')).toBeNull();
+        expect($('[aria-describedby*="entrance-driver-blocked"], [aria-describedby*="entrance-app-sound-blocked"]')).toBeNull();
+        if (canSwitch) {
+          expect($<HTMLButtonElement>('[data-key="entrance-driver"]')!.disabled).toBe(false);
+        } else {
+          expect(root.textContent).not.toContain(t.wizard.appUnsupportedTitle);
+          expect(root.textContent).not.toContain(t.wizard.appUnsupportedBody);
+          expect(root.textContent).not.toContain(t.entrance.appSoundBuild(start.app_capture!.min_build));
+          expect(root.textContent).not.toContain(t.entrance.osRequirement(start.app_capture!.min_build));
+        }
+      });
+    }
+  }
+
+  it('keeps blocked welcome choices and their reasons without offering their keys', () => {
+    const start = fixture('setup-apps-unsupported-old');
+    start.phase = { kind: 'setup', value: 'welcome' };
+    start.error = null;
+    mounted(skin, start);
+    expect($$('[data-entrance]')).toHaveLength(2);
+    expect($$('[data-intent="choose_entrance"]')).toHaveLength(0);
+    expect(root.textContent).toContain(ko.entrance.unavailable);
+    expect(root.textContent).toContain(start.driver_unsupported);
+    expect(root.textContent).toContain(ko.entrance.appSoundBuild(start.app_capture!.min_build));
+    expect(root.textContent).not.toContain(ko.entrance.osRequirement(start.app_capture!.min_build));
+  });
+
+  it('does not invite a blocked app-sound entrance from the test-signing step', () => {
+    const start = fixture('setup-not-test-signing');
+    start.platform!.os_build = 19045;
+    start.app_capture!.supported = false;
+    mounted(skin, start);
+    expect($('[data-key="entrance-app-sound"]')).toBeNull();
+    expect($('#entrance-app-sound-blocked')).toBeNull();
+    expect(root.textContent).not.toContain(ko.wizard.testSigningOther);
+    expect(root.textContent).not.toContain(ko.entrance.osRequirement(start.app_capture!.min_build));
+    expect($<HTMLButtonElement>('[data-key="recheck"]')!.disabled).toBe(false);
+  });
+
+  it('keeps a blocked driver option and its reason in settings', () => {
+    const start = fixture('ready-apps');
+    start.driver_unsupported = fixture('setup-apps-unsupported-old').driver_unsupported!;
+    mounted(skin, start, 'settings');
+    const driver = $<HTMLButtonElement | HTMLOptionElement>('[data-key="entrance-driver"], [data-key="entrance"] option[value="driver"]')!;
+    expect(driver.disabled).toBe(true);
+    expect(root.textContent).toContain(start.driver_unsupported);
   });
 
   it('offers the app-sound entrance where test signing is off', async () => {
@@ -281,6 +342,30 @@ describe.each(SKINS)('the %s skin', (skin) => {
   it('says the driver part is not in use in English too', () => {
     mounted(skin, fixture('ready-apps', 'en'), 'settings');
     expect(root.textContent).toContain(en.entrance.driverOnly);
+  });
+});
+
+describe('shared entrance availability', () => {
+  it('treats an absent driver restriction as unknown, not blocked', () => {
+    const start = fixture('setup-apps-unsupported');
+    delete start.driver_unsupported;
+    mounted('standard', start);
+    expect(entranceBlocked(start, 'driver')).toBeNull();
+    expect(switchTarget(start)).toBe('driver');
+    expect(appSoundBlocked(start)).toBe(ko.entrance.osRequirement(start.app_capture!.min_build));
+  });
+
+  it('keeps both entrances locked while running', () => {
+    const start = fixture('running-apps');
+    mounted('standard', start);
+    for (const kind of ['driver', 'app_sound'] as const) expect(entranceBlocked(start, kind)).toBe(ko.entrance.locked);
+    expect(switchTarget(start)).toBeNull();
+  });
+
+  it('offers app sound when the driver is blocked but capture is supported', () => {
+    const start = fixture('setup-unsupported');
+    start.app_capture!.supported = true;
+    expect(switchTarget(start)).toBe('app_sound');
   });
 });
 

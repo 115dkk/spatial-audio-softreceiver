@@ -16,8 +16,8 @@ import { type Context, type Drawn, described } from '../../screens/common';
 import {
   ENTRANCE_KINDS,
   appMode,
-  appSoundBlocked,
   captureOf,
+  entranceBlocked,
   entranceGets,
   entranceKey,
   entranceName,
@@ -130,14 +130,15 @@ function entrance(ctx: Context): Child[] {
   const { snapshot } = ctx;
   const current = entranceOf(snapshot);
   const running = snapshot.phase.kind === 'running';
-  const blocked = appSoundBlocked(snapshot);
+  const other = current === 'driver' ? 'app_sound' : 'driver';
+  const blocked = running ? null : entranceBlocked(snapshot, other);
   ctx.offer('choose_entrance');
   const stops: Choice<EntranceKind>[] = ENTRANCE_KINDS.map((kind) => ({
     value: kind,
     label: entranceName(kind),
     key: entranceKey(kind),
-    off: kind !== current && kind === 'app_sound' && blocked !== null,
-    describedBy: kind === 'app_sound' && blocked !== null ? 'entrance-blocked' : null,
+    off: kind !== current && blocked !== null,
+    describedBy: kind === other && blocked !== null ? 'entrance-blocked' : null,
   }));
   return [
     slide({

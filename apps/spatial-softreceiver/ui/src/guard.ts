@@ -685,10 +685,11 @@ const snapshot = object<Snapshot>({
   chosen_output: nullable(outputChoice),
   driver: nullable(driverState),
   platform: nullable(platform),
+  driver_unsupported: nullable(string),
   roles_taken: boolean,
   error: nullable(userError),
   notes: array(string),
-}, ['entrance', 'app_capture']);
+}, ['entrance', 'app_capture', 'driver_unsupported']);
 
 const intent = tagged<Intent>({
   set_language: carrying('set_language', nullable(language)),

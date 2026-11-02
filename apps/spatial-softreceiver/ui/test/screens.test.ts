@@ -63,13 +63,11 @@ describe('what each state says', () => {
     expect(root.querySelector('[aria-current="step"]')?.textContent).toContain('환영');
   });
 
-  it('unsupported shows the sentence and the platform facts, and offers the other entrance alone', () => {
+  it('unsupported shows the sentence and the platform facts without an unusable entrance', () => {
     draw('setup-unsupported');
     expect(textOf()).toContain(errorOf('setup-unsupported'));
     expect(textOf()).toContain('18363');
-    const intents = [...root.querySelectorAll('[data-intent]')];
-    expect(intents.map((control) => control.getAttribute('data-key'))).toEqual(['entrance-app-sound']);
-    expect(intents[0]?.getAttribute('data-intent')).toBe('choose_entrance');
+    expect(root.querySelectorAll('[data-intent]')).toHaveLength(0);
   });
 
   it('not_test_signing offers 다시 확인', () => {
