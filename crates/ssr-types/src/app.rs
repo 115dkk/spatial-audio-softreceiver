@@ -29,8 +29,10 @@ pub enum Skin {
     /// The original screen: a column of tabs and cards.
     #[default]
     Standard,
-    /// A receiver's front panel: a chassis with a dark display.
-    Panel,
+    /// An effects pedal of today, every face of it parts (ADR 0046). It
+    /// replaced the receiver front panel, so a stored `panel` reads as this.
+    #[serde(alias = "panel")]
+    Pedal,
     /// An operations console: health first, a pipeline map, commands.
     Console,
 }

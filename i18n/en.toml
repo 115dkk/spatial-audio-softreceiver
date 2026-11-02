@@ -798,11 +798,11 @@ unknown = "Unknown"
 label = "Skin"
 hint = "Changes the appearance, not the features. Changing the skin reloads the screen."
 standard = "Standard"
-panel = "Front panel"
+pedal = "Pedal"
 console = "Console"
 
-# The front panel skin's text lives only in the [screen.panel] table below (src/skins/panel/).
-[screen.panel]
+# The pedal skin's text lives only in the [screen.pedal] table below (src/skins/pedal/, ADR 0046).
+[screen.pedal]
 # Short names printed on the chassis: the power button and the signal lamp of each input (game, music, PASS, ASIO).
 power = "Power"
 lamps = ["Game", "Music", "PASS", "ASIO"]

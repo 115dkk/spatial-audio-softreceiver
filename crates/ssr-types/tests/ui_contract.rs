@@ -1693,7 +1693,7 @@ fn intents() -> Vec<Intent> {
         Intent::SetLanguage(Some(Language::Ko)),
         Intent::SetLanguage(Some(Language::En)),
         Intent::SetSkin(Skin::Standard),
-        Intent::SetSkin(Skin::Panel),
+        Intent::SetSkin(Skin::Pedal),
         Intent::SetSkin(Skin::Console),
         Intent::SetOutputPath(ssr_types::app::OutputPath::KernelStreaming),
         Intent::SetOutputPath(ssr_types::app::OutputPath::Wasapi),

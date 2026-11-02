@@ -4077,10 +4077,10 @@ fn skin_changes_in_every_phase_and_is_refused_after_quit() {
 
     for mut supervisor in [setup, ready, running_machine, faulted] {
         let phase = supervisor.snapshot().phase;
-        supervisor.handle(Intent::SetSkin(Skin::Panel)).unwrap();
+        supervisor.handle(Intent::SetSkin(Skin::Pedal)).unwrap();
         let snapshot = supervisor.snapshot();
         assert_eq!(snapshot.phase, phase);
-        assert_eq!(snapshot.skin, Skin::Panel, "{phase:?}");
+        assert_eq!(snapshot.skin, Skin::Pedal, "{phase:?}");
     }
 
     let mut quit = start(ready_pc(), dac_settings()).1;
@@ -4114,12 +4114,25 @@ fn skin_settings_migrate_and_survive_a_supervisor_restart() {
     assert_eq!(old_settings.skin, Skin::Standard);
 
     let (_, mut supervisor) = start(ready_pc(), old_settings);
-    supervisor.handle(Intent::SetSkin(Skin::Panel)).unwrap();
+    supervisor.handle(Intent::SetSkin(Skin::Pedal)).unwrap();
     let saved = serde_json::to_string(supervisor.settings()).unwrap();
     let settings: Settings = serde_json::from_str(&saved).unwrap();
     let (_, restarted) = start(ready_pc(), settings);
-    assert_eq!(restarted.settings().skin, Skin::Panel);
-    assert_eq!(restarted.snapshot().skin, Skin::Panel);
+    assert_eq!(restarted.settings().skin, Skin::Pedal);
+    assert_eq!(restarted.snapshot().skin, Skin::Pedal);
+}
+
+#[test]
+fn a_stored_front_panel_skin_reads_as_the_pedal() {
+    // ADR 0046: the pedal replaced the front panel, so a settings file
+    // written before keeps its choice instead of falling back.
+    let mut old_json = serde_json::to_value(dac_settings()).unwrap();
+    old_json["skin"] = serde_json::json!("panel");
+    let old_settings: Settings = serde_json::from_value(old_json).unwrap();
+    assert_eq!(old_settings.skin, Skin::Pedal);
+
+    let saved = serde_json::to_value(&old_settings).unwrap();
+    assert_eq!(saved["skin"], serde_json::json!("pedal"));
 }
 
 #[test]

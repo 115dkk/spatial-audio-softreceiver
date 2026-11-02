@@ -59,7 +59,7 @@ const READY = 'html[data-gallery-ready="true"]';
 /** The faces each skin must have in place before its picture (ADR 0041). */
 const FONTS: Record<Skin, string[]> = {
   standard: ['400 14px "IBM Plex Sans KR"'],
-  panel: ['400 15px "Galmuri14"', '400 14px "IBM Plex Sans KR"'],
+  pedal: ['400 14px "IBM Plex Sans KR"'],
   console: ['500 14px "Pretendard"'],
 };
 

@@ -524,7 +524,7 @@ export const ko = {
       "status": "상태",
       "upmix": "업믹스",
     },
-    "panel": {
+    "pedal": {
       "details": "세부 측정값",
       "device": "출력 장치",
       "gainBody": "볼륨 노브로 현재 출력의 소리 크기를 조절하십시오. 노브를 놓으면 적용됩니다. 헤드폰과 스피커 설정은 따로 저장합니다.",
@@ -661,7 +661,7 @@ export const ko = {
       "console": "콘솔",
       "hint": "화면 모양을 바꿔도 기능은 같습니다. 바꾸면 화면을 다시 불러옵니다.",
       "label": "화면 모양",
-      "panel": "전면 패널",
+      "pedal": "이펙터",
       "standard": "기본",
     },
     "status": {
@@ -1476,7 +1476,7 @@ export const en: Catalog = {
       "status": "Status",
       "upmix": "Upmix",
     },
-    "panel": {
+    "pedal": {
       "details": "Detailed measurements",
       "device": "Output device",
       "gainBody": "Turn the volume knob to adjust the output in use. Changes apply when you release it. Headphone and speaker settings are saved separately.",
@@ -1613,7 +1613,7 @@ export const en: Catalog = {
       "console": "Console",
       "hint": "Changes the appearance, not the features. Changing the skin reloads the screen.",
       "label": "Skin",
-      "panel": "Front panel",
+      "pedal": "Pedal",
       "standard": "Standard",
     },
     "status": {

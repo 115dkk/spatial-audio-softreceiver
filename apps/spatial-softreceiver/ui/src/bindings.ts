@@ -698,9 +698,10 @@ export type Skin =
  */
 "standard" |
 /**
- * A receiver's front panel: a chassis with a dark display.
+ * An effects pedal of today, every face of it parts (ADR 0046). It
+ * replaced the receiver front panel, so a stored `panel` reads as this.
  */
-"panel" |
+"pedal" |
 /**
  * An operations console: health first, a pipeline map, commands.
  */

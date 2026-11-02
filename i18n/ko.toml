@@ -799,11 +799,11 @@ unknown = "아직 모름"
 label = "화면 모양"
 hint = "화면 모양을 바꿔도 기능은 같습니다. 바꾸면 화면을 다시 불러옵니다."
 standard = "기본"
-panel = "전면 패널"
+pedal = "이펙터"
 console = "콘솔"
 
-# 전면 패널 스킨의 문구는 이 아래 [screen.panel] 표에만 둡니다(src/skins/panel/).
-[screen.panel]
+# 이펙터 스킨의 문구는 이 아래 [screen.pedal] 표에만 둡니다(src/skins/pedal/, ADR 0046).
+[screen.pedal]
 # 본체에 인쇄된 짧은 이름: 전원 단추, 입구별 신호 램프(게임, 음악, PASS, ASIO).
 power = "전원"
 lamps = ["게임", "음악", "PASS", "ASIO"]
