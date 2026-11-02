@@ -1,6 +1,7 @@
 [
   "setup-welcome",
   "setup-apps-unsupported",
+  "setup-apps-unsupported-old",
   "setup-choose-discard",
   "setup-choose-discard-empty",
   "ready-apps",

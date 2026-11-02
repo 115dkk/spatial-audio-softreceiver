@@ -896,6 +896,12 @@ pub struct Snapshot {
     pub chosen_output: Option<OutputChoice>,
     pub driver: Option<DriverState>,
     pub platform: Option<Platform>,
+    /// Why this PC cannot run the driver entrance (ADR 0043): the supervisor's
+    /// sentence for the first driver check that fails on this PC, the Windows
+    /// build or the architecture. `None` when it can, or before the PC is read.
+    /// Test-signing mode is a setup step the user can pass, not part of this.
+    #[serde(default)]
+    pub driver_unsupported: Option<String>,
     /// The three default roles point at our main endpoint.
     pub roles_taken: bool,
     /// The last error, cleared by the next intent that succeeds.

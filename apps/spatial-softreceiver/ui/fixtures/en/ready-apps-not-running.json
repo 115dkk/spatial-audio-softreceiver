@@ -923,6 +923,7 @@
     "test_signing": true,
     "secure_boot": "disabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "The app has no audio session. Start it and play some sound, then turn it on: Game",

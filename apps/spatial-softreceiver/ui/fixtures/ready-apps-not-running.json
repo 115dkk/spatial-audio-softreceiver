@@ -923,6 +923,7 @@
     "test_signing": true,
     "secure_boot": "disabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "앱의 소리 세션이 없습니다. 이 앱을 실행하고 소리를 재생한 뒤 켜십시오: Game",

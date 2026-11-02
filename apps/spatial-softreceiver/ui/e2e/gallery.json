@@ -24,6 +24,7 @@
   "scenarios": [
     { "name": "setup-welcome", "group": "wizard", "title": "환영(입구 고르기)", "fixture": "setup-welcome", "tab": null },
     { "name": "setup-apps-unsupported", "group": "wizard", "title": "앱 소리 입구를 쓸 수 없는 Windows(드라이버 입구로 바꾸기)", "fixture": "setup-apps-unsupported", "tab": null },
+    { "name": "setup-apps-unsupported-old", "group": "wizard", "title": "앱 소리 입구도 드라이버 입구도 쓸 수 없는 Windows", "fixture": "setup-apps-unsupported-old", "tab": null },
     { "name": "setup-choose-discard", "group": "wizard", "title": "버리는 출력 고르기", "fixture": "setup-choose-discard", "tab": null },
     { "name": "setup-choose-discard-empty", "group": "wizard", "title": "고를 버리는 출력이 없음", "fixture": "setup-choose-discard-empty", "tab": null },
     { "name": "setup-unsupported", "group": "wizard", "title": "지원하지 않는 Windows", "fixture": "setup-unsupported", "tab": null },

@@ -92,6 +92,7 @@ fn asio_snapshot_contract_keeps_settings_separate_from_client_status() {
         let mut old = serde_json::to_value(&snapshot).unwrap();
         old.as_object_mut().unwrap().remove("asio");
         old.as_object_mut().unwrap().remove("health");
+        old.as_object_mut().unwrap().remove("driver_unsupported");
         assert_eq!(serde_json::from_value::<Snapshot>(old).unwrap(), snapshot);
         for layout in AsioLayout::ALL {
             snapshot.asio.layout = layout;
@@ -498,6 +499,7 @@ fn blank(language: Language, phase: Phase) -> Snapshot {
         chosen_output: None,
         driver: None,
         platform: None,
+        driver_unsupported: None,
         roles_taken: false,
         error: None,
         notes: Vec::new(),
@@ -1055,6 +1057,36 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
             },
         ),
         (
+            "setup-apps-unsupported-old",
+            Snapshot {
+                entrance: EntranceKind::AppSound,
+                app_capture: AppCaptureView {
+                    supported: false,
+                    min_build: 20_348,
+                    ..AppCaptureView::default()
+                },
+                platform: Some(Platform {
+                    os_build: 18_363,
+                    ..platform(false, SecureBoot::Enabled)
+                }),
+                driver_unsupported: Some(
+                    text(
+                        "Windows 10 2004(빌드 19041) 이상이 필요합니다.",
+                        "Windows 10 version 2004 (build 19041) or newer is required.",
+                    )
+                    .into(),
+                ),
+                error: Some(error(
+                    text(
+                        "Windows 10 2004(빌드 19041) 이상이 필요합니다.",
+                        "Windows 10 version 2004 (build 19041) or newer is required.",
+                    ),
+                    NextAction::None,
+                )),
+                ..blank(language, Phase::Setup(SetupStep::Unsupported))
+            },
+        ),
+        (
             "setup-choose-discard",
             Snapshot {
                 entrance: EntranceKind::AppSound,
@@ -1209,6 +1241,13 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
                     os_build: 18_363,
                     ..platform(false, SecureBoot::Enabled)
                 }),
+                driver_unsupported: Some(
+                    text(
+                        "Windows 10 2004(빌드 19041) 이상이 필요합니다.",
+                        "Windows 10 version 2004 (build 19041) or newer is required.",
+                    )
+                    .into(),
+                ),
                 error: Some(error(
                     text(
                         "Windows 10 2004(빌드 19041) 이상이 필요합니다.",

@@ -26,6 +26,7 @@ use ssr_types::{
 };
 use supervisor::machine::Config;
 use supervisor::restore_point::{self, RestorePoint, RestorePointError};
+use supervisor::text::Message;
 use supervisor::{
     EngineHandle, LaunchCapture, LaunchOptions, Launcher, PluginClass, PluginEvent, PluginHost,
     PluginHostError, PluginInstance, PluginSetting, Session, SessionError, SessionNotice, Settings,
@@ -1772,6 +1773,51 @@ fn an_unknown_exclusive_policy_counts_as_fine() {
     assert_eq!(snapshot.error, None);
     assert_eq!(snapshot.driver, Some(unknown));
     assert!(shared.take_calls().is_empty());
+}
+
+#[test]
+fn snapshot_reports_the_driver_os_requirement() {
+    let mut world = ready_pc();
+    world.platform.os_build = 18_363;
+    let (_, mut supervisor) = start(world, Settings::default());
+    supervisor.handle(Intent::BeginSetup).unwrap_err();
+
+    assert_eq!(
+        supervisor.snapshot().driver_unsupported,
+        Some(
+            Message::OsRequirement {
+                min_build: Config::MIN_OS_BUILD,
+            }
+            .render(Language::Ko)
+        )
+    );
+}
+
+#[test]
+fn snapshot_omits_driver_unsupported_on_a_supported_pc() {
+    let (_, mut supervisor) = start(ready_pc(), Settings::default());
+    supervisor.handle(Intent::BeginSetup).unwrap();
+
+    assert_eq!(supervisor.snapshot().driver_unsupported, None);
+}
+
+#[test]
+fn snapshot_reports_the_driver_architecture_mismatch() {
+    let mut world = ready_pc();
+    world.platform.arch = Arch::Arm64;
+    let (_, mut supervisor) = start(world, Settings::default());
+    supervisor.handle(Intent::BeginSetup).unwrap_err();
+
+    assert_eq!(
+        supervisor.snapshot().driver_unsupported,
+        Some(
+            Message::ArchitectureMismatch {
+                build: Arch::X64,
+                pc: Arch::Arm64,
+            }
+            .render(Language::Ko)
+        )
+    );
 }
 
 #[test]
@@ -5165,6 +5211,50 @@ fn recovery_record(apps: Vec<supervisor::app_outputs::SentApp>) -> String {
 }
 
 #[test]
+fn app_sound_on_a_pc_too_old_for_both_reports_the_driver_requirement() {
+    let mut world = ready_pc();
+    world.platform.os_build = 18_363;
+    let settings = Settings {
+        entrance: EntranceKind::AppSound,
+        ..Settings::default()
+    };
+    let (_, mut supervisor) = start(world, settings);
+    let expected = Message::OsRequirement {
+        min_build: Config::MIN_OS_BUILD,
+    }
+    .render(Language::Ko);
+
+    assert_eq!(
+        supervisor.handle(Intent::BeginSetup),
+        Err(error(&expected, NextAction::None))
+    );
+    let snapshot = supervisor.snapshot();
+    assert_eq!(snapshot.phase, Phase::Setup(SetupStep::Unsupported));
+    assert_eq!(snapshot.error.unwrap().message, expected);
+}
+
+#[test]
+fn app_sound_on_a_driver_supported_pc_reports_its_own_requirement() {
+    let settings = Settings {
+        entrance: EntranceKind::AppSound,
+        ..Settings::default()
+    };
+    let (_, mut supervisor) = start(ready_pc(), settings);
+    let expected = Message::AppCaptureOsRequirement {
+        min_build: Config::MIN_APP_CAPTURE_BUILD,
+    }
+    .render(Language::Ko);
+
+    assert_eq!(
+        supervisor.handle(Intent::BeginSetup),
+        Err(error(&expected, NextAction::None))
+    );
+    let snapshot = supervisor.snapshot();
+    assert_eq!(snapshot.phase, Phase::Setup(SetupStep::Unsupported));
+    assert_eq!(snapshot.error.unwrap().message, expected);
+}
+
+#[test]
 fn app_entrance_choice_is_saved_even_when_the_build_is_unsupported() {
     let (_, mut supervisor) = start(ready_pc(), Settings::default());
     assert_eq!(supervisor.phase(), &Phase::Setup(SetupStep::Welcome));
@@ -5180,6 +5270,24 @@ fn app_entrance_choice_is_saved_even_when_the_build_is_unsupported() {
             .as_ref()
             .is_some_and(|error| error.next == NextAction::None)
     );
+}
+
+#[test]
+fn app_capture_enable_prefers_the_driver_blocker_when_neither_entrance_can_run() {
+    let (shared, mut supervisor) = start(app_capture_pc(), app_capture_settings(false));
+    shared.get().platform.os_build = 18_363;
+    let expected = Message::OsRequirement {
+        min_build: Config::MIN_OS_BUILD,
+    }
+    .render(Language::Ko);
+
+    assert_eq!(
+        supervisor.handle(Intent::Enable),
+        Err(error(&expected, NextAction::None))
+    );
+    let snapshot = supervisor.snapshot();
+    assert_eq!(snapshot.phase, Phase::Setup(SetupStep::Unsupported));
+    assert_eq!(snapshot.error.unwrap().message, expected);
 }
 
 #[test]

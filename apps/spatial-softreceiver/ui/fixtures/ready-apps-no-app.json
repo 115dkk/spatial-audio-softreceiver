@@ -919,6 +919,7 @@
     "test_signing": true,
     "secure_boot": "disabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "켜기 전에 소리를 받을 앱을 고르십시오.",

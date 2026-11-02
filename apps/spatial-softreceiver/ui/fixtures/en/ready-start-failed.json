@@ -937,6 +937,7 @@
     "test_signing": true,
     "secure_boot": "disabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "The engine could not start: the output device could not be opened: the output device is in exclusive use by another application",

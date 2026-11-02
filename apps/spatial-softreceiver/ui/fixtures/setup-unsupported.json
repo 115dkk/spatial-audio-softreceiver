@@ -165,6 +165,7 @@
     "test_signing": false,
     "secure_boot": "enabled"
   },
+  "driver_unsupported": "Windows 10 2004(빌드 19041) 이상이 필요합니다.",
   "roles_taken": false,
   "error": {
     "message": "Windows 10 2004(빌드 19041) 이상이 필요합니다.",

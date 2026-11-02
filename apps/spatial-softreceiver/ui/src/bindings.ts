@@ -727,6 +727,13 @@ skin?: Skin; entrance?: EntranceKind; app_capture?: AppCaptureView; output_path:
  */
 outputs: OutputChoice[]; chosen_output: OutputChoice | null; driver: DriverState | null; platform: Platform | null;
 /**
+ * Why this PC cannot run the driver entrance (ADR 0043): the supervisor's
+ * sentence for the first driver check that fails on this PC, the Windows
+ * build or the architecture. `None` when it can, or before the PC is read.
+ * Test-signing mode is a setup step the user can pass, not part of this.
+ */
+driver_unsupported?: string | null;
+/**
  * The three default roles point at our main endpoint.
  */
 roles_taken: boolean;

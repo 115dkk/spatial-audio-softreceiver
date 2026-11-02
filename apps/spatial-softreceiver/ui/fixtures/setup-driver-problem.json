@@ -172,6 +172,7 @@
     "test_signing": true,
     "secure_boot": "disabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "Windows가 드라이버 서명을 확인하지 못했습니다(문제 코드 52). 시험서명 모드를 확인한 뒤 다시 설치하십시오.",

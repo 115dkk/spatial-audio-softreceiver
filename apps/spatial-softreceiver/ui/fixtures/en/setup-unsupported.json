@@ -165,6 +165,7 @@
     "test_signing": false,
     "secure_boot": "enabled"
   },
+  "driver_unsupported": "Windows 10 version 2004 (build 19041) or newer is required.",
   "roles_taken": false,
   "error": {
     "message": "Windows 10 version 2004 (build 19041) or newer is required.",

@@ -219,6 +219,13 @@ const MIN_OS_BUILD = 19041;
 const MIN_APP_CAPTURE_BUILD = 20348;
 const BUILD_ARCH: Arch = 'x64';
 const GOOD_PLATFORM: Platform = { os_build: 26100, arch: 'x64', test_signing: true, secure_boot: 'disabled' };
+
+/** machine.rs driver_unsupported: the first driver check this PC cannot pass. */
+function driverEntranceBlocker(platform: Platform): Message | null {
+  if (platform.os_build < MIN_OS_BUILD) return say.osRequirement(MIN_OS_BUILD);
+  if (platform.arch !== BUILD_ARCH) return say.architectureMismatch(BUILD_ARCH, platform.arch);
+  return null;
+}
 const GOOD_DRIVER: DriverState = {
   kind: 'installed',
   value: { problem_code: 0, service_running: true, exclusive_policy: 'applied' },
@@ -503,6 +510,11 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
     driver: start.driver ?? ({ kind: 'not_installed' } as DriverState),
     outputs: start.outputs.length > 0 ? start.outputs : borrowed('ready').outputs,
   };
+  const refreshDriverUnsupported = () => {
+    const blocker = state.platform === null ? null : driverEntranceBlocker(state.platform);
+    state.driver_unsupported = blocker?.[state.language] ?? null;
+  };
+  refreshDriverUnsupported();
   // Saved overrides, as routing.rs keeps them: only what differs from the
   // built-in rule, null turning a built-in rule off. Removing one restores
   // the built-in rule.
@@ -934,24 +946,22 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
   /** The wizard's checks in order (machine.rs evaluate). */
   function evaluate(): Outcome {
     state.platform = structuredClone(host.platform);
+    refreshDriverUnsupported();
     capture.min_build = MIN_APP_CAPTURE_BUILD;
     capture.supported = host.platform.os_build >= capture.min_build;
+    const driverBlocker = driverEntranceBlocker(host.platform);
     if (state.entrance === 'app_sound') {
       state.driver = null;
       if (!capture.supported) {
         setupStep('unsupported');
-        return failed(say.appCaptureOsRequirement(capture.min_build), 'none');
+        return failed(driverBlocker ?? say.appCaptureOsRequirement(capture.min_build), 'none');
       }
       setupStep('choose_output');
       return resumeOutput();
     }
-    if (host.platform.os_build < MIN_OS_BUILD) {
+    if (driverBlocker !== null) {
       setupStep('unsupported');
-      return failed(say.osRequirement(MIN_OS_BUILD), 'none');
-    }
-    if (host.platform.arch !== BUILD_ARCH) {
-      setupStep('unsupported');
-      return failed(say.architectureMismatch(BUILD_ARCH, host.platform.arch), 'none');
+      return failed(driverBlocker, 'none');
     }
     if (!host.platform.test_signing) {
       setupStep('not_test_signing');
@@ -1084,6 +1094,15 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
   /** machine.rs enable: the notes start over; the engine runs the profile's layout. */
   function enable(): Outcome {
     notes = [];
+    if (state.entrance === 'app_sound') {
+      state.platform = structuredClone(host.platform);
+      refreshDriverUnsupported();
+      capture.supported = host.platform.os_build >= capture.min_build;
+      if (!capture.supported) {
+        setupStep('unsupported');
+        return failed(driverEntranceBlocker(host.platform) ?? say.appCaptureOsRequirement(capture.min_build), 'none');
+      }
+    }
     if (findOutput() === null) {
       setupStep('choose_output');
       return failed(say.storedOutputMissing(state.chosen_output?.name ?? ''), 'open_settings');
@@ -1271,6 +1290,7 @@ export function createMockApi(start: Snapshot, options: MockOptions = {}): Api {
       if (options.hold === true) return new Promise<void>(() => {});
       await wait();
       const outcome = apply(structuredClone(intent));
+      refreshDriverUnsupported();
       // A change of phase or of the kind in use starts or stops the upmixers.
       if (outcome.kind === 'done' && PHASE_OR_KIND.has(intent.kind)) {
         refreshUpmix();

@@ -366,6 +366,7 @@ impl Session {
             chosen_output: None,
             driver: None,
             platform: None,
+            driver_unsupported: None,
             roles_taken: false,
             error,
             notes: Vec::new(),
