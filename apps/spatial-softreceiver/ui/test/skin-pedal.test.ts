@@ -5,6 +5,9 @@
 // lit by their own ring; a key whose press leaves no state has no light;
 // and the 30 Hz meters never add or remove an element.
 
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Api } from '../src/api';
 import type { EngineStatus, Intent, Language, Snapshot } from '../src/bindings';
@@ -408,6 +411,156 @@ describe('the 30 Hz meters', () => {
     silent.scene = [];
     app.updateMeters(silent);
     expect(lit()).toBe(0);
+  });
+});
+
+/** What the eye reads in an element: its text without the screen-reader-only words and hidden parts. */
+function seen(element: Element): string {
+  const copy = element.cloneNode(true) as Element;
+  for (const node of copy.querySelectorAll('.pd-sr, [hidden]')) node.remove();
+  return copy.textContent ?? '';
+}
+
+describe('the upmix face prints only what is chosen (법칙 5)', () => {
+  const bodies = (built: boolean) => ({
+    first_party: built ? ko.upmix.firstPartyBody : `${ko.upmix.firstPartyBody} ${ko.upmix.firstPartyHint}`,
+    plugin: ko.upmix.pluginBody,
+    off: ko.upmix.offBody,
+  });
+
+  it('one description per input, the chosen upmixer’s, under its lit key; the others only for a screen reader', () => {
+    for (const name of ['running-upmix', 'ready-upmix', 'ready']) {
+      root.replaceChildren();
+      const start = fixture(name);
+      mounted(start, 'upmix');
+      const all = bodies(start.upmix.first_party_available);
+      for (const view of start.upmix.endpoints) {
+        const input = $(`.pd-upmix-input[data-lane="${view.endpoint}"]`)!;
+        const captions = [...input.querySelectorAll('.pd-callout')];
+        expect(captions, `${name} ${view.endpoint}`).toHaveLength(1);
+        expect(captions[0]!.textContent).toBe(all[view.effective]);
+        // The lit key is the chosen one, and the row is described by the caption.
+        const lit = [...input.querySelectorAll('.pd-upkeys .pd-key.is-chosen')];
+        expect(lit.map((key) => key.getAttribute('data-key'))).toEqual([`upmixer-${view.endpoint}-${view.effective}`]);
+        expect(input.querySelector('.pd-upkeys')!.getAttribute('aria-describedby')).toContain(captions[0]!.id);
+        // The others are not printed, but each unchosen key still says its own.
+        const printed = seen(input);
+        for (const [choice, body] of Object.entries(all)) {
+          if (choice === view.effective) continue;
+          expect(printed.includes(body), `${name} ${view.endpoint} ${choice} printed`).toBe(false);
+          const key = input.querySelector(`[data-key="upmixer-${view.endpoint}-${choice}"]`)!;
+          expect(document.getElementById(key.getAttribute('aria-describedby') ?? '')?.textContent).toBe(body);
+        }
+      }
+    }
+  });
+
+  it('the running upmixer’s outputs light their positions on the channel indicators', () => {
+    const start = fixture('running-upmix');
+    mounted(start, 'upmix');
+    const view = start.upmix.endpoints.find((endpoint) => endpoint.state.kind === 'running')!;
+    const strip = $(`.pd-upmix-input[data-lane="${view.endpoint}"] .pd-upout`)!;
+    const lit = [...strip.querySelectorAll('.pd-chan.is-lit')].map((spot) => spot.getAttribute('data-chan'));
+    expect([...lit].sort()).toEqual([...view.outputs].sort());
+    expect(strip.querySelectorAll('.pd-chan:not(.is-lit) .pd-led[data-glow="on"]')).toHaveLength(0);
+    // The names are for the eye; a screen reader hears the sentence the text said before.
+    expect(strip.querySelector('.pd-sr')?.textContent).toBe(ko.upmix.outputs(view.outputs.join(' ')));
+  });
+
+  it('the plugin facts stand on a spec plate', () => {
+    const start = fixture('running-upmix');
+    mounted(start, 'upmix');
+    const view = start.upmix.endpoints.find((endpoint) => endpoint.plugin !== null)!;
+    const plate = $(`.pd-upmix-input[data-lane="${view.endpoint}"] .pd-spec`)!;
+    const rows = [...plate.querySelectorAll('.pd-spec-row')].map((row) => row.querySelector('dt')?.textContent);
+    expect(rows).toContain(ko.upmix.pluginName);
+    expect(plate.textContent).toContain(view.plugin!.name);
+    expect(plate.textContent).toContain(view.plugin!.path);
+  });
+});
+
+describe('a part’s caution stands on the legend plate by its number (법칙 5)', () => {
+  it('an unsupported format puts a mark in the channel and its sentence on the plate, not in the column', () => {
+    const start = fixture('running');
+    const engine = structuredClone(start.engine!);
+    for (const status of engine.endpoints) {
+      status.unsupported = null;
+      status.chain_errors = {};
+    }
+    engine.endpoints[0]!.unsupported = 'format';
+    engine.asio = null;
+    const { app } = mounted({ ...start, engine }, 'status');
+    app.updateMeters(engine);
+    const sentence = ko.unsupported.format;
+    const lane = $('.pd-ch[data-lane="0"]')!;
+    const marks = [...lane.querySelectorAll('.pd-mark:not([hidden])')];
+    expect(marks).toHaveLength(1);
+    expect(marks[0]!.querySelector('.pd-led')?.getAttribute('style')).toContain('--pd-led-wait');
+    expect(marks[0]!.querySelector('.pd-mark-n')?.textContent).toBe('1');
+    // Not printed in the narrow column; a screen reader still hears it there.
+    expect(seen(lane).includes(sentence)).toBe(false);
+    expect(marks[0]!.querySelector('.pd-sr')?.textContent).toBe(sentence);
+    // The plate prints it by the same number, with the channel's name.
+    const plate = $('.pd-noteplate')!;
+    expect(plate.hidden).toBe(false);
+    const rows = [...plate.querySelectorAll('.pd-noterow:not([hidden])')];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.querySelector('.pd-mark-n')?.textContent).toBe('1');
+    expect(rows[0]!.textContent).toContain(sentence);
+    expect(rows[0]!.textContent).toContain(ko.pedal.lamps[0]);
+  });
+
+  it('numbers the notes in reading order and hides the plate when none is left', () => {
+    const start = fixture('running');
+    const { app } = mounted(start, 'status');
+    const numbers = () => $$('.pd-ch .pd-mark:not([hidden]) .pd-mark-n').map((mark) => mark.textContent);
+    const shown = numbers();
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown).toEqual(shown.map((_, index) => String(index + 1)));
+    const quiet = structuredClone(start.engine!);
+    for (const status of quiet.endpoints) {
+      status.unsupported = null;
+      status.chain_errors = {};
+    }
+    quiet.asio = null;
+    app.updateMeters(quiet);
+    expect(numbers()).toEqual([]);
+    expect($('.pd-noteplate')!.hidden).toBe(true);
+  });
+});
+
+describe('the output channels are a channel indicator strip', () => {
+  it('on the status face, lit for the channels the output carries', () => {
+    const start = fixture('running-speakers');
+    mounted(start, 'status');
+    const strip = $('.pd-outchans')!;
+    const spots = [...strip.querySelectorAll('.pd-chan')];
+    expect(spots.length).toBeGreaterThanOrEqual(start.engine!.output_channels);
+    expect(strip.querySelectorAll('.pd-chan.is-lit')).toHaveLength(start.engine!.output_channels);
+    expect(spots.map((spot) => spot.getAttribute('data-chan')).slice(0, start.profile.speakers.channels.length)).toEqual(
+      [...start.profile.speakers.channels].sort((a, b) => a.channel - b.channel).map((channel) => channel.name),
+    );
+  });
+
+  it('on the profile face, an LED per device channel lit while the speakers play through it', () => {
+    const start = fixture('running-speakers');
+    mounted(start, 'profile');
+    const leds = $$('.pd-patch tbody .pd-led');
+    expect(leds).toHaveLength(start.profile.speakers.channels.length);
+    expect(leds.every((light) => light.getAttribute('data-glow') === 'on')).toBe(true);
+    root.replaceChildren();
+    mounted(fixture('ready-speakers'), 'profile');
+    expect($$('.pd-patch tbody .pd-led').every((light) => light.getAttribute('data-glow') === 'off')).toBe(true);
+  });
+});
+
+describe('the print (법칙 6)', () => {
+  it('is never Regular: no rule of the skin sets 400', () => {
+    // Vite rewrites `new URL(path, import.meta.url)` into an asset URL here, so the path is joined by hand.
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/skins/pedal/pedal.css'), 'utf8');
+    expect(css.match(/font-weight:\s*(400|normal)\b/g)).toBeNull();
+    expect(css).toMatch(/\.pd-room \{[^}]*font-weight: 500;/);
+    expect(css).toMatch(/\.pd-room \{[^}]*text-shadow: var\(--pd-lip\);/);
   });
 });
 

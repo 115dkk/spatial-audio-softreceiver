@@ -4,9 +4,12 @@
 // Headphones: the BRIR set printed and the momentary keys that pick its
 // folder or file. Speakers: the sixteen layouts as illuminated keys in four
 // family lines of one radio group, the SECS 2R correction's keys and facts,
-// and the channel table printed. Then the LEVEL encoder, each kind's upmix
-// switch, a test signal per direction (the map's buttons and a key per
-// direction listed under it), and the sound map.
+// and the channel table printed as a patch strip with an LED per device
+// channel, lit while the speakers play through it. Then the LEVEL encoder,
+// each kind's upmix switch, a test signal per direction (the map's buttons
+// and a key per direction listed under it), and the sound map. Facts stand
+// on spec plates, and a group's sentences are parted from its parts by
+// printed hairlines (법칙 5).
 
 import type { EngineStatus, ProfileKind, SpeakerLayout } from '../../bindings';
 import { type Child, h } from '../../dom';
@@ -16,7 +19,7 @@ import { type Context, type Drawn, described } from '../../screens/common';
 import { GAIN_MAX, GAIN_MIN } from '../../screens/profile';
 import { kindSlide, layoutFamilies, levelEncoder, upmixApply } from './controls';
 import { DENSE_DIRECTIONS, soundMap } from './map';
-import { facts, fine, flowRoom, group, ikey, intentKey, keyRow, mkey, pickKey, print } from './parts';
+import { type Led, fine, flowRoom, group, hairline, ikey, intentKey, keyRow, led, mkey, pickKey, print, spec } from './parts';
 import { type Scope, signed } from './scope';
 
 const KINDS: readonly ProfileKind[] = ['headphones', 'speakers'];
@@ -95,7 +98,7 @@ function kindKeys(ctx: Context, open: ProfileKind): HTMLElement {
 
 function applyLine(ctx: Context, kind: ProfileKind): Child[] {
   const apply = upmixApply(ctx, kind, text.profile.upmixApply);
-  return apply === null ? [] : [apply, fine(text.profile.upmixApplyHint, 'upmix-apply-hint')];
+  return apply === null ? [] : [hairline(), apply, fine(text.profile.upmixApplyHint, 'upmix-apply-hint')];
 }
 
 function headphones(ctx: Context): Child[] {
@@ -106,7 +109,13 @@ function headphones(ctx: Context): Child[] {
   const send = (value: string) => ctx.send({ kind: 'import_brir', value });
   ctx.offer('import_brir');
   return [
-    facts([[text.profile.brir, h('span', { class: profile.headphones.brir === null ? 'pd-none' : 'pd-path' }, profile.headphones.brir ?? text.profile.none)]]),
+    spec([
+      [
+        text.profile.brir,
+        h('span', { class: profile.headphones.brir === null ? 'pd-none' : 'pd-path' }, profile.headphones.brir ?? text.profile.none),
+        profile.headphones.brir !== null,
+      ],
+    ]),
     fine(text.profile.brirBody),
     h(
       'div',
@@ -157,7 +166,7 @@ function layout(ctx: Context): HTMLElement {
       }),
     );
   }
-  if (hint !== null) children.push(fine(hint, 'layout-hint'));
+  if (hint !== null) children.push(hairline(), fine(hint, 'layout-hint'));
   return group('pd-layout', text.profile.layout, children, 'pd-sub');
 }
 
@@ -171,8 +180,8 @@ function correction(ctx: Context): HTMLElement {
     : ctx.pending === 'clear_correction' ? text.profile.applying
     : null;
   const ids = described(hint !== null && 'correction-hint', ...changeHints(ctx));
-  const rows: [string, Child][] = [
-    [text.profile.correctionFile, h('span', { class: current === null ? 'pd-none' : 'pd-path' }, current?.path ?? text.profile.none)],
+  const rows: [string, Child, boolean?][] = [
+    [text.profile.correctionFile, h('span', { class: current === null ? 'pd-none' : 'pd-path' }, current?.path ?? text.profile.none), current !== null],
   ];
   if (current !== null) rows.push([text.profile.correctionName, current.title]);
   ctx.offer('import_correction');
@@ -181,7 +190,7 @@ function correction(ctx: Context): HTMLElement {
     text.profile.correctionTitle,
     [
       fine(text.profile.correctionBody),
-      facts(rows),
+      spec(rows),
       h(
         'div',
         { class: 'pd-keys' },
@@ -204,33 +213,54 @@ function correction(ctx: Context): HTMLElement {
   );
 }
 
-/** What each device channel plays, printed. */
-function channels(ctx: Context): HTMLElement {
-  const rows = ctx.snapshot.profile.speakers.channels.map((channel) =>
-    h(
+/**
+ * What each device channel plays, as the printed patch strip by a
+ * processor's outputs: a ruled row per channel with its number, an LED and
+ * the speaker's name. The LED is lit while the speakers are the output in
+ * use and the engine plays through that channel; `update` only lights them.
+ */
+function channels(ctx: Context): { element: HTMLElement; update(engine: EngineStatus): void } {
+  const { profile, phase } = ctx.snapshot;
+  const plays = phase.kind === 'running' && profile.kind === 'speakers';
+  const lights: { channel: number; light: Led }[] = [];
+  const rows = profile.speakers.channels.map((channel) => {
+    const light = led('on', 'off', 'xs');
+    lights.push({ channel: channel.channel, light });
+    return h(
       'tr',
       null,
       h('td', { class: 'pd-num' }, channel.channel + 1),
+      h('td', { class: 'pd-patch-led', 'aria-hidden': 'true' }, light.element),
       h('th', { scope: 'row' }, channel.name, channel.subwoofer ? h('span', { class: 'pd-tag' }, text.profile.subwoofer) : null),
-    ),
-  );
-  return group(
+    );
+  });
+  const element = group(
     'pd-channels',
     text.profile.channelsTitle,
     [
       h(
         'table',
-        { class: 'pd-table', 'aria-labelledby': 'pd-channels-title' },
-        h('thead', null, h('tr', null, h('th', { scope: 'col' }, text.profile.channel), h('th', { scope: 'col' }, text.profile.speaker))),
+        { class: 'pd-table pd-patch', 'aria-labelledby': 'pd-channels-title' },
+        h(
+          'thead',
+          null,
+          h('tr', null, h('th', { scope: 'col' }, text.profile.channel), h('td', { 'aria-hidden': 'true' }), h('th', { scope: 'col' }, text.profile.speaker)),
+        ),
         h('tbody', null, ...rows),
       ),
     ],
     'pd-sub',
   );
+  return {
+    element,
+    update(engine) {
+      for (const { channel, light } of lights) light.set(plays && engine.output_rate !== 0 && channel < engine.output_channels ? 'on' : 'off');
+    },
+  };
 }
 
-function speakers(ctx: Context): Child[] {
-  return [layout(ctx), correction(ctx), channels(ctx), ...applyLine(ctx, 'speakers')];
+function speakers(ctx: Context, patch: ReturnType<typeof channels>): Child[] {
+  return [layout(ctx), correction(ctx), patch.element, ...applyLine(ctx, 'speakers')];
 }
 
 /** The LEVEL encoder with the range printed by it. */
@@ -238,6 +268,7 @@ function gain(scope: Scope): HTMLElement {
   return group('pd-gain', text.profile.gainTitle, [
     levelEncoder(scope, 64),
     print(`${signed(GAIN_MIN)} … ${signed(GAIN_MAX)} ${text.profile.gainUnit}`, 'pd-small pd-num'),
+    hairline(),
     fine(text.pedal.gainBody),
   ]);
 }
@@ -279,6 +310,7 @@ function tests(ctx: Context): HTMLElement {
   );
   return group('pd-tests', text.profile.testTitle, [
     fine(text.profile.testBody),
+    hairline(),
     empty ? fine(text.profile.noDirections) : list,
     running || empty ? null : fine(text.profile.testOff, 'test-hint'),
   ]);
@@ -291,7 +323,12 @@ export function profileFace(scope: Scope, engineNow: EngineStatus | null): Drawn
   const open = ctx.view.profileTab ?? snapshot.profile.kind;
   const engine = running ? engineNow : null;
   const map = soundMap(ctx, engine?.directions ?? snapshot.profile.directions, running, 'map-direction');
-  if (engine !== null) map.update(engine);
+  const patch = channels(ctx);
+  const update = (now: EngineStatus) => {
+    map.update(now);
+    patch.update(now);
+  };
+  if (engine !== null) update(engine);
 
   const element = h(
     'div',
@@ -312,9 +349,9 @@ export function profileFace(scope: Scope, engineNow: EngineStatus | null): Drawn
             'data-region': `profile-${open}`,
             'aria-labelledby': `profile-tab-${open}`,
           },
-          ...(open === 'headphones' ? headphones(ctx) : speakers(ctx)),
+          ...(open === 'headphones' ? headphones(ctx) : speakers(ctx, patch)),
         ),
-        running && !snapshot.profile.from_file ? fine(text.profile.importRunning, RUNNING_HINT) : null,
+        ...(running && !snapshot.profile.from_file ? [hairline(), fine(text.profile.importRunning, RUNNING_HINT)] : []),
       ]),
       flowRoom(),
     ),
@@ -322,9 +359,9 @@ export function profileFace(scope: Scope, engineNow: EngineStatus | null): Drawn
       'div',
       { class: 'pd-profile-side' },
       gain(scope),
-      group('pd-profile-map', text.profile.mapTitle, [fine(text.pedal.mapBody), map.element, running ? fine(text.pedal.mapTest) : null]),
+      group('pd-profile-map', text.profile.mapTitle, [fine(text.pedal.mapBody), hairline(), map.element, running ? fine(text.pedal.mapTest) : null]),
       tests(ctx),
     ),
   );
-  return running ? { element, live: { update: map.update } } : { element };
+  return running ? { element, live: { update } } : { element };
 }

@@ -14,7 +14,11 @@
  *
  * Every selector is under the skin's own prefix (`pd-`); only this skin's
  * stylesheet is on the page (src/skins/index.ts). The print is IBM Plex
- * Sans KR (src/base.css) in 400, 500, 600 and 700, with no shadow or glow.
+ * Sans KR (src/base.css) in 500, 600 and 700, never 400: Regular is thin on
+ * metal and reads as screen type (법칙 6). The letters are cut into the
+ * plate and filled, so each carries one crisp 1px lip (--pd-lip): bright
+ * under the glyph on aluminium, dark above it on dark metal. No blur, no
+ * glow, no drop shadow.
  *
  * Entrance colours (jack LEDs, bar graphs, map LEDs), chosen so every pair
  * stays apart under protanopia and deuteranopia and away from the three
@@ -45,12 +49,16 @@
   /*
    * Light: bead-blasted silver aluminium, black print.
    *
-   * Contrast (WCAG 2.x relative luminance), measured on the skin at
-   * 1280 × 800 and 1920 × 1080: the darkest metal under any printed letter
-   * (its strokes and a pixel round them, the grain averaged over 3 × 3
-   * pixels, etchings and the light of LEDs included, the rails' shadow left
-   * out) is #b8babc under --pd-ink #121416, 9.48:1, and #babcbe under
-   * --pd-ink-2 #1f2225, 8.39:1. Bare metal at its darkest is #c3c6c8.
+   * Contrast (WCAG 2.x relative luminance), measured on 44 scenes of the
+   * gallery at 1280 × 800, 720 × 480 and 1920 × 1080, each at the top and
+   * the foot of its face: the darkest metal under any printed letter (its
+   * strokes and a pixel round them, the grain averaged over 3 × 3 pixels,
+   * etchings and the light of LEDs included, the rails' shadow left out, the
+   * print and its lip taken away to see the metal) is #bfc1c2 under --pd-ink
+   * #121416 (a legend plate's number by its amber LED), 10.22:1, and #babcbe
+   * under --pd-ink-2 #1f2225 (a name on the map's plan), 8.39:1. Bare metal
+   * at its darkest is #c3c6c8. The lip only lightens the metal round a
+   * letter, so it never lowers these.
    */
   --pd-room: #d4d4d1;
   --pd-metal-1: #dfe1e2;
@@ -68,6 +76,8 @@
   --pd-rail-edge: rgba(0, 0, 0, 0.4);
   --pd-etch: rgba(0, 0, 0, 0.1);
   --pd-etch-lip: rgba(255, 255, 255, 0.55);
+  /* The engraving's lip under every printed letter: the cut's lower wall catching the light. */
+  --pd-lip: 0 1px 0 rgba(255, 255, 255, 0.7);
   /* The nameplate: black anodised, the engraving shows bright aluminium (the Korean line 8.6:1 at the plate's lightest corner). */
   --pd-plate-1: #2a2c2f;
   --pd-plate-2: #161719;
@@ -106,11 +116,13 @@
      * Dark: dark metal, white print.
      *
      * Contrast, measured the same way against the lightest metal under a
-     * letter (white print reads worst there): #44474a under --pd-ink
-     * #f5f3ee, 8.43:1, and under --pd-ink-2 #e9e7e2 the amber light a note's
-     * LED casts by its line, #504735, 7.41:1. Bare metal at its lightest (the
-     * sheen band) is #414345. Print keeps out of the brighter part of an
-     * LED's light: the gaps by LEDs and lit keys are set for that.
+     * letter (white print reads worst there): under --pd-ink #f5f3ee the
+     * PASS jack LED's light by its name at 720 × 480, #4c533c, 7.26:1, and
+     * under --pd-ink-2 #e9e7e2 the green light of a setup step's LED by its
+     * name, #394742, 7.89:1. Bare metal at its lightest (the sheen band) is
+     * #414345. The lip only darkens the metal round a letter. Print keeps out
+     * of the brighter part of an LED's light: the gaps by LEDs and lit keys
+     * are set for that (the jack names keep 7 px at every size).
      */
     --pd-room: #101112;
     --pd-metal-1: #303336;
@@ -131,6 +143,8 @@
     --pd-rail-edge: rgba(255, 255, 255, 0.2);
     --pd-etch: rgba(255, 255, 255, 0.08);
     --pd-etch-lip: rgba(0, 0, 0, 0.45);
+    /* The engraving's lip on dark metal: the cut's upper wall in shade, over the glyph. */
+    --pd-lip: 0 -1px 0 rgba(0, 0, 0, 0.7);
     /* The nameplate inverted: brushed silver, the engraving cut dark (the Korean line 7.2:1 at the plate's darkest corner). */
     --pd-plate-1: #d9dcdf;
     --pd-plate-2: #a2a6aa;
@@ -185,7 +199,9 @@ html[data-skin="pedal"] #app {
   color: var(--pd-ink);
   font-family: var(--pd-font);
   font-size: 13px;
+  font-weight: 500;
   line-height: 1.4;
+  text-shadow: var(--pd-lip);
   word-break: keep-all;
   overflow-wrap: anywhere;
   -webkit-font-smoothing: antialiased;
@@ -308,7 +324,7 @@ html[data-skin="pedal"] #app {
 
 .pd-fine {
   font-size: 11.5px;
-  font-weight: 400;
+  font-weight: 500;
   line-height: 1.45;
   color: var(--pd-ink-2);
   max-width: 68ch;
@@ -375,6 +391,9 @@ html[data-skin="pedal"] #app {
   font-weight: 700;
   letter-spacing: 0.06em;
   line-height: 1.5;
+  /* A knocked-out field: the ink block is what is cut and filled, so the lip is the block's, not the letters'. */
+  text-shadow: none;
+  box-shadow: var(--pd-lip);
 }
 
 .pd-group {
@@ -426,11 +445,187 @@ html[data-skin="pedal"] #app {
   font-weight: 600;
 }
 
-.pd-legend dd {
-  font-size: 11.5px;
-  font-weight: 400;
+/* A printed hairline between a group's sections, its left end a heavier section tick. */
+.pd-hair {
+  position: relative;
+  height: 0;
+  border-top: 1px solid var(--pd-rule-2);
+}
+
+.pd-hair::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -1.5px;
+  width: 14px;
+  border-top: 2px solid var(--pd-rule);
+}
+
+/* A spec plate: ruled rows, the name left, the value right, a dotted leader printed between. */
+.pd-spec {
+  display: grid;
+  border-top: 1.5px solid var(--pd-rule);
+  border-bottom: 1.5px solid var(--pd-rule);
+}
+
+.pd-spec-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 0 5px;
+}
+
+.pd-spec-row + .pd-spec-row {
+  border-top: 1px solid var(--pd-rule-2);
+}
+
+.pd-spec dt {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: max-content;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--pd-ink-2);
+}
+
+/* The leader: an empty item whose bottom edge sits on the baseline. */
+.pd-spec dt::after {
+  content: "";
+  flex: 1 1 10px;
+  min-width: 10px;
+  border-bottom: 1.5px dotted var(--pd-rule);
+}
+
+.pd-spec dd {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* A path runs on its own line under its name. */
+.pd-spec-row.is-long {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.pd-spec-row.is-long dd {
+  flex-basis: 100%;
+  font-size: 11.5px;
+  text-align: left;
+}
+
+/* ---------- numbered notes and their legend plate ---------- */
+
+/* By the part: its state LED and a printed number in an engraved ring. */
+.pd-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  vertical-align: middle;
+}
+
+.pd-mark-n {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border: 1.25px solid var(--pd-ink);
+  border-radius: 8px;
+  box-shadow: var(--pd-lip);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--pd-ink);
+}
+
+/* The plate: a row per shown note, ruled, the number, the same LED, the sentence. */
+.pd-noterows {
+  display: grid;
+}
+
+.pd-noterow {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 9px;
+  padding: 5px 0;
+  font-size: 12px;
+  font-weight: 500;
   line-height: 1.45;
+  color: var(--pd-ink-2);
+}
+
+.pd-noterow:not([hidden]) ~ .pd-noterow {
+  border-top: 1px solid var(--pd-rule-2);
+}
+
+.pd-noterow > .pd-led {
+  margin-top: 3px;
+}
+
+.pd-noterow-text {
+  white-space: pre-line;
+}
+
+/* The part the note belongs to, named before its sentence. */
+.pd-noterow-src {
+  margin-right: 8px;
+  font-weight: 700;
+  color: var(--pd-ink);
+}
+
+.pd-noterow > .pd-mark-n {
+  margin-top: 0.5px;
+}
+
+/* ---------- the channel indicator strip ---------- */
+
+/* A processor's channel indicators: a small LED per position, its name printed under it, lit for the channels carried. */
+.pd-chans {
+  display: inline-grid;
+  justify-items: start;
+  min-width: 0;
+}
+
+.pd-chans-lines {
+  display: grid;
+  gap: 7px;
+}
+
+.pd-chans-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 2px;
+}
+
+.pd-chan {
+  display: grid;
+  justify-items: center;
+  /* The name stands clear of its LED's light. */
+  gap: 4px;
+  min-width: 24px;
+}
+
+.pd-chan-name {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  color: var(--pd-ink-2);
+  white-space: nowrap;
+}
+
+.pd-chan.is-lit .pd-chan-name {
+  color: var(--pd-ink);
+  font-weight: 700;
 }
 
 /* ---------- LEDs ---------- */
@@ -498,6 +693,16 @@ html[data-skin="pedal"] #app {
 .pd-led.is-sm {
   --lens: 7px;
   --rim: 2px;
+}
+
+/* The channel indicators' LEDs: smaller, their light spilling a shorter way. */
+.pd-led.is-xs {
+  --lens: 6px;
+  --rim: 1.5px;
+}
+
+.pd-led.is-xs[data-glow="on"]::after {
+  inset: -5px;
 }
 
 /* ---------- segment readouts ---------- */
@@ -1122,6 +1327,8 @@ html[data-skin="pedal"] #app {
   font-weight: 700;
   letter-spacing: 0.06em;
   color: #d9d9d9;
+  /* Printed on the switch's black body, not cut into the plate. */
+  text-shadow: none;
 }
 
 .pd-dip-row {
@@ -1502,6 +1709,8 @@ html[data-skin="pedal"] #app {
 
 .pd-plate {
   position: relative;
+  /* A part of its own with its own engraving (법칙 8): the plate's letters keep no lip of the box. */
+  text-shadow: none;
   margin-bottom: 8px;
   padding: 7px 28px 6px;
   border-radius: 4px;
@@ -1665,26 +1874,24 @@ html[data-skin="pedal"] #app {
 }
 
 .pd-ch-notes {
-  display: grid;
-  gap: 4px;
-  align-content: start;
-}
-
-.pd-note {
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: start;
+  gap: 6px 12px;
+}
+
+/* The DAW's facts, a line each. */
+.pd-asio-facts {
+  display: grid;
+  gap: 1px;
+}
+
+/* The output's rate printed, its channels on the indicator strip under it. */
+.pd-outfmt {
+  display: grid;
   gap: 6px;
-  font-size: 11.5px;
-  line-height: 1.4;
-  color: var(--pd-ink-2);
-}
-
-.pd-note .pd-led {
-  transform: translateY(1px);
-}
-
-.pd-note-reason {
-  display: block;
+  justify-items: start;
 }
 
 .pd-ladder-row {
@@ -1890,6 +2097,9 @@ html[data-skin="pedal"] #app {
   font-family: var(--pd-font);
   font-size: 12px;
   font-weight: 600;
+  /* SVG text takes no text-shadow in every engine: the same 1px lip as a zero-blur filter. */
+  text-shadow: none;
+  filter: drop-shadow(var(--pd-lip));
 }
 
 .pd-map.is-dense .pd-map-name {
@@ -2110,14 +2320,32 @@ html[data-skin="pedal"] #app {
   font-weight: 600;
 }
 
+/* The patch strip: each device channel's number, its LED, the speaker on it. */
+.pd-patch .pd-patch-led,
+.pd-patch thead td {
+  width: 1px;
+  padding-right: 10px;
+  line-height: 0;
+  vertical-align: middle;
+}
+
+.pd-patch tr > :first-child {
+  width: 1px;
+  white-space: nowrap;
+}
+
 /* ---------- the upmix face ---------- */
 
 .pd-upmix {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 18px;
   min-height: 100%;
   padding-top: 8px;
+}
+
+.pd-upmix > .pd-flowroom {
+  flex: 1 1 0;
 }
 
 .pd-upmix-head {
@@ -2127,9 +2355,12 @@ html[data-skin="pedal"] #app {
   align-items: start;
 }
 
-.pd-upmix-about {
+.pd-upmix-info {
   display: grid;
-  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 12px;
+  max-width: none;
 }
 
 .pd-upmix-inputs {
@@ -2151,11 +2382,86 @@ html[data-skin="pedal"] #app {
   transform: translateY(2px);
 }
 
-.pd-upstate-detail {
-  display: block;
+.pd-upstate .pd-mark {
+  align-self: center;
+}
+
+/* What the running upmixer puts out, on the channel indicators, under the state's word. */
+.pd-upout {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.pd-upout-label {
+  padding-top: 1px;
+}
+
+/* The three upmixers in even columns, so each key's leader drops from its own centre. */
+.pd-keyrow.pd-upkeys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  justify-items: center;
+  gap: 12px 8px;
+}
+
+.pd-upkeys > .pd-key {
+  align-self: stretch;
+}
+
+/*
+ * A row of choices whose chosen one's description is printed under it
+ * (법칙 5): the chosen part's leader, a dot under its print and a line down
+ * to the caption's frame, a group's gap below.
+ */
+.pd-leads > .is-chosen {
+  position: relative;
+}
+
+.pd-leads > .is-chosen::before,
+.pd-leads > .is-chosen::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+}
+
+.pd-leads > .is-chosen::before {
+  top: calc(100% + 1px);
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: var(--pd-ink-2);
+  box-shadow: var(--pd-lip);
+}
+
+.pd-leads > .is-chosen::after {
+  top: calc(100% + 3px);
+  height: var(--lead, 9px);
+  margin-left: -0.75px;
+  border-left: 1.5px solid var(--pd-rule);
+}
+
+/* A slide stop's print sits a little above the switch's foot. */
+.pd-slide.pd-leads {
+  --lead: 11px;
+}
+
+/* The chosen one's description, in the printed frame its leader runs to. */
+.pd-callout {
+  padding: 7px 10px 8px;
+  border: 1.5px solid var(--pd-rule);
+  border-radius: 6px;
   font-size: 11.5px;
   font-weight: 500;
+  line-height: 1.45;
   color: var(--pd-ink-2);
+}
+
+.pd-updelay {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 /* ---------- the settings face ---------- */
@@ -2300,20 +2606,28 @@ html[data-skin="pedal"] #app {
   display: block;
 }
 
-.pd-endpoints {
-  display: grid;
-  gap: 4px;
+/* The step's sentences in their legend box, as wide as the step. */
+.pd-wizard-body > .pd-steptext {
+  justify-self: stretch;
 }
 
-.pd-endpoints li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
+/* A spec plate on the step, a readable width. */
+.pd-wizard-body > .pd-spec {
+  justify-self: stretch;
+  max-width: 640px;
 }
 
-.pd-endpoints .pd-name {
+.pd-endpoints dt {
   font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--pd-ink);
+}
+
+.pd-endpoints dd {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pd-ink-2);
 }
 
 .pd-quit {
@@ -2508,8 +2822,8 @@ html[data-skin="pedal"] #app {
     height: 24px;
   }
 
+  /* The name keeps the 7 px it has everywhere: closer, its last letter stands in the jack LED's light. */
   .pd-jack .pd-name {
-    gap: 5px;
     font-size: 12px;
   }
 

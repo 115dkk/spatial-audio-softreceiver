@@ -32,6 +32,22 @@ export function facts(rows: [string, Child][], className = ''): HTMLDListElement
   return list;
 }
 
+/**
+ * A spec plate: ruled rows, the name at the left, the value at the right, a
+ * dotted leader printed between. A `long` row (a path) sets its value on a
+ * line of its own under the name.
+ */
+export function spec(rows: [label: string, value: Child, long?: boolean][], className = ''): HTMLDListElement {
+  const list = h('dl', { class: `pd-spec ${className}`.trim() });
+  for (const [label, value, long] of rows) {
+    list.append(h('div', { class: `pd-spec-row${long ? ' is-long' : ''}` }, h('dt', null, label), h('dd', null, value)));
+  }
+  return list;
+}
+
+/** A printed hairline between the sections of a group. */
+export const hairline = () => h('div', { class: 'pd-hair', 'aria-hidden': 'true' });
+
 /** A group of parts inside a printed frame, its name on a knocked-out tab. */
 export function group(id: string, title: string | null, children: Child[], className = ''): HTMLElement {
   return h(
@@ -55,7 +71,7 @@ export interface Led {
 }
 
 /** An LED in its holder: a machined ring with a lens tinted with its colour, lit or dark. */
-export function led(tone: Tone, glow: Glow = 'off', size: 'sm' | 'md' | 'lg' = 'md'): Led {
+export function led(tone: Tone, glow: Glow = 'off', size: 'xs' | 'sm' | 'md' | 'lg' = 'md'): Led {
   let now = tone;
   const element = h('span', {
     class: `pd-led is-${size}`,
@@ -73,6 +89,153 @@ export function led(tone: Tone, glow: Glow = 'off', size: 'sm' | 'md' | 'lg' = '
       }
     },
   };
+}
+
+// ---------------------------------------------------------------- channel indicators
+
+export interface ChannelSpot {
+  /** The channel's short name, printed under its LED (`L`, `LFE`, `Tfl`). */
+  name: string;
+}
+
+export interface ChannelStrip {
+  element: HTMLElement;
+  /** Light the spots `lit` says, and set what a screen reader hears; nothing is built. */
+  set(lit: (index: number, name: string) => boolean, spoken: string): void;
+}
+
+/**
+ * A channel indicator strip, the kind on an AV processor's front panel: a
+ * small LED per channel position with its short name printed under it, lit
+ * for the channels carried now and dark for the rest. `lines` breaks the
+ * spots into rows (the bed, then the heights). Built once per frame; `set`
+ * only flips the LEDs and the sentence a screen reader hears, which stands
+ * in for the printed names.
+ */
+export function channelStrip(spots: readonly ChannelSpot[], options: { lines?: readonly number[]; className?: string } = {}): ChannelStrip {
+  const lights = spots.map(() => led('on', 'off', 'xs'));
+  const cells = spots.map((spot, index) =>
+    h('span', { class: 'pd-chan', 'data-chan': spot.name }, lights[index]!.element, h('span', { class: 'pd-chan-name' }, spot.name)),
+  );
+  const rows: HTMLElement[] = [];
+  let start = 0;
+  for (const size of options.lines ?? []) {
+    if (start >= cells.length) break;
+    rows.push(h('span', { class: 'pd-chans-line' }, ...cells.slice(start, start + size)));
+    start += size;
+  }
+  if (start < cells.length) rows.push(h('span', { class: 'pd-chans-line' }, ...cells.slice(start)));
+  const said = sr('');
+  const element = h('span', { class: `pd-chans ${options.className ?? ''}`.trim() }, h('span', { class: 'pd-chans-lines', 'aria-hidden': 'true' }, ...rows), said);
+  return {
+    element,
+    set(lit, spoken) {
+      spots.forEach((spot, index) => {
+        const on = lit(index, spot.name);
+        lights[index]!.set(on ? 'on' : 'off');
+        cells[index]!.classList.toggle('is-lit', on);
+      });
+      if (said.textContent !== spoken) said.textContent = spoken;
+    },
+  };
+}
+
+// ---------------------------------------------------------------- numbered notes and their legend plate
+
+/** Circled reference marks are drawn, not typed: the font need not carry ⑪ and on. */
+export interface Note {
+  /** The mark beside the part: its LED (unless the part's own LED stands there), its printed number, and the sentence a screen reader hears there. */
+  mark: HTMLElement;
+  /** Show the note with this sentence (and tone), or hide it with null. Builds nothing. */
+  set(sentence: string | null, tone?: Tone): void;
+}
+
+export interface NotePlate {
+  /** The legend plate: a tabbed group of ruled rows, a row per shown note. Hidden while no note is shown. */
+  element: HTMLElement;
+  /**
+   * A note for one part, in reading order; hidden until `set`. `source`
+   * names the part on the plate's row (the input it belongs to), so a row
+   * reads without hunting for its number; `led: false` when the part's own
+   * state LED already stands by the mark.
+   */
+  note(tone: Tone, options?: { led?: boolean; glow?: Glow; source?: string }): Note;
+  /** Number the shown notes 1, 2, 3 in reading order; cheap when the shown set has not changed. */
+  renumber(): void;
+}
+
+/**
+ * A part's caution or error sentence does not stand beside the part (법칙 5):
+ * the part keeps its state LED and a printed number, and the sentence is
+ * printed on the face's legend plate by the same number, as an equipment
+ * panel prints what its lamps mean. A screen reader hears the sentence at
+ * the part; the plate is for the eye only, so nothing is read twice. Every
+ * row the face can need is built once; showing and hiding a note, and
+ * renumbering, only flip `hidden` and set text, so a 30 Hz update grows
+ * nothing.
+ */
+export function notePlate(title: string, id: string): NotePlate {
+  const list = h('ol', { class: 'pd-noterows' });
+  const element = group(id, title, [list], 'pd-noteplate');
+  element.setAttribute('aria-hidden', 'true');
+  element.hidden = true;
+  const notes: { shown: boolean; numbers: HTMLElement[] }[] = [];
+  let order = '';
+  const plate: NotePlate = {
+    element,
+    note(tone, options = {}) {
+      const markNumber = h('span', { class: 'pd-mark-n', 'aria-hidden': 'true' });
+      const rowNumber = h('span', { class: 'pd-mark-n' });
+      const said = sr('');
+      const glow = options.glow ?? 'on';
+      const markLight = options.led === false ? null : led(tone, glow, 'sm');
+      const rowLight = led(tone, glow, 'sm');
+      const words = h('span');
+      const mark = h('span', { class: 'pd-mark', hidden: true }, markLight?.element ?? null, markNumber, said);
+      const row = h(
+        'li',
+        { class: 'pd-noterow', hidden: true },
+        rowNumber,
+        rowLight.element,
+        h('span', { class: 'pd-noterow-text' }, options.source === undefined ? null : h('b', { class: 'pd-noterow-src' }, options.source), words),
+      );
+      list.append(row);
+      const entry = { shown: false, numbers: [markNumber, rowNumber] };
+      notes.push(entry);
+      let tint = tone;
+      return {
+        mark,
+        set(sentence, to) {
+          const shown = sentence !== null;
+          entry.shown = shown;
+          if (mark.hidden === shown) mark.hidden = !shown;
+          if (row.hidden === shown) row.hidden = !shown;
+          if (sentence !== null) {
+            if (said.textContent !== sentence) said.textContent = sentence;
+            if (words.textContent !== sentence) words.textContent = sentence;
+          }
+          if (to !== undefined && to !== tint) {
+            tint = to;
+            markLight?.set(glow, to);
+            rowLight.set(glow, to);
+          }
+        },
+      };
+    },
+    renumber() {
+      const now = notes.map((entry) => (entry.shown ? '1' : '0')).join('');
+      if (now === order) return;
+      order = now;
+      let at = 0;
+      for (const entry of notes) {
+        if (!entry.shown) continue;
+        at += 1;
+        for (const number of entry.numbers) number.textContent = String(at);
+      }
+      element.hidden = at === 0;
+    },
+  };
+  return plate;
 }
 
 // ---------------------------------------------------------------- seven-segment readouts

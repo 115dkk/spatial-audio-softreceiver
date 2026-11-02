@@ -59,7 +59,8 @@ const READY = 'html[data-gallery-ready="true"]';
 /** The faces each skin must have in place before its picture (ADR 0041). */
 const FONTS: Record<Skin, string[]> = {
   standard: ['400 14px "IBM Plex Sans KR"'],
-  pedal: ['400 14px "IBM Plex Sans KR"'],
+  // The pedal prints nothing in Regular (ADR 0046, 법칙 6), so its lightest face is Medium.
+  pedal: ['500 14px "IBM Plex Sans KR"'],
   console: ['500 14px "Pretendard"'],
 };
 

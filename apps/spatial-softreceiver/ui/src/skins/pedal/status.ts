@@ -5,12 +5,15 @@
 // the output on the right (the LEVEL encoder, the output kind's slide switch
 // and what plays where). The numbers that say whether the sound is healthy
 // run along a row of segment readouts under them, the counters and each
-// input's details after. Off or stopped: what will play where, the output
-// devices' key and row, and the inputs by name and purpose. With the
-// app-sound entrance (ADR 0043) the channels are its lanes, each with the key
-// that opens its row of apps, and PASS stands dark.
+// input's details after. A channel keeps only the LED and the printed
+// number of what is wrong or worth knowing; the sentences stand on the
+// face's legend plate by the same numbers (법칙 5). The output's channels
+// are a channel indicator strip by its rate. Off or stopped: what will play
+// where, the output devices' key and row, and the inputs by name and
+// purpose. With the app-sound entrance (ADR 0043) the channels are its
+// lanes, each with the key that opens its row of apps, and PASS stands dark.
 
-import type { AsioStatus, EndpointUpmixView, EngineStatus } from '../../bindings';
+import type { AsioStatus, EndpointUpmixView, EngineStatus, Snapshot } from '../../bindings';
 import { type Child, h, liveText, setAttr } from '../../dom';
 import {
   chainErrorEntries,
@@ -44,7 +47,26 @@ import {
 import { bypassReason } from '../../screens/upmix';
 import { kindSlide, levelEncoder, outputRow } from './controls';
 import { soundMap } from './map';
-import { etchedField, facts, fine, flowArrow, ikey, keyRow, ladder, led, print, readout, sr, strength } from './parts';
+import {
+  type ChannelSpot,
+  type NotePlate,
+  channelStrip,
+  etchedField,
+  facts,
+  fine,
+  flowArrow,
+  group,
+  hairline,
+  ikey,
+  keyRow,
+  ladder,
+  led,
+  notePlate,
+  print,
+  readout,
+  sr,
+  strength,
+} from './parts';
 import { ASIO_LANE, LANES, type Scope, loudest, signed } from './scope';
 
 /** What the output in use is called: the BRIR set, the layout or the correction, or profile.toml's name. */
@@ -62,22 +84,24 @@ interface Channel {
   update(engine: EngineStatus): void;
 }
 
-/** A printed note in a channel with its LED. */
-const note = (tone: 'on' | 'wait' | 'fault' | 'off', ...words: Child[]) =>
-  h('p', { class: 'pd-note' }, led(tone === 'off' ? 'on' : tone, tone === 'off' ? 'off' : 'on', 'sm').element, h('span', null, ...words));
-
-/** The upmixer's line while its host is up: on, the original stereo in its place, or gone around. */
-function upmixNote(upmix: EndpointUpmixView | undefined): HTMLElement | null {
+/**
+ * The upmixer's note while its host is up (on, the original stereo in its
+ * place, or gone around): its LED and number in the channel, the sentence on
+ * the legend plate. It changes with the snapshot, so it is set once.
+ */
+function upmixNote(plate: NotePlate, source: string, upmix: EndpointUpmixView | undefined): HTMLElement | null {
   if (upmix === undefined || upmix.plugin === null) return null;
   const { kind } = upmix.state;
   if (kind !== 'running' && kind !== 'fallback') return null;
   const fallback = kind === 'fallback';
   const bypass = kind === 'running' ? upmix.bypass : null;
-  return note(
-    fallback ? 'wait' : bypass !== null ? 'off' : 'on',
-    fallback ? text.status.upmixFallback(upmix.plugin.name) : text.status.upmix(upmix.plugin.name),
-    bypass === null ? null : h('span', { class: 'pd-note-reason' }, bypassReason(bypass)),
+  const entry = plate.note(fallback ? 'wait' : 'on', { glow: bypass !== null ? 'off' : 'on', source });
+  entry.set(
+    fallback ? text.status.upmixFallback(upmix.plugin.name)
+    : bypass === null ? text.status.upmix(upmix.plugin.name)
+    : `${text.status.upmix(upmix.plugin.name)}\n${bypassReason(bypass)}`,
   );
+  return entry.mark;
 }
 
 /** The chain errors by kind as printed lines, one prebuilt per known kind and one for the rest. */
@@ -111,20 +135,18 @@ function errorKinds(): { element: HTMLElement; set(map: EngineStatus['endpoints'
  * One input's channel. `label` names an app-sound lane and its app in place
  * of the driver's endpoint (ADR 0043).
  */
-function channel(scope: Scope, lane: number, label?: { name: string; sub: string }): Channel {
+function channel(scope: Scope, plate: NotePlate, lane: number, label?: { name: string; sub: string }): Channel {
   const s = text.status;
   const name = text.pedal.lamps[lane] ?? String(lane);
   const endpoint = label === undefined ? (text.endpoints[lane]?.name ?? name) : `${label.name} · ${label.sub}`;
   const format = liveText(s.noInput);
   const carrier = liveText();
-  const unsupported = liveText();
-  const errorTotal = liveText();
   const epoch = liveText();
   const carrierLine = h('p', { class: 'pd-small', hidden: true }, carrier.node);
-  const unsupportedLine = note('wait', unsupported.node);
-  unsupportedLine.hidden = true;
-  const errorLine = note('fault', s.chainErrors, ' ', h('span', { class: 'pd-num' }, errorTotal.node));
-  errorLine.hidden = true;
+  // In reading order: the upmixer, a format it cannot play, the chain errors.
+  const upmix = upmixNote(plate, name, scope.ctx.snapshot.upmix.endpoints.find((view) => view.endpoint === lane));
+  const unsupported = plate.note('wait', { source: name });
+  const errors = plate.note('fault', { source: name });
   const bar = ladder(`lane-${lane}`);
   const volume = readout(4, 18, 'dB', '', 'pd-ch-volume');
   const muted = print(s.muted, 'pd-tag');
@@ -134,7 +156,7 @@ function channel(scope: Scope, lane: number, label?: { name: string; sub: string
     { class: 'pd-ch', 'data-lane': lane, 'data-signal': 'none', 'aria-labelledby': `pd-ch-${lane}` },
     h('h3', { id: `pd-ch-${lane}`, class: 'pd-ep' }, sr(`${name} · `), endpoint),
     h('div', { class: 'pd-ch-format' }, h('p', { class: 'pd-fmt' }, format.node), carrierLine),
-    h('div', { class: 'pd-ch-notes' }, upmixNote(scope.ctx.snapshot.upmix.endpoints.find((view) => view.endpoint === lane)), unsupportedLine, errorLine),
+    h('div', { class: 'pd-ch-notes' }, upmix, unsupported.mark, errors.mark),
     h('div', { class: 'pd-ladder-row' }, bar.element, h('div', { class: 'pd-ch-level' }, muted, volume.element)),
   );
   const kinds = errorKinds();
@@ -159,12 +181,10 @@ function channel(scope: Scope, lane: number, label?: { name: string; sub: string
       if (container !== null) carrier.set(container);
       volume.set(signed(status.volume_db), describeVolume(status.volume_db, status.muted));
       muted.hidden = !status.muted;
-      unsupportedLine.hidden = status.unsupported === null;
-      if (status.unsupported !== null) unsupported.set(describeUnsupported(status.unsupported));
-      const errors = chainErrorTotal(status.chain_errors);
-      errorLine.hidden = errors === 0;
-      errorTotal.set(count(errors));
-      total.set(errors === 0 ? s.chainErrorsNone : count(errors));
+      unsupported.set(status.unsupported === null ? null : describeUnsupported(status.unsupported));
+      const failures = chainErrorTotal(status.chain_errors);
+      errors.set(failures === 0 ? null : `${s.chainErrors} ${count(failures)}`);
+      total.set(failures === 0 ? s.chainErrorsNone : count(failures));
       epoch.set(count(status.epoch));
       kinds.set(status.chain_errors);
     },
@@ -172,24 +192,22 @@ function channel(scope: Scope, lane: number, label?: { name: string; sub: string
 }
 
 /** The ASIO input's channel while it is on: the DAW, its rate, buffer, layout and underruns, or why not. */
-function asioChannel(enabled: boolean): { element: HTMLElement; update(status: AsioStatus | null, engine: EngineStatus | null): void } {
+function asioChannel(plate: NotePlate, enabled: boolean): { element: HTMLElement; update(status: AsioStatus | null, engine: EngineStatus | null): void } {
   const s = text.status;
   const name = text.pedal.lamps[ASIO_LANE] ?? text.asio;
   const client = liveText(enabled ? s.asioWaiting : text.facts.off);
-  const detail = liveText();
-  const reason = liveText();
-  const detailLine = h('p', { class: 'pd-small', hidden: true }, detail.node);
-  const clock = note('wait', s.asioClockFault);
-  clock.hidden = true;
-  const fault = note('fault', reason.node);
-  fault.hidden = true;
+  // The DAW's rate, buffer, layout and underruns, a line each in the narrow column.
+  const details = [liveText(), liveText(), liveText(), liveText()];
+  const detailLines = h('div', { class: 'pd-asio-facts', hidden: true }, ...details.map((line) => h('p', { class: 'pd-small' }, line.node)));
+  const clock = plate.note('wait', { source: name });
+  const fault = plate.note('fault', { source: name });
   const bar = ladder(`lane-${ASIO_LANE}`);
   const element = h(
     'section',
     { class: `pd-ch${enabled ? '' : ' is-dark'}`, 'data-lane': ASIO_LANE, 'data-signal': 'none', 'aria-labelledby': 'pd-ch-asio' },
     h('h3', { id: 'pd-ch-asio', class: 'pd-ep' }, sr(`${name} · `), text.asio),
-    h('div', { class: 'pd-ch-format' }, h('p', { class: 'pd-fmt' }, client.node), detailLine),
-    h('div', { class: 'pd-ch-notes' }, clock, fault),
+    h('div', { class: 'pd-ch-format' }, h('p', { class: 'pd-fmt' }, client.node), detailLines),
+    h('div', { class: 'pd-ch-notes' }, clock.mark, fault.mark),
     h('div', { class: 'pd-ladder-row' }, bar.element),
   );
   return {
@@ -200,21 +218,18 @@ function asioChannel(enabled: boolean): { element: HTMLElement; update(status: A
       const attached = status !== null && faultReason === null ? status : null;
       setAttr(element, 'data-signal', attached === null ? 'none' : attached.clock_fault ? 'idle' : 'sound');
       client.set(faultReason !== null ? s.asioFailed : attached === null ? s.asioWaiting : attached.client_exe || '-');
-      detailLine.hidden = attached === null;
+      detailLines.hidden = attached === null;
       if (attached !== null) {
         const { sample_rate: hz, buffer_frames: frames } = attached;
-        detail.set(
-          [
-            hz > 0 ? describeRate(hz) : '-',
-            s.asioBuffer(count(frames), hz > 0 ? oneDecimal((frames / hz) * 1000) : '-'),
-            `${attached.layout} (${text.format.channels(attached.channels)})`,
-            s.asioUnderruns(count(attached.underruns)),
-          ].join(' · '),
-        );
+        [
+          hz > 0 ? describeRate(hz) : '-',
+          s.asioBuffer(count(frames), hz > 0 ? oneDecimal((frames / hz) * 1000) : '-'),
+          `${attached.layout} (${text.format.channels(attached.channels)})`,
+          s.asioUnderruns(count(attached.underruns)),
+        ].forEach((words, index) => details[index]!.set(words));
       }
-      clock.hidden = attached === null || !attached.clock_fault;
-      fault.hidden = faultReason === null;
-      if (faultReason !== null) reason.set(faultReason);
+      clock.set(attached !== null && attached.clock_fault ? s.asioClockFault : null);
+      fault.set(faultReason);
       const level = engine === null ? -Infinity : loudest(engine, ASIO_LANE);
       bar.set(level > -Infinity ? strength(level) : 0);
     },
@@ -294,9 +309,13 @@ function passLane(): HTMLElement {
 }
 
 /** Why the app keys are off (running), and what happens to an app closed first. */
-function laneHints(scope: Scope): HTMLElement[] {
+function laneHints(scope: Scope): HTMLElement {
   const locked = pickersLocked(scope.ctx.snapshot);
-  return [...(locked === null ? [] : [fine(locked, 'capture-locked')]), fine(text.entrance.closedApp, 'capture-closed')];
+  // The app keys' sentences in a printed legend box under the lanes, not loose on the metal (법칙 5).
+  return group('pd-lane-hints', text.entrance.appsTitle, [
+    ...(locked === null ? [] : [fine(locked, 'capture-locked'), hairline()]),
+    fine(text.entrance.closedApp, 'capture-closed'),
+  ]);
 }
 
 /** A segment readout in the meters row: its printed name, the digits and the unit. */
@@ -322,6 +341,35 @@ function meter(
   };
 }
 
+/**
+ * The device channels the output plays, by name: the speakers' in device
+ * order, the two ears for headphones; a channel past those by its number.
+ * The positions are set once a frame, so the 30 Hz update only lights them.
+ */
+export function deviceSpots(snapshot: Snapshot, channels: number): ChannelSpot[] {
+  const { profile } = snapshot;
+  const named =
+    profile.kind === 'speakers'
+      ? [...profile.speakers.channels].sort((a, b) => a.channel - b.channel).map((channel) => channel.name)
+      : ['L', 'R'];
+  const count = Math.max(named.length, channels);
+  return Array.from({ length: count }, (_, index) => ({ name: named[index] ?? String(index + 1) }));
+}
+
+/** The output's format: its rate printed, its channels on the indicator strip, lit for those it carries. */
+function outputChannels(snapshot: Snapshot, engine: EngineStatus | null): { element: HTMLElement; update(engine: EngineStatus): void } {
+  const rate = liveText('-');
+  const strip = channelStrip(deviceSpots(snapshot, engine?.output_channels ?? 0), { className: 'pd-outchans' });
+  strip.set(() => false, '-');
+  return {
+    element: h('span', { class: 'pd-outfmt' }, h('span', { class: 'pd-num', 'aria-hidden': 'true' }, rate.node), strip.element),
+    update(now) {
+      rate.set(now.output_rate === 0 ? '-' : describeRate(now.output_rate));
+      strip.set((index) => now.output_rate !== 0 && index < now.output_channels, describeOutputFormat(now));
+    },
+  };
+}
+
 /** The input columns, the map and the output on one grid under the jacks. */
 function columns(inputs: Child[], middle: Child[], output: Child[]): HTMLElement {
   return h(
@@ -343,6 +391,7 @@ function running(scope: Scope, engineNow: EngineStatus | null): Drawn {
   const apps = appMode(snapshot);
   const asioOn = (snapshot.asio ?? ASIO_DEFAULTS).enabled;
 
+  const plate = notePlate(text.banner.notesLabel, 'pd-status-notes');
   const channels: Channel[] = [];
   const under: HTMLElement[] = [];
   const inputs: HTMLElement[] = [];
@@ -354,7 +403,7 @@ function running(scope: Scope, engineNow: EngineStatus | null): Drawn {
       if (view === null) {
         inputs.push(laneStandby(lane, key));
       } else {
-        const input = channel(scope, lane, { name: laneName(lane), sub: appLabel(view) });
+        const input = channel(scope, plate, lane, { name: laneName(lane), sub: appLabel(view) });
         channels.push(input);
         input.element.querySelector('.pd-ch-format')?.append(key);
         inputs.push(input.element);
@@ -363,16 +412,16 @@ function running(scope: Scope, engineNow: EngineStatus | null): Drawn {
     inputs.push(passLane());
   } else {
     for (let lane = 0; lane < LANES; lane += 1) {
-      const input = channel(scope, lane);
+      const input = channel(scope, plate, lane);
       channels.push(input);
       inputs.push(input.element);
     }
   }
-  const asio = asioChannel(asioOn);
+  const asio = asioChannel(plate, asioOn);
   inputs.push(asio.element);
 
   const map = soundMap(ctx, engineNow?.directions ?? snapshot.profile.directions, true, 'map-direction');
-  const outputFormat = liveText();
+  const output = outputChannels(snapshot, engineNow);
   const outputMode = liveText();
   const [profileLabel, profileName] = profileFact(scope);
   const main = columns(
@@ -384,7 +433,7 @@ function running(scope: Scope, engineNow: EngineStatus | null): Drawn {
       facts([
         [profileLabel, profileName],
         [text.pedal.device, snapshot.chosen_output?.name ?? s.noOutput],
-        [m.output, outputFormat.node],
+        [m.output, output.element],
         [m.outputMode, outputMode.node],
       ]),
       snapshot.roles_taken && !apps ? fine(s.rolesTaken) : null,
@@ -412,7 +461,7 @@ function running(scope: Scope, engineNow: EngineStatus | null): Drawn {
     { class: 'pd-status is-running' },
     main,
     under.length === 0 ? null : h('div', { class: 'pd-under' }, ...under),
-    apps ? h('div', { class: 'pd-under pd-hints' }, ...laneHints(scope)) : null,
+    apps ? laneHints(scope) : null,
     h('div', { class: 'pd-rule', 'aria-hidden': 'true' }),
     h(
       'div',
@@ -421,6 +470,7 @@ function running(scope: Scope, engineNow: EngineStatus | null): Drawn {
       h('span', { class: 'pd-sep', 'aria-hidden': 'true' }),
       h('div', { class: 'pd-counters' }, ...counters.map((cell) => cell.element)),
     ),
+    plate.element,
     h(
       'section',
       { class: 'pd-details', 'aria-labelledby': 'pd-details-title' },
@@ -433,15 +483,19 @@ function running(scope: Scope, engineNow: EngineStatus | null): Drawn {
     update(engine) {
       for (const input of channels) input.update(engine);
       asio.update(engine.asio ?? null, engine);
+      plate.renumber();
       map.update(engine);
-      outputFormat.set(describeOutputFormat(engine));
+      output.update(engine);
       outputMode.set(describeOutputMode(engine));
       for (const cell of meters) cell.update(engine);
       for (const cell of counters) cell.update(engine);
     },
   };
   if (engineNow !== null) live.update(engineNow);
-  else asio.update(null, null);
+  else {
+    asio.update(null, null);
+    plate.renumber();
+  }
   return engineNow === null ? { element } : { element, live };
 }
 
@@ -514,7 +568,7 @@ function standby(scope: Scope): Drawn {
       [levelEncoder(scope), kindSlide(scope), facts([[profileLabel, profileName]])],
     ),
     under.length === 0 ? null : h('div', { class: 'pd-under' }, ...under),
-    apps ? h('div', { class: 'pd-under pd-hints' }, ...laneHints(scope)) : null,
+    apps ? laneHints(scope) : null,
   );
   return { element };
 }

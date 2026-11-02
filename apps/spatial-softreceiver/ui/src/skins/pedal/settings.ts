@@ -4,8 +4,11 @@
 // as rows of lane keys, the ASIO input's layouts as keys in family lines and
 // its attenuation as a knob, the update's momentary key, the diagnostic
 // recording's key, and what the supervisor knows about this PC and the
-// driver, printed. The machine's signal flow is etched in the spare room.
-// Rust decides whether a change is taken.
+// driver on spec plates. A group's sentences are parted from its parts by
+// printed hairlines, and the entrance switch prints only the chosen
+// entrance's description, in a caption its stop's leader runs to (법칙 5).
+// The machine's signal flow is etched in the spare room. Rust decides
+// whether a change is taken.
 
 import { toUserError } from '../../api';
 import type { AsioLayout, Entrance, EntranceKind, Language, OutputPath, RoutedApp, RuleView } from '../../bindings';
@@ -32,10 +35,10 @@ import {
   type DipRow,
   dip,
   encoder,
-  facts,
   fine,
   flowRoom,
   group,
+  hairline,
   ikey,
   intentKey,
   keyRow,
@@ -44,6 +47,8 @@ import {
   readout,
   rotary,
   slide,
+  spec,
+  sr,
 } from './parts';
 import type { Scope } from './scope';
 
@@ -116,7 +121,7 @@ function options(ctx: Context): Child[] {
     describedBy: 'asio-hint asio-limits',
     toggle: (on) => ctx.send({ kind: 'set_asio_enabled', value: on }),
   });
-  return [dip(rows, text.facts.on), fine(native ? t.autostartHint : t.autostartUnavailable, 'autostart-hint')];
+  return [dip(rows, text.facts.on), hairline(), fine(native ? t.autostartHint : t.autostartUnavailable, 'autostart-hint')];
 }
 
 /**
@@ -133,32 +138,34 @@ function entrance(ctx: Context): Child[] {
   const other = current === 'driver' ? 'app_sound' : 'driver';
   const blocked = running ? null : entranceBlocked(snapshot, other);
   ctx.offer('choose_entrance');
+  // Only the chosen entrance's description is printed; the other's stays with its stop for a screen reader.
+  const getsOf = (kind: EntranceKind) => `entrance-gets-${kind}`;
   const stops: Choice<EntranceKind>[] = ENTRANCE_KINDS.map((kind) => ({
     value: kind,
     label: entranceName(kind),
     key: entranceKey(kind),
     off: kind !== current && blocked !== null,
-    describedBy: kind === other && blocked !== null ? 'entrance-blocked' : null,
+    describedBy: kind === current ? null : described(kind === other && blocked !== null && 'entrance-blocked', getsOf(kind)),
   }));
+  const control = slide({
+    labelledBy: 'pd-entrance-title',
+    describedBy: described(running && 'entrance-locked', 'entrance-gets', 'entrance-hint'),
+    stops,
+    at: current,
+    off: running,
+    locked: ctx.busy,
+    busy: ctx.pending === 'choose_entrance',
+    intent: 'choose_entrance',
+    choose: (value) => ctx.send({ kind: 'choose_entrance', value }),
+  });
+  control.classList.add('pd-leads');
   return [
-    slide({
-      labelledBy: 'pd-entrance-title',
-      describedBy: described(running && 'entrance-locked', 'entrance-gets', 'entrance-hint'),
-      stops,
-      at: current,
-      off: running,
-      locked: ctx.busy,
-      busy: ctx.pending === 'choose_entrance',
-      intent: 'choose_entrance',
-      choose: (value) => ctx.send({ kind: 'choose_entrance', value }),
-    }),
+    control,
+    h('p', { class: 'pd-callout', id: 'entrance-gets', 'data-chosen': current }, entranceGets(current)),
+    ...ENTRANCE_KINDS.filter((kind) => kind !== current).map((kind) => sr(entranceGets(kind), getsOf(kind))),
     running ? fine(e.locked, 'entrance-locked') : null,
     blocked === null ? null : h('p', { class: 'pd-fine', id: 'entrance-blocked' }, print(e.unavailable, 'pd-tag'), ' ', blocked),
-    h(
-      'dl',
-      { class: 'pd-facts pd-legend', id: 'entrance-gets' },
-      ...ENTRANCE_KINDS.map((kind) => h('div', { class: 'pd-fact' }, h('dt', null, entranceName(kind)), h('dd', null, entranceGets(kind)))),
-    ),
+    hairline(),
     fine(entranceNeeds(current, snapshot).join(' '), 'entrance-hint'),
   ];
 }
@@ -200,12 +207,14 @@ function outputPath(ctx: Context): Child[] {
       choose: (value) => ctx.send({ kind: 'set_output_path', value }),
     }),
     running ? fine(t.outputPathLocked, 'output-path-locked') : null,
+    hairline(),
     fine(apps ? e.ksNotUsed : t.outputPathHint, hintId),
   ];
   if (apps) {
     const sending = ctx.sending?.kind === 'set_app_capture_exclusive' ? ctx.sending.value : null;
     ctx.offer('set_app_capture_exclusive');
     children.push(
+      hairline(),
       dip(
         [
           {
@@ -248,6 +257,7 @@ function language(ctx: Context): Child[] {
       intent: 'set_language',
       choose: (value) => ctx.send({ kind: 'set_language', value: value === 'auto' ? null : value }),
     }),
+    hairline(),
     fine(t.languageHint, 'language-hint'),
   ];
 }
@@ -267,6 +277,7 @@ function skin(ctx: Context): Child[] {
       intent: 'set_skin',
       choose: (value) => ctx.send({ kind: 'set_skin', value }),
     }),
+    hairline(),
     fine(text.skins.hint, 'skin-hint'),
   ];
 }
@@ -350,6 +361,7 @@ function routing(ctx: Context): Child[] {
   return [
     view.available ? null : fine(t.routingUnavailable, 'routing-unavailable'),
     fine(t.routingHint(windowsName('pass'), windowsName('main')), 'routing-hint'),
+    showApps || others.length > 0 ? hairline() : null,
     showApps
       ? h(
           'div',
@@ -358,6 +370,7 @@ function routing(ctx: Context): Child[] {
           ...(view.apps.length === 0 ? [h('p', { class: 'pd-small' }, t.routingNoApps)] : view.apps.map((app, index) => appRule(ctx, app, index, locked))),
         )
       : null,
+    showApps && others.length > 0 ? hairline() : null,
     others.length === 0
       ? null
       : h(
@@ -400,6 +413,7 @@ function asio(scope: Scope): Child[] {
   return [
     fine(t.asioHint(t.asioDevice), 'asio-hint'),
     fine(t.asioLimits, 'asio-limits'),
+    hairline(),
     h('h3', { id: 'asio-layout-label', class: 'pd-label' }, t.asioLayout),
     keyRow({
       labelledBy: 'asio-layout-label',
@@ -420,6 +434,7 @@ function asio(scope: Scope): Child[] {
       choose: (value) => ctx.send({ kind: 'set_asio_layout', value }),
     }),
     fine(t.asioLayoutHint, 'asio-layout-hint'),
+    hairline(),
     h('h3', { id: 'asio-attenuation-label', class: 'pd-label' }, t.asioAttenuation),
     h(
       'div',
@@ -492,6 +507,7 @@ function diagnostics(ctx: Context): Child[] {
       describedBy: 'record-hint',
       onClick: () => ctx.send({ kind: 'start_diagnostic_recording' }),
     }),
+    hairline(),
     fine(t.recordHint, 'record-hint'),
   ];
 }
@@ -525,7 +541,7 @@ export function settingsFace(scope: Scope): Drawn {
       'div',
       { class: 'pd-stack' },
       group('pd-routing', t.routing, routing(ctx)),
-      apps ? group('pd-discard', text.entrance.discard, [fine(text.entrance.discardHint), discardRow(ctx, 'settings-discard', ctx.snapshot.phase.kind === 'running' ? t.outputPathLocked : null)]) : null,
+      apps ? group('pd-discard', text.entrance.discard, [fine(text.entrance.discardHint), hairline(), discardRow(ctx, 'settings-discard', ctx.snapshot.phase.kind === 'running' ? t.outputPathLocked : null)]) : null,
       group('pd-asio', text.asio, asio(scope)),
     ),
     h(
@@ -533,8 +549,8 @@ export function settingsFace(scope: Scope): Drawn {
       { class: 'pd-stack' },
       group('pd-update', t.update, update(ctx)),
       group('pd-diagnostics', t.diagnostics, diagnostics(ctx)),
-      group('pd-platform', t.platform, [platform === null ? fine(t.unknown) : facts(platformRows(platform))]),
-      group('pd-driver', t.driver, [driver !== null ? facts(driverRows(driver)) : fine(apps ? text.entrance.driverOnly : t.unknown)]),
+      group('pd-platform', t.platform, [platform === null ? fine(t.unknown) : spec(platformRows(platform))]),
+      group('pd-driver', t.driver, [driver !== null ? spec(driverRows(driver)) : fine(apps ? text.entrance.driverOnly : t.unknown)]),
     ),
   );
   return { element };
