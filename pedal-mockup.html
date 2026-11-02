@@ -48,6 +48,8 @@
   --mled-off: #8a8d90;
   --mled-edge: rgba(0, 0, 0, 0.3);
   --spill: 38%;
+  --under: rgba(0, 0, 0, 0.26);
+  --rail-edge: rgba(0, 0, 0, 0.4);
   --etch: rgba(0, 0, 0, 0.1);
   --etch-lip: rgba(255, 255, 255, 0.55);
   /* the nameplate: black anodised, engraving shows bright aluminium */
@@ -102,6 +104,8 @@
   --mled-off: #121315;
   --mled-edge: rgba(255, 255, 255, 0.16);
   --spill: 46%;
+  --under: rgba(0, 0, 0, 0.6);
+  --rail-edge: rgba(255, 255, 255, 0.2);
   --etch: rgba(255, 255, 255, 0.08);
   --etch-lip: rgba(0, 0, 0, 0.45);
   /* the nameplate inverted: brushed silver, engraving cut dark */
@@ -282,7 +286,7 @@ p { margin: 0; }
 /* ---------- the face area ---------- */
 .face { overflow: auto; padding: 12px 32px 6px; scrollbar-width: thin; isolation: isolate; }
 /* A bigger window makes every part bigger, up to half again (set by fit()). */
-.strip, .face, .foot { zoom: var(--k, 1); }
+.strip, .faceframe, .foot { zoom: var(--k, 1); }
 
 /*
  * Laser etching: the sound field spreading from the listening place, cut
@@ -525,26 +529,112 @@ p { margin: 0; }
   .slide-knob, .slide .pos { transition: none; }
 }
 
-/* ---------- buttons ---------- */
-.btn { display: grid; justify-items: center; gap: 6px; }
-.press {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 50%, var(--resin) 0 52%, transparent 53%),
-    radial-gradient(circle at 35% 30%, var(--nut-1), var(--nut-2) 55%, var(--nut-3));
-  box-shadow: 2px 3px 4px var(--cast), inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+/* ---------- illuminated push buttons ---------- */
+/*
+ * A metal push button with its LED inside, the kind sold for panels today:
+ * a machined bezel, a light ring, and in it a dished metal actuator that
+ * sinks when pressed. The ring is the button's own light: lit, the state it
+ * stands for is on (its face is open, its choice is taken); dark, it is not.
+ * A state a button stands for is never a separate LED above it.
+ */
+.ikey {
+  --c: var(--led-white);
+  --d: 36px;
   position: relative;
+  isolation: isolate;
+  flex: none;
+  width: var(--d);
+  height: var(--d);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  background: conic-gradient(from 200deg, var(--nut-1), var(--nut-3) 30%, var(--nut-2) 55%, var(--nut-1) 80%, var(--nut-1));
+  box-shadow: 1px 2px 3px var(--cast), 0 0 0 0.5px rgba(0, 0, 0, 0.45);
 }
-.press::after {
+.ikey::before {
+  /* the light ring: a diffuser between bezel and actuator, faintly tinted when dark */
   content: "";
   position: absolute;
-  inset: 25%;
+  inset: 13%;
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, var(--resin-hi), var(--resin) 60%, var(--resin-lo));
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2);
+  background: radial-gradient(circle, color-mix(in srgb, var(--c) 22%, #232426) 0 100%);
+  box-shadow: inset 0 1px 1.5px rgba(0, 0, 0, 0.75), 0 0 0 0.5px rgba(0, 0, 0, 0.5);
 }
+.ikey.on::before {
+  background: radial-gradient(circle, #fff 0 55%, color-mix(in srgb, var(--c) 70%, #fff) 70%, var(--c) 100%);
+  box-shadow: 0 0 5px 1px color-mix(in srgb, var(--c) 85%, transparent), inset 0 0 1px rgba(0, 0, 0, 0.3);
+}
+.ikey.on::after {
+  /* the ring's light on the bezel and the plate */
+  content: "";
+  position: absolute;
+  inset: -12px;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--c) 60%, transparent) 0 30%, color-mix(in srgb, var(--c) var(--spill), transparent) 40%, transparent 70%);
+}
+.ikey .act {
+  /* the actuator: a shallow dish, so light lands on its lower right */
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 64% 70%, rgba(255, 255, 255, 0.6), transparent 58%),
+    repeating-radial-gradient(circle, rgba(0, 0, 0, 0.05) 0 0.6px, transparent 0.6px 1.6px),
+    linear-gradient(135deg, #9fa3a6, #d9dbdd 60%, #eceeef);
+  box-shadow: 0.5px 1px 1.5px rgba(0, 0, 0, 0.55), inset 0 0 0 0.5px rgba(0, 0, 0, 0.45);
+  transition: transform 90ms ease-out, box-shadow 90ms ease-out;
+}
+.ikey.on .act { box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent), 0.5px 1px 1.5px rgba(0, 0, 0, 0.45), inset 0 0 0 0.5px rgba(0, 0, 0, 0.4); }
+.ikey:active .act { transform: scale(0.95) translateY(0.4px); box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.5); }
+.ikey:disabled { cursor: default; }
+.ikey:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.ikey.sm { --d: 24px; }
+.ikey.sm::after { inset: -8px; }
+@media (prefers-reduced-motion: reduce) { .ikey .act { transition: none; } }
+
+/* ---------- buttons ---------- */
+.btn { display: grid; justify-items: center; gap: 6px; }
+
+/*
+ * A window shorter than the face: the OS scrollbar is hidden, as nothing on
+ * this machine is a screen. Where parts run on past an edge, they pass under
+ * the rail there, which casts its shadow on them; and the two arrow keys at
+ * the face's right light their ring while there is more that way, a press
+ * turning the face by most of a window.
+ */
+.faceframe { position: relative; min-height: 0; }
+.faceframe > .face { height: 100%; scrollbar-width: none; }
+.face::-webkit-scrollbar { display: none; }
+.faceframe::before, .faceframe::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 20px;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms;
+}
+/* the rail's edge, sharp, then its shadow falling on the parts beneath */
+.faceframe::before { top: 0; background: linear-gradient(to bottom, var(--rail-edge) 0 1px, var(--under) 1px, transparent); }
+.faceframe::after { bottom: 0; background: linear-gradient(to top, var(--rail-edge) 0 1px, var(--under) 1px, transparent); }
+.faceframe.more-up::before, .faceframe.more-down::after { opacity: 1; }
+.cue { position: absolute; right: 6px; z-index: 3; display: none; }
+.faceframe.scrolls .cue { display: block; }
+.cue.up { top: 8px; }
+.cue.down { bottom: 8px; }
+.cue .act::after {
+  /* the arrow engraved on the actuator */
+  content: "";
+  position: absolute;
+  inset: 28%;
+  background: rgba(20, 22, 24, 0.75);
+  clip-path: polygon(50% 14%, 94% 84%, 6% 84%);
+}
+.cue.down .act::after { transform: rotate(180deg); }
 .btn .small { font-weight: 600; }
 .btn.chosen .small { color: var(--ink); font-weight: 700; }
 
@@ -601,18 +691,7 @@ p { margin: 0; }
 .app .small { color: var(--ink); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .choose { display: flex; gap: 10px; }
 .mini { display: grid; justify-items: center; gap: 4px; font-size: 10.5px; font-weight: 600; color: var(--ink-2); }
-.mini .press { width: 20px; height: 20px; }
-.mini .press::after { inset: 22%; }
 .mini.chosen { color: var(--ink); font-weight: 700; }
-.rec {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 38% 32%, #4a4a4c, #1b1b1d 60%, #0b0b0c);
-  box-shadow: 2px 3px 4px var(--cast), 0 0 0 3px color-mix(in srgb, var(--nut-2) 80%, transparent), 0 0 0 4px rgba(0, 0, 0, 0.25);
-  display: grid;
-  place-items: center;
-}
 .row { display: flex; align-items: center; gap: 14px; }
 
 /* ---------- the review copy's bar (not part of the design) ---------- */
@@ -625,7 +704,7 @@ p { margin: 0; }
 @media (max-width: 1000px) {
   .box { inset: 8px; border-radius: 18px; }
   .strip { padding: 12px 20px 0; }
-  .face { padding: 10px 20px 6px; }
+  .face { padding: 10px 36px 6px 20px; }
   .foot { padding: 8px 32px 14px; }
   .screw.bl, .screw.br { bottom: 10px; }
   .screw.bl { left: 10px; } .screw.br { right: 10px; }
@@ -821,8 +900,9 @@ function knob({ size = 74, value = 0.5, ring = 0, ticks = null, chosen = -1 }) {
   </div>`;
 }
 
-function button(label, on, chosen = false, color = 'var(--led-white)') {
-  return `<div class="btn ${chosen ? 'chosen' : ''}">${led(color, on, 'sm')}<span class="press"></span><span class="small">${label}</span></div>`;
+/* An illuminated push button with its printed name under it. */
+function ikey(label, on, { color = 'var(--led-white)', size = '', chosen = on } = {}) {
+  return `<div class="btn ${chosen ? 'chosen' : ''}"><button class="ikey ${size} ${on ? 'on' : ''}" style="--c:${color}" aria-pressed="${on}"><span class="act"></span></button><span class="small">${label}</span></div>`;
 }
 
 /* ---------- the enclosure's fixed parts ---------- */
@@ -857,7 +937,7 @@ function foot(current) {
   const pages = [['status', '상태'], ['profile', '프로필'], ['upmix', '업믹스'], ['settings', '설정']];
   const lamps = [['업믹스', true], ['BRIR', true], ['켜짐', true]];
   return `<div class="foot">
-    <div class="pages">${pages.map(([k, n]) => `<div class="btn ${k === current ? 'chosen' : ''}"><span class="press"></span><span class="small">${n}</span></div>`).join('')}</div>
+    <div class="pages">${pages.map(([k, n]) => ikey(n, k === current).replace('<button', `<button data-face="${k}"`)).join('')}</div>
     <div class="mark plate"><i></i><b>SPATIAL SOFTRECEIVER</b><span>공간 소프트리시버</span><i></i></div>
     <div class="power">
       <div class="lamps">${lamps.map(([n, on]) => `<div class="say"><span class="label">${n}</span>${led('var(--led-on)', on, 'lg')}</div>`).join('')}</div>
@@ -1006,15 +1086,15 @@ function settingsFace() {
       <p class="fine">바꾸면 화면을 다시 불러옵니다.</p>`);
   const apps = [['Discord.exe', 0], ['Spotify.exe', 1], ['foobar2000.exe', 2], ['chrome.exe', -1]];
   const routing = group('앱별 입구', `<div class="apps">${apps.map(([n, k]) => `<div class="app"><span class="small">${n}</span>
-      <div class="choose">${['게임', '음악', 'PASS'].map((e, i) => `<span class="mini ${i === k ? 'chosen' : ''}">${led(`var(--lane-${i})`, i === k, 'sm')}<span class="press"></span>${e}</span>`).join('')}</div></div>`).join('')}</div>`);
+      <div class="choose">${['게임', '음악', 'PASS'].map((e, i) => `<span class="mini ${i === k ? 'chosen' : ''}"><button class="ikey sm ${i === k ? 'on' : ''}" style="--c:var(--lane-${i})" aria-pressed="${i === k}"><span class="act"></span></button>${e}</span>`).join('')}</div></div>`).join('')}</div>`);
   const asio = group('ASIO 입구', `<div class="row" style="justify-content:space-between;align-items:flex-start">
       <div style="display:grid;gap:2px"><span class="label">DAW 출력 배치</span>${knob({ size: 40, ticks: ['2.0', '5.1', '7.1', '7.1.4'], chosen: 3 })}</div>
       <div style="display:grid;gap:8px;justify-items:start"><span class="label">시스템 소리 줄이기</span><div class="readout">${seg('20', 2, 20)}<span class="unit">dB</span></div></div>
     </div>`);
   const update = group('업데이트', `<p class="small" style="color:var(--ink)">지금 버전 0.15.0</p>
-      <div class="row">${button('다시 시작해 적용', false)}</div>
+      <div class="row">${ikey('다시 시작해 적용', false)}</div>
       <p class="fine">내려받은 업데이트가 없습니다. 여섯 시간마다 확인합니다.</p>`);
-  const diag = group('진단', `<div class="row"><span class="rec">${led('var(--led-fault)', false, 'sm')}</span><b style="font-size:13px">진단 기록 시작</b></div>
+  const diag = group('진단', `<div class="row"><button class="ikey" style="--c:var(--led-fault)" aria-pressed="false"><span class="act"></span></button><b style="font-size:13px">진단 기록 시작</b></div>
       <p class="fine">드라이버가 보낸 데이터를 파일로 기록합니다. 문제를 알릴 때 이 파일을 첨부하십시오.</p>`);
   const pc = group('이 PC', `<dl class="facts">
       <dt>컴퓨터 이름</dt><dd>STUDIO-PC</dd>
@@ -1063,11 +1143,60 @@ function flowArt() {
     <g class="lip" transform="translate(0.7 0.9)">${art}</g><g class="cut">${art}</g></svg>`;
 }
 
+const cue = (dir, name) =>
+  `<button class="ikey sm cue ${dir}" aria-label="${name}" disabled><span class="act"></span></button>`;
+
+/* The two arrow keys light while the face runs on past that edge. */
+function wireCues() {
+  const frame = document.querySelector('.faceframe');
+  const surface = frame.querySelector('.face');
+  const up = frame.querySelector('.cue.up');
+  const down = frame.querySelector('.cue.down');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const update = () => {
+    const above = surface.scrollTop > 1;
+    const below = surface.scrollTop + surface.clientHeight < surface.scrollHeight - 1;
+    frame.classList.toggle('scrolls', surface.scrollHeight > surface.clientHeight + 1);
+    frame.classList.toggle('more-up', above);
+    frame.classList.toggle('more-down', below);
+    up.classList.toggle('on', above);
+    down.classList.toggle('on', below);
+    up.disabled = !above;
+    down.disabled = !below;
+  };
+  surface.addEventListener('scroll', update, { passive: true });
+  new ResizeObserver(update).observe(surface);
+  const turn = (sign) => surface.scrollBy({ top: sign * surface.clientHeight * 0.8, behavior: reduce ? 'auto' : 'smooth' });
+  up.addEventListener('click', () => turn(-1));
+  down.addEventListener('click', () => turn(1));
+  update();
+}
+
+/* The mockup's keys act, so the light can be judged: a face key opens its face, a choice key takes its row. */
+function wireKeys() {
+  for (const key of document.querySelectorAll('[data-face]')) key.addEventListener('click', () => goFace(key.dataset.face));
+  for (const row of document.querySelectorAll('.choose')) {
+    const keys = [...row.querySelectorAll('.ikey')];
+    keys.forEach((key) => key.addEventListener('click', () => keys.forEach((other) => {
+      other.classList.toggle('on', other === key);
+      other.setAttribute('aria-pressed', String(other === key));
+      other.parentElement.classList.toggle('chosen', other === key);
+    })));
+  }
+}
+
+let goFace = (which) => draw(which);
+
 function draw(which) {
   document.getElementById('box').innerHTML =
-    strip() + `<div class="face">${which === 'settings' ? settingsFace() : statusFace()}</div>` + foot(which) +
+    strip() +
+    `<div class="faceframe"><div class="face" tabindex="0">${which === 'settings' ? settingsFace() : statusFace()}</div>` +
+    `${cue('up', '위로 넘기기')}${cue('down', '아래로 넘기기')}</div>` +
+    foot(which) +
     ['tl', 'tr', 'bl', 'br'].map((c) => `<span class="screw ${c}" aria-hidden="true"></span>`).join('');
   wireSlides();
+  wireCues();
+  wireKeys();
 }
 draw(face);
 
@@ -1106,6 +1235,11 @@ if (!params.has('face')) {
   }
   paint();
   document.body.append(bar);
+  goFace = (which) => {
+    now.face = which;
+    draw(which);
+    paint();
+  };
 }
 </script>
 </body>
