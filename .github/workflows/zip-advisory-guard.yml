@@ -114,7 +114,7 @@ jobs:
           body=$(cat <<EOF
           zip-advisory-guard가 만든 PR입니다([실행](${RUN})).
 
-          - velopack ${VELOPACK}이 보안 권고(RUSTSEC-2026-0367, 0368, 0369)가 고쳐진 zip ${ZIP}으로 빌드됩니다. deny.toml의 권고 예외가 더는 필요 없습니다.
+          - velopack ${VELOPACK}이 보안 권고(RUSTSEC-2026-0367, 0368, 0369, 0429)가 고쳐진 zip ${ZIP}으로 빌드됩니다. deny.toml의 권고 예외가 더는 필요 없습니다.
           - velopack 요구를 ${VELOPACK}로 올리고 \`Cargo.lock\`을 갱신했습니다. 예외 없이 \`cargo deny check\`가 통과했습니다.
           - 감시 스크립트(\`.github/scripts/velopack_zip_guard.py\`)와 그 시험을 지웠습니다. 이것으로 ci.yml의 증명 단계와 \`zip-advisory-guard.yml\`이 꺼지고, 워크플로는 이 실행이 비활성화했습니다.
           - Actions 토큰은 워크플로 파일을 바꿀 수 없어서 \`zip-advisory-guard.yml\`과 ci.yml의 증명 단계는 남았습니다. 둘 다 스크립트가 없으면 돌지 않으며, 이 PR이나 다음 PR에서 지워도 됩니다.
