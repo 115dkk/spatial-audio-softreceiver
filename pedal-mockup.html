@@ -635,6 +635,42 @@ p { margin: 0; }
   clip-path: polygon(50% 14%, 94% 84%, 6% 84%);
 }
 .cue.down .act::after { transform: rotate(180deg); }
+/* The plate itself can be taken and moved: a hand over its bare metal while there is more to see. */
+.faceframe.scrolls .face { cursor: grab; }
+.faceframe.scrolls .face.dragging { cursor: grabbing; user-select: none; }
+.faceframe.scrolls .face :is(button, input, .knob-wrap, .slide, .map g) { cursor: pointer; }
+
+/*
+ * A plain momentary key, for an action whose result needs no light: a
+ * rectangular slot with a machined keycap in it that sinks when pressed. The
+ * slot and keycap invert on dark metal like the slide switch's.
+ */
+.mkey {
+  position: relative;
+  flex: none;
+  width: 58px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  background: linear-gradient(180deg, var(--slot-1), var(--slot-2));
+  box-shadow: inset 2px 3px 4px rgba(0, 0, 0, 0.7), inset -1px -1px 0 var(--slot-edge), 0 1px 0 1px var(--edge-hi), 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+.mkey .cap {
+  position: absolute;
+  inset: 3px;
+  border-radius: 2.5px;
+  background:
+    radial-gradient(120% 90% at 30% 20%, rgba(255, 255, 255, 0.35), transparent 60%),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.04) 0 1px, transparent 1px 3px),
+    linear-gradient(135deg, var(--act-1), var(--act-2) 55%, var(--act-3));
+  box-shadow: 1.5px 2.5px 3px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+  transition: transform 90ms ease-out, box-shadow 90ms ease-out;
+}
+.mkey:active .cap { transform: translateY(0.8px) scale(0.98); box-shadow: 0.5px 1px 1px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+.mkey:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .mkey .cap { transition: none; } }
 .btn .small { font-weight: 600; }
 .btn.chosen .small { color: var(--ink); font-weight: 700; }
 
@@ -1092,7 +1128,7 @@ function settingsFace() {
       <div style="display:grid;gap:8px;justify-items:start"><span class="label">시스템 소리 줄이기</span><div class="readout">${seg('20', 2, 20)}<span class="unit">dB</span></div></div>
     </div>`);
   const update = group('업데이트', `<p class="small" style="color:var(--ink)">지금 버전 0.15.0</p>
-      <div class="row">${ikey('다시 시작해 적용', false)}</div>
+      <div class="btn" style="justify-items:start"><button class="mkey"><span class="cap"></span></button><span class="small">다시 시작해 적용</span></div>
       <p class="fine">내려받은 업데이트가 없습니다. 여섯 시간마다 확인합니다.</p>`);
   const diag = group('진단', `<div class="row"><button class="ikey" style="--c:var(--led-fault)" aria-pressed="false"><span class="act"></span></button><b style="font-size:13px">진단 기록 시작</b></div>
       <p class="fine">드라이버가 보낸 데이터를 파일로 기록합니다. 문제를 알릴 때 이 파일을 첨부하십시오.</p>`);
@@ -1170,6 +1206,44 @@ function wireCues() {
   up.addEventListener('click', () => turn(-1));
   down.addEventListener('click', () => turn(1));
   update();
+  wireDrag(frame, surface);
+}
+
+/*
+ * Taking the plate by its bare metal and moving it: the face follows the
+ * hand one to one, as a plate would. A part under the hand keeps its own
+ * job, so a drag starts only off the parts. Touch scrolls natively already.
+ */
+const PARTS = 'button, input, select, a, .knob-wrap, .slide, .map';
+function wireDrag(frame, surface) {
+  let hold = null;
+  surface.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'touch' || event.button !== 0) return;
+    if (!frame.classList.contains('scrolls') || event.target.closest(PARTS)) return;
+    hold = { id: event.pointerId, y: event.clientY, top: surface.scrollTop, moved: false };
+    event.preventDefault();
+  });
+  surface.addEventListener('pointermove', (event) => {
+    if (hold === null || event.pointerId !== hold.id) return;
+    const dy = event.clientY - hold.y;
+    if (!hold.moved && Math.abs(dy) < 3) return;
+    if (!hold.moved) {
+      hold.moved = true;
+      surface.setPointerCapture(hold.id);
+      surface.classList.add('dragging');
+    }
+    // The face is zoomed; the pointer moves in window pixels.
+    const zoom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--k')) || 1;
+    surface.scrollTop = hold.top - dy / zoom;
+  });
+  const release = (event) => {
+    if (hold === null || event.pointerId !== hold.id) return;
+    if (surface.hasPointerCapture(hold.id)) surface.releasePointerCapture(hold.id);
+    surface.classList.remove('dragging');
+    hold = null;
+  };
+  surface.addEventListener('pointerup', release);
+  surface.addEventListener('pointercancel', release);
 }
 
 /* The mockup's keys act, so the light can be judged: a face key opens its face, a choice key takes its row. */
