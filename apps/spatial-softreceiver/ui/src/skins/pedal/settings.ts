@@ -1,17 +1,19 @@
 // The settings face (ADR 0046): the on/off options as a bank of DIP
 // switches, the entrance and the output path as slide switches, the
 // language and the skin as rotary selectors, the input each app plays into
-// as rows of lane keys, the ASIO input's layouts as keys in family lines and
+// as a routing matrix (an app a row, an input a column, an illuminated key
+// at each crossing), the ASIO input's layouts as keys in family lines and
 // its attenuation as a knob, the update's momentary key, the diagnostic
 // recording's key, and what the supervisor knows about this PC and the
 // driver on spec plates. A group's sentences are parted from its parts by
 // printed hairlines, and the entrance switch prints only the chosen
-// entrance's description, in a caption its stop's leader runs to (법칙 5).
+// entrance's description, in a caption its stop's leader runs to; a
+// caution stands on the face's legend plate by its number (법칙 5).
 // The machine's signal flow is etched in the spare room. Rust decides
 // whether a change is taken.
 
 import { toUserError } from '../../api';
-import type { AsioLayout, Entrance, EntranceKind, Language, OutputPath, RoutedApp, RuleView } from '../../bindings';
+import type { AsioLayout, Entrance, EntranceKind, Language, OutputPath } from '../../bindings';
 import { type Child, h } from '../../dom';
 import { ASIO_ATTENUATION_MAX, ASIO_DEFAULTS, ASIO_LAYOUTS } from '../../guard';
 import { text } from '../../text';
@@ -33,6 +35,7 @@ import { discardRow, layoutFamilies } from './controls';
 import {
   type Choice,
   type DipRow,
+  type NotePlate,
   dip,
   encoder,
   fine,
@@ -40,15 +43,17 @@ import {
   group,
   hairline,
   ikey,
-  intentKey,
   keyRow,
+  led,
   mkey,
+  notePlate,
   print,
   readout,
   rotary,
   slide,
   spec,
   sr,
+  tape,
 } from './parts';
 import type { Scope } from './scope';
 
@@ -62,8 +67,12 @@ const windowsName = (entrance: Entrance) => text.endpoints[ENTRANCES.indexOf(ent
 /** An entrance by the name printed by its jack. */
 const shortName = (entrance: Entrance) => text.pedal.lamps[ENTRANCES.indexOf(entrance)] ?? windowsName(entrance);
 
-/** The on/off options: login autostart, the input per app, the ASIO input. */
-function options(ctx: Context): Child[] {
+/**
+ * The on/off options: login autostart, the input per app, the ASIO input.
+ * Where this PC cannot send apps to an input, the routing position carries a
+ * numbered mark and the sentence stands on the face's legend plate (법칙 5).
+ */
+function options(ctx: Context, plate: NotePlate): Child[] {
   const t = text.settings;
   const native = ctx.shell.native;
   const inFlight = ctx.view.autostartWanted !== null;
@@ -99,6 +108,8 @@ function options(ctx: Context): Child[] {
   // The app-sound entrance has no endpoints to send apps to (ADR 0043).
   if (!appMode(ctx.snapshot)) {
     ctx.offer('set_routing_enabled');
+    const unavailable = plate.note('wait', { id: 'routing-unavailable' });
+    unavailable.set(routing.available ? null : t.routingUnavailable);
     rows.push({
       key: 'routing-enabled',
       label: t.routingEnabled,
@@ -107,6 +118,7 @@ function options(ctx: Context): Child[] {
       locked: ctx.busy,
       busy: ctx.pending === 'set_routing_enabled',
       describedBy: described(!routing.available && 'routing-unavailable', 'routing-hint'),
+      mark: unavailable.mark,
       toggle: (on) => ctx.send({ kind: 'set_routing_enabled', value: on }),
     });
   }
@@ -282,73 +294,114 @@ function skin(ctx: Context): Child[] {
   ];
 }
 
-/** An app with sound now: its name, where it plays, and a key per input, the rule's lit in its colour. */
-function appRule(ctx: Context, app: RoutedApp, index: number, locked: boolean): HTMLElement {
+/** One row of the routing matrix: an app with sound now, or a rule saved for one without. */
+interface MatrixRow {
+  exe: string;
+  /** The name on its tape or in print: the app's own name, or the program file. */
+  name: string;
+  rule: Entrance | null;
+  /** The factory's rule for this program, if one ships. */
+  builtIn: Entrance | null;
+  /** Where the app plays now; undefined for a saved rule of an app without sound now. */
+  now?: Entrance | null | undefined;
+  moved?: boolean | undefined;
+  /** The program file as well, when the name is the app's own. */
+  file?: string | undefined;
+}
+
+/**
+ * A row of the matrix: the app's name on label-maker tape (a name this PC
+ * gives), or in the factory's print where a built-in rule ships for it, with
+ * a printed mark under its factory input. A key per input whose ring is lit
+ * in that input's colour on the app's rule; pressing the lit key takes the
+ * rule away, another moves it. While the app has sound, the key of the
+ * input it plays into now glows dim where no rule lights it. At the row's
+ * end a small momentary key: back to the factory's rule where it was
+ * changed, or away with a rule of the user's own. What the eye does not read (the program
+ * file, the input now, the factory's rule) is said to a screen reader.
+ */
+function matrixRow(ctx: Context, row: MatrixRow, id: string, locked: boolean): HTMLElement {
   const t = text.settings;
-  const nameId = `routing-app-${index}`;
-  const sending = ctx.sending?.kind === 'set_app_rule' && ctx.sending.value.exe === app.exe;
+  const available = ctx.snapshot.routing.available;
+  const factory = row.builtIn !== null;
+  const changed = factory && row.rule !== row.builtIn;
+  const sending = ctx.sending?.kind === 'set_app_rule' && ctx.sending.value.exe === row.exe ? ctx.sending.value : null;
+  const said = [
+    row.file,
+    row.now === undefined ? null : `${t.routingNow} ${row.now === null ? '-' : shortName(row.now)}`,
+    row.moved ? t.routingMoved : null,
+    row.rule === null ? t.routingNoRule : null,
+    row.builtIn === null ? null : changed ? t.routingBuiltInWas(shortName(row.builtIn)) : t.routingBuiltIn,
+  ].filter((words): words is string => words !== null && words !== undefined);
+  const cells = ENTRANCES.map((entrance, lane) => {
+    const on = row.rule === entrance;
+    const key = ikey({
+      key: `routing-rule-${row.exe}-${entrance}`,
+      label: shortName(entrance),
+      bare: true,
+      lit: on,
+      dim: row.now === entrance,
+      chosen: on,
+      tone: `lane-${lane}`,
+      size: 'sm',
+      off: !available,
+      locked,
+      busy: sending !== null && (sending.entrance === entrance || (sending.entrance === null && on)),
+      intent: 'set_app_rule',
+      describedBy: id,
+      attrs: { 'aria-pressed': on ? 'true' : 'false' },
+      // Pressing the lit key takes the rule away: the app plays where Windows sends it.
+      onClick: () => ctx.send({ kind: 'set_app_rule', value: { exe: row.exe, entrance: on ? null : entrance } }),
+    });
+    return h('td', { class: `pd-mx-cell${row.builtIn === entrance ? ' is-factory' : ''}` }, key);
+  });
+  // Back to the factory's rule where it was changed; away with a rule of the user's own.
+  let end: HTMLElement | null = null;
+  if (changed || (!factory && row.rule !== null)) {
+    ctx.offer('remove_app_rule');
+    end = mkey({
+      key: `routing-remove-${row.exe}`,
+      label: changed ? t.routingRestore : t.routingRemove,
+      size: 'sm',
+      off: locked,
+      locked: ctx.busy,
+      busy: ctx.sending?.kind === 'remove_app_rule' && ctx.sending.value === row.exe,
+      intent: 'remove_app_rule',
+      describedBy: id,
+      onClick: () => ctx.send({ kind: 'remove_app_rule', value: row.exe }),
+    });
+  }
   return h(
-    'div',
-    { class: 'pd-app' },
+    'tr',
+    null,
     h(
-      'div',
-      { class: 'pd-app-head' },
-      h('span', { id: nameId, class: 'pd-app-name' }, app.display_name),
-      h('span', { class: 'pd-small' }, app.exe),
-      app.moved ? print(t.routingMoved, 'pd-tag') : null,
-      h('span', { class: 'pd-small' }, `${t.routingNow} ${app.entrance_now === null ? '-' : shortName(app.entrance_now)}`),
+      'th',
+      { scope: 'row', class: 'pd-mx-name', id },
+      factory ? h('span', { class: 'pd-silk' }, row.name) : tape(row.name),
+      said.length === 0 ? null : sr(` · ${said.join(' · ')}`),
     ),
-    h(
-      'div',
-      { class: 'pd-lanekeys', role: 'group', 'aria-labelledby': nameId },
-      ...ENTRANCES.map((entrance, lane) => {
-        const on = app.rule === entrance;
-        return ikey({
-          key: `routing-rule-${app.exe}-${entrance}`,
-          label: shortName(entrance),
-          lit: on,
-          chosen: on,
-          tone: `lane-${lane}`,
-          size: 'sm',
-          off: !ctx.snapshot.routing.available,
-          locked,
-          busy: sending && on,
-          intent: 'set_app_rule',
-          attrs: { 'aria-pressed': on ? 'true' : 'false' },
-          // Pressing the lit key takes the rule away: the app plays where Windows sends it.
-          onClick: () => ctx.send({ kind: 'set_app_rule', value: { exe: app.exe, entrance: on ? null : entrance } }),
-        });
-      }),
-    ),
+    ...cells,
+    h('td', { class: 'pd-mx-end' }, end),
   );
 }
 
-/** A rule for an app without sound now: a built-in one as shipped, changed, or the user's own. */
-function otherRule(ctx: Context, rule: RuleView, index: number, locked: boolean): HTMLElement {
-  const t = text.settings;
-  const exeId = `routing-other-${index}`;
-  const changed = rule.built_in !== null && rule.entrance !== rule.built_in;
+/** A printed section of the matrix: its name across the row, then its rows. */
+function matrixPart(title: string, id: string, rows: HTMLElement[]): HTMLElement {
   return h(
-    'div',
-    { class: 'pd-app' },
-    h(
-      'div',
-      { class: 'pd-app-head' },
-      h('span', { id: exeId, class: 'pd-app-name' }, rule.exe),
-      h('span', { class: 'pd-small' }, rule.entrance === null ? t.routingNoRule : shortName(rule.entrance)),
-      changed && rule.built_in !== null ? h('span', { class: 'pd-small' }, t.routingBuiltInWas(shortName(rule.built_in))) : null,
-    ),
-    rule.built_in !== null && !changed
-      ? fine(t.routingBuiltIn)
-      : intentKey(ctx, changed ? t.routingRestore : t.routingRemove, { kind: 'remove_app_rule', value: rule.exe }, {
-          key: `routing-remove-${rule.exe}`,
-          off: locked,
-          describedBy: exeId,
-        }),
+    'tbody',
+    { 'aria-labelledby': id },
+    h('tr', { class: 'pd-mx-part' }, h('th', { scope: 'colgroup', colspan: 5, id }, title)),
+    ...rows,
   );
 }
 
-/** Which input each app plays into (ADR 0028); the switch is in the options bank. */
+/**
+ * Which input each app plays into (ADR 0028) as a routing matrix (법칙 2):
+ * a row per app, the apps with sound now first and then the rules saved for
+ * others, a column per input with its name printed once at the head, and in
+ * each crossing an illuminated key. The switch is in the options bank, and
+ * what routing does is the group's description, for a screen reader.
+ */
 function routing(ctx: Context): Child[] {
   const t = text.settings;
   if (appMode(ctx.snapshot)) return [fine(text.entrance.driverOnly)];
@@ -356,30 +409,69 @@ function routing(ctx: Context): Child[] {
   const locked = ctx.busy || !view.available;
   ctx.offer('set_app_rule');
   const playing = new Set(view.apps.map((app) => app.exe));
+  const saved = new Map(view.rules.map((rule) => [rule.exe, rule]));
   const others = view.rules.filter((rule) => !playing.has(rule.exe));
+  // The supervisor lists no app where it cannot route them; "none playing" would then be a guess.
   const showApps = view.available || view.apps.length > 0;
+  const parts: HTMLElement[] = [];
+  if (showApps) {
+    const rows =
+      view.apps.length === 0
+        ? [h('tr', null, h('td', { colspan: 5, class: 'pd-small pd-mx-none' }, t.routingNoApps))]
+        : view.apps.map((app, index) =>
+            matrixRow(
+              ctx,
+              {
+                exe: app.exe,
+                name: app.display_name === '' ? app.exe : app.display_name,
+                rule: app.rule,
+                builtIn: saved.get(app.exe)?.built_in ?? null,
+                now: app.entrance_now,
+                moved: app.moved,
+                file: app.display_name === '' || app.display_name === app.exe ? undefined : app.exe,
+              },
+              `routing-app-${index}`,
+              locked,
+            ),
+          );
+    parts.push(matrixPart(t.routingApps, 'routing-apps-title', rows));
+  }
+  if (others.length > 0) {
+    parts.push(
+      matrixPart(
+        t.routingOthers,
+        'routing-others-title',
+        others.map((rule, index) =>
+          matrixRow(ctx, { exe: rule.exe, name: rule.exe, rule: rule.entrance, builtIn: rule.built_in }, `routing-other-${index}`, locked),
+        ),
+      ),
+    );
+  }
   return [
-    view.available ? null : fine(t.routingUnavailable, 'routing-unavailable'),
-    fine(t.routingHint(windowsName('pass'), windowsName('main')), 'routing-hint'),
-    showApps || others.length > 0 ? hairline() : null,
-    showApps
-      ? h(
-          'div',
-          { class: 'pd-apps', role: 'group', 'aria-labelledby': 'routing-apps-title' },
-          h('h3', { id: 'routing-apps-title', class: 'pd-label' }, t.routingApps),
-          ...(view.apps.length === 0 ? [h('p', { class: 'pd-small' }, t.routingNoApps)] : view.apps.map((app, index) => appRule(ctx, app, index, locked))),
-        )
-      : null,
-    showApps && others.length > 0 ? hairline() : null,
-    others.length === 0
+    sr(t.routingHint(windowsName('pass'), windowsName('main')), 'routing-hint'),
+    parts.length === 0
       ? null
       : h(
-          'div',
-          { class: 'pd-apps', role: 'group', 'aria-labelledby': 'routing-others-title' },
-          h('h3', { id: 'routing-others-title', class: 'pd-label' }, t.routingOthers),
-          fine(`${t.routingExe} · ${t.routingRule}`),
-          ...others.map((rule, index) => otherRule(ctx, rule, index, locked)),
+          'table',
+          { class: 'pd-matrix', 'aria-labelledby': 'pd-routing-title' },
+          h(
+            'thead',
+            null,
+            h('tr', null, h('td', null), ...ENTRANCES.map((entrance) => h('th', { scope: 'col' }, shortName(entrance))), h('td', null)),
+          ),
+          ...parts,
         ),
+    // What a lit and a dim ring say, printed once under the matrix as a panel prints its lamps' legend.
+    view.apps.length > 0
+      ? h(
+          'p',
+          { class: 'pd-mx-key', 'aria-hidden': 'true' },
+          led('white', 'on', 'sm').element,
+          print(t.routingRule, 'pd-small'),
+          led('white', 'dim', 'sm').element,
+          print(t.routingNow, 'pd-small'),
+        )
+      : null,
   ];
 }
 
@@ -517,6 +609,11 @@ export function settingsFace(scope: Scope): Drawn {
   const t = text.settings;
   const { platform, driver } = ctx.snapshot;
   const apps = appMode(ctx.snapshot);
+  const plate = notePlate(text.banner.notesLabel, 'pd-settings-notes');
+  const optionParts = options(ctx, plate);
+  plate.renumber();
+  const routingGroup = group('pd-routing', t.routing, routing(ctx));
+  if (!apps) routingGroup.setAttribute('aria-describedby', 'routing-hint');
   const element = h(
     'div',
     { class: 'pd-settings' },
@@ -529,9 +626,10 @@ export function settingsFace(scope: Scope): Drawn {
         h(
           'div',
           { class: 'pd-stack' },
-          group('pd-options', text.pedal.options, options(ctx)),
+          group('pd-options', text.pedal.options, optionParts),
           group('pd-entrance', text.entrance.label, entrance(ctx)),
           group('pd-output-path', t.outputPath, outputPath(ctx)),
+          plate.element,
         ),
         h('div', { class: 'pd-stack' }, group('pd-language', t.language, language(ctx)), group('pd-skin', text.skins.label, skin(ctx))),
       ),
@@ -540,7 +638,7 @@ export function settingsFace(scope: Scope): Drawn {
     h(
       'div',
       { class: 'pd-stack' },
-      group('pd-routing', t.routing, routing(ctx)),
+      routingGroup,
       apps ? group('pd-discard', text.entrance.discard, [fine(text.entrance.discardHint), hairline(), discardRow(ctx, 'settings-discard', ctx.snapshot.phase.kind === 'running' ? t.outputPathLocked : null)]) : null,
       group('pd-asio', text.asio, asio(scope)),
     ),

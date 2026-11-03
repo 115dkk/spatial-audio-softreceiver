@@ -11,7 +11,8 @@
 // are a channel indicator strip by its rate. Off or stopped: what will play
 // where, the output devices' key and row, and the inputs by name and
 // purpose. With the app-sound entrance (ADR 0043) the channels are its
-// lanes, each with the key that opens its row of apps, and PASS stands dark.
+// lanes, each with the key that opens its row of apps and whose ring is the
+// lane's state, and PASS stands dark.
 
 import type { AsioStatus, EndpointUpmixView, EngineStatus, Snapshot } from '../../bindings';
 import { type Child, h, liveText, setAttr } from '../../dom';
@@ -30,7 +31,7 @@ import {
 } from '../../format';
 import { ASIO_DEFAULTS } from '../../guard';
 import { text } from '../../text';
-import type { Drawn, Live } from '../../screens/common';
+import { type Drawn, type Live, described } from '../../screens/common';
 import {
   CAPTURE_LANES,
   PASS_LANE,
@@ -64,6 +65,7 @@ import {
   notePlate,
   print,
   readout,
+  spoken,
   sr,
   strength,
 } from './parts';
@@ -237,10 +239,14 @@ function asioChannel(plate: NotePlate, enabled: boolean): { element: HTMLElement
 }
 
 /**
- * A lane's app key (ADR 0043): an illuminated key with the app's name, its
- * ring lit while the lane's row of apps stands open under the channels.
- * Choosing a key in the row sends `choose_capture_app` and closes it. Off
- * while the engine runs, beside the reason.
+ * A lane's app key (ADR 0043): an illuminated key with the app's name. Its
+ * ring is the lane's state in the lane's colour (법칙 3): lit while the lane
+ * takes its app's sound, blinking while it waits for the sound or for the
+ * app to start, dark while the engine is off or no app is chosen. The state
+ * word is only for a screen reader. Pressing it latches it down and opens
+ * the lane's row of apps under the channels; choosing a key in the row
+ * sends `choose_capture_app` and closes it. While the engine runs the key
+ * cannot be pressed, beside the reason, but keeps its light.
  */
 function laneKey(scope: Scope, lane: number): { key: HTMLElement; row: HTMLElement | null } {
   const { ctx, picker } = scope;
@@ -248,19 +254,23 @@ function laneKey(scope: Scope, lane: number): { key: HTMLElement; row: HTMLEleme
   const view = laneView(ctx.snapshot, lane);
   const locked = pickersLocked(ctx.snapshot);
   const open = picker.open === lane && locked === null;
+  const running = ctx.snapshot.phase.kind === 'running';
   ctx.offer('choose_capture_app');
   const sending = ctx.sending?.kind === 'choose_capture_app' && ctx.sending.value.lane === lane;
   const key = ikey({
     key: pickerKey(lane),
-    label: view === null ? (lane === 0 ? e.chooseApp : text.profile.none) : appLabel(view),
-    detail: view === null ? undefined : captureStateWord(view.state),
-    lit: open,
+    // The app's name is printed; its state is the ring's, and a screen reader hears it as words.
+    label: view === null ? (lane === 0 ? e.chooseApp : text.profile.none) : spoken(appLabel(view), captureStateWord(view.state)),
+    lit: view?.state === 'capturing',
+    // Running without its sound yet: the app is open but has not played into the lane.
+    wait: running && (view?.state === 'waiting' || view?.state === 'running'),
+    down: open,
+    tone: `lane-${lane}`,
     beside: true,
-    off: locked !== null,
-    locked: ctx.busy,
+    locked: ctx.busy || locked !== null,
     busy: sending,
     intent: 'choose_capture_app',
-    describedBy: locked === null ? 'capture-closed' : 'capture-locked capture-closed',
+    describedBy: described(locked !== null && 'capture-locked', 'capture-closed'),
     attrs: { 'aria-expanded': open ? 'true' : 'false' },
     onClick: () => picker.set(open ? null : lane),
   });

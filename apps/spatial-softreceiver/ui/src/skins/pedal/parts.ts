@@ -9,7 +9,7 @@
 
 import type { Intent } from '../../bindings';
 import { type Child, type Props, h, setAttr, svg } from '../../dom';
-import type { Context } from '../../screens/common';
+import { type Context, described } from '../../screens/common';
 
 /** An LED's colour: a state, the white of a key, or an input's own. */
 export type Tone = 'on' | 'wait' | 'fault' | 'white' | `lane-${number}`;
@@ -60,6 +60,17 @@ export function group(id: string, title: string | null, children: Child[], class
 
 /** Words only a screen reader hears. */
 export const sr = (words: Child, id: string | null = null) => h('span', { class: 'pd-sr', id }, words);
+
+/**
+ * A part's printed name followed by words only a screen reader hears: the
+ * state its light shows (법칙 3), so the eye reads the name and the ear
+ * hears both.
+ */
+export function spoken(printed: string, said: string): DocumentFragment {
+  const words = document.createDocumentFragment();
+  words.append(printed, sr(` · ${said}`));
+  return words;
+}
 
 // ---------------------------------------------------------------- LEDs
 
@@ -157,9 +168,10 @@ export interface NotePlate {
    * A note for one part, in reading order; hidden until `set`. `source`
    * names the part on the plate's row (the input it belongs to), so a row
    * reads without hunting for its number; `led: false` when the part's own
-   * state LED already stands by the mark.
+   * state LED already stands by the mark; `id` names the sentence a screen
+   * reader hears at the mark, so the part itself can be described by it.
    */
-  note(tone: Tone, options?: { led?: boolean; glow?: Glow; source?: string }): Note;
+  note(tone: Tone, options?: { led?: boolean; glow?: Glow; source?: string; id?: string }): Note;
   /** Number the shown notes 1, 2, 3 in reading order; cheap when the shown set has not changed. */
   renumber(): void;
 }
@@ -186,7 +198,7 @@ export function notePlate(title: string, id: string): NotePlate {
     note(tone, options = {}) {
       const markNumber = h('span', { class: 'pd-mark-n', 'aria-hidden': 'true' });
       const rowNumber = h('span', { class: 'pd-mark-n' });
-      const said = sr('');
+      const said = sr('', options.id ?? null);
       const glow = options.glow ?? 'on';
       const markLight = options.led === false ? null : led(tone, glow, 'sm');
       const rowLight = led(tone, glow, 'sm');
@@ -408,6 +420,16 @@ export interface KeyOptions {
   detail?: Child | undefined;
   /** The key's own light is on. */
   lit?: boolean | undefined;
+  /**
+   * What the key stands for waits (a lane for its app's sound): its light
+   * blinks, steady and dim with reduced motion. Not an intent in flight;
+   * that is `busy`.
+   */
+  wait?: boolean | undefined;
+  /** The light glows dim where it is not lit: a second, quieter state (the input an app plays into now). */
+  dim?: boolean | undefined;
+  /** A latching key held in: what it opened stands open. */
+  down?: boolean | undefined;
   /** The chosen one of a row: its name printed heavier. */
   chosen?: boolean | undefined;
   /** The light's colour (white unless said). */
@@ -415,6 +437,8 @@ export interface KeyOptions {
   size?: 'sm' | 'md' | undefined;
   /** The name printed beside the key instead of under it. */
   beside?: boolean | undefined;
+  /** Nothing printed by the key: a matrix prints its names once, at the heads. The label is for a screen reader. */
+  bare?: boolean | undefined;
   /** Cannot be used now: disabled, its light off. */
   off?: boolean | undefined;
   /** Another intent is in flight: disabled, its light kept. */
@@ -429,6 +453,7 @@ export interface KeyOptions {
 }
 
 function keyText(options: KeyOptions): HTMLElement {
+  if (options.bare) return sr(options.label);
   return h(
     'span',
     { class: 'pd-key-text' },
@@ -444,6 +469,9 @@ function keyProps(options: KeyOptions, className: string): Props {
       'pd-key',
       className,
       options.lit && !options.off ? 'is-lit' : null,
+      options.wait && !options.off ? 'is-wait' : null,
+      options.dim && !options.lit && !options.off ? 'is-dim' : null,
+      options.down ? 'is-down' : null,
       options.off ? 'is-off' : null,
       options.chosen ? 'is-chosen' : null,
       options.size === 'sm' ? 'is-sm' : null,
@@ -512,31 +540,93 @@ export function intentKey(
   });
 }
 
-/** A momentary key that asks the shell for a file or a folder and sends the path picked. */
-export function pickKey(
-  ctx: Context,
-  label: string,
-  key: string,
-  off: boolean,
-  describedBy: string | null,
-  pick: () => Promise<string | null>,
-  send: (path: string) => void,
-): HTMLButtonElement {
-  return mkey({
-    key,
-    label,
-    off,
-    locked: ctx.busy,
-    describedBy,
-    onClick: () => {
-      pick().then(
-        (path) => {
-          if (path !== null) send(path);
-        },
-        (reason: unknown) => ctx.report({ message: String(reason), next: 'none' }),
-      );
+// ---------------------------------------------------------------- card slots
+
+/** The last name of a path, a folder's or a file's: what a card's label prints. */
+export function baseName(path: string): string {
+  return path.split(/[\\/]/).filter((part) => part !== '').at(-1) ?? path;
+}
+
+export interface SlotOptions {
+  /** The insert's stable key: the pick key's it replaces. */
+  key: string;
+  /** The name printed by the slot: what goes in it. */
+  label: string;
+  /** What is in it: its name on the card's label, the whole path as the card's title and description. Null while empty. */
+  card: { name: string; path: string } | null;
+  /** What to put in it and why it is shut, for a screen reader. */
+  describedBy?: string | null | undefined;
+  /** Cannot be used now: nothing goes in. */
+  off: boolean;
+  /** This slot's pick is being sent: its LED blinks. */
+  busy: boolean;
+  intent: Intent['kind'];
+  /** The shell's picker, the same call the old key made. */
+  pick(): Promise<string | null>;
+  send(path: string): void;
+  /** The key that takes the card out, where the contract can clear it. */
+  eject?: HTMLElement | null | undefined;
+}
+
+/**
+ * A card slot (법칙 2): a machined hood in the plate with a slit in its lip
+ * and the slot's name printed above. Empty, the slit is dark and pressing it
+ * puts something in: the shell's picker opens and the path picked is sent.
+ * Loaded, a card stands out of the slit with a paper label carrying the
+ * name of what is in it; the whole path is the card's title and what a
+ * screen reader hears, never printed. A small LED by the slot blinks while
+ * a pick is being sent, and an eject key stands by it where the contract
+ * can clear what is in it. Locked while any intent is in flight.
+ */
+export function slot(ctx: Context, options: SlotOptions): HTMLElement {
+  const nameId = `${options.key}-name`;
+  const cardId = `${options.key}-card`;
+  const pathId = `${options.key}-path`;
+  const { card } = options;
+  const insert = h(
+    'button',
+    {
+      type: 'button',
+      class: `pd-slot${card === null ? '' : ' is-loaded'}${options.off ? ' is-off' : ''}`,
+      'data-key': options.key,
+      'data-intent': options.intent,
+      disabled: options.off || ctx.busy,
+      'aria-busy': options.busy ? 'true' : null,
+      'aria-labelledby': card === null ? nameId : `${nameId} ${cardId}`,
+      'aria-describedby': described(card !== null && pathId, options.describedBy ?? null),
+      onClick: () => {
+        options.pick().then(
+          (path) => {
+            if (path !== null) options.send(path);
+          },
+          (reason: unknown) => ctx.report({ message: String(reason), next: 'none' }),
+        );
+      },
     },
-  });
+    card === null
+      ? null
+      : h('span', { class: 'pd-card', title: card.path }, h('span', { class: 'pd-card-label', id: cardId }, card.name)),
+    h('span', { class: 'pd-slot-hood', 'aria-hidden': 'true' }),
+  );
+  const light = led('wait', options.busy ? 'on' : 'off', 'sm');
+  light.element.classList.add('pd-slot-led');
+  if (options.busy) light.element.classList.add('is-busy');
+  return h(
+    'div',
+    { class: `pd-slotpart${card === null ? '' : ' is-loaded'}`, 'data-slot': options.key },
+    h('span', { class: 'pd-slot-name', id: nameId }, options.label),
+    h('div', { class: 'pd-slot-row' }, insert, light.element, options.eject ?? null),
+    card === null ? null : sr(card.path, pathId),
+  );
+}
+
+/**
+ * A strip of label-maker tape stuck on the plate: a raised strip with the
+ * letters pressed up out of it. For the names this PC gives (its apps), not
+ * the factory's, which are printed.
+ */
+export function tape(words: Child, id: string | null = null): HTMLElement {
+  return h('span', { class: 'pd-tape', id }, words);
 }
 
 /**
@@ -569,6 +659,8 @@ export interface Choice<T> {
   label: string;
   key: string;
   detail?: string | undefined;
+  /** Words a screen reader hears after the name: the state the key's light already shows (법칙 3). */
+  said?: string | undefined;
   /** This choice cannot be taken now (its key is off). */
   off?: boolean | undefined;
   describedBy?: string | null | undefined;
@@ -614,7 +706,7 @@ export function keyRow<T>(options: KeyRowOptions<T>): HTMLElement {
     const checked = index === chosenAt;
     return ikey({
       key: choice.key,
-      label: choice.label,
+      label: choice.said === undefined ? choice.label : spoken(choice.label, choice.said),
       detail: choice.detail,
       lit: checked,
       chosen: checked,
@@ -1043,21 +1135,24 @@ export interface DipRow {
   locked: boolean;
   busy: boolean;
   describedBy: string | null;
+  /** A numbered note's mark by the position's name (법칙 5), its sentence on the face's legend plate. */
+  mark?: HTMLElement | null | undefined;
   toggle(on: boolean): void;
 }
 
 /**
  * A bank of DIP switches, the kind under a pedal's lid: a black body with a
  * white lever per position, the positions numbered and named beside it.
- * Each position is a toggle (`aria-pressed`) with its name inside.
+ * Each position is a toggle (`aria-pressed`) with its name inside; a note's
+ * mark stands after the name, outside the toggle.
  */
 export function dip(rows: DipRow[], onWord: string): HTMLElement {
   return h(
     'div',
     { class: 'pd-dip' },
     h('span', { class: 'pd-dip-on', 'aria-hidden': 'true' }, onWord),
-    ...rows.map((row, index) =>
-      h(
+    ...rows.map((row, index) => {
+      const toggle = h(
         'button',
         {
           type: 'button',
@@ -1072,8 +1167,9 @@ export function dip(rows: DipRow[], onWord: string): HTMLElement {
         h('span', { class: 'pd-dip-sw', 'aria-hidden': 'true' }, h('i')),
         h('b', { class: 'pd-dip-n', 'aria-hidden': 'true' }, String(index + 1)),
         h('span', { class: 'pd-dip-name' }, row.label),
-      ),
-    ),
+      );
+      return row.mark === undefined || row.mark === null ? toggle : h('span', { class: 'pd-dip-line' }, toggle, row.mark);
+    }),
   );
 }
 

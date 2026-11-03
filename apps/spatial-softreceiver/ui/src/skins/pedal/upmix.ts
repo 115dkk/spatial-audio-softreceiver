@@ -6,8 +6,9 @@
 // channels it puts out on a channel indicator strip; the three upmixers as
 // illuminated keys with the chosen one lit and only its description printed
 // in a caption the lit key's leader runs down to; the delay it adds on a
-// segment readout; its VST plugin's facts on a spec plate with the momentary
-// keys that pick it and open its editor. Every value comes from
+// segment readout; its VST plugin in one of two card slots (a bundle folder's
+// and a file's), the rest of its facts on a spec plate and the momentary key
+// that opens its editor. Every value comes from
 // `Snapshot.upmix`; Rust decides whether a choice, a plugin or an editor is
 // taken.
 
@@ -32,9 +33,9 @@ import {
   led,
   mkey,
   notePlate,
-  pickKey,
   print,
   readout,
+  slot,
   spec,
   sr,
 } from './parts';
@@ -194,7 +195,8 @@ function upmixer(ctx: Context, view: EndpointUpmixView): Child[] {
     row,
     h('p', { class: 'pd-callout', id: bodyId, 'data-chosen': shown }, choiceBody(shown, built)),
     ...CHOICES.filter((choice) => choice !== shown).map((choice) => sr(choiceBody(choice, built), aboutId(choice))),
-    sending === null ? null : fine(text.profile.applying, applyingId),
+    // The key being sent blinks (법칙 3, 10); the word is only for a screen reader.
+    sending === null ? null : sr(text.profile.applying, applyingId),
   ];
 }
 
@@ -214,17 +216,29 @@ function delay(view: EndpointUpmixView): HTMLElement | null {
   );
 }
 
-/** The VST upmixer's plugin: its facts on a spec plate, and the keys that pick and open it. */
+/** A plugin picked as one file (a VST 2 DLL); a `.vst3` path is taken for a bundle folder, the usual VST 3 form. */
+const isPluginFile = (path: string) => /\.dll$/i.test(path);
+
+/**
+ * The VST upmixer's plugin as two card slots side by side (법칙 2), a VST 3
+ * bundle folder's and a plugin file's: the plugin in use stands as a card in
+ * the slot of its kind with its name on the label, its path as the card's
+ * title. Its vendor, format and inputs stand on a spec plate, and the
+ * momentary key that opens its editor under them.
+ */
 function plugin(ctx: Context, view: EndpointUpmixView): Child[] {
   const endpoint = view.endpoint;
   const chosen = view.plugin;
   const mine = sendingFor(ctx) === endpoint;
   const scanning = mine && ctx.pending === 'choose_plugin';
+  const picked = scanning && ctx.sending?.kind === 'choose_plugin' ? ctx.sending.value.path : null;
   const scanId = `plugin-${endpoint}-scanning`;
   const neededId = `plugin-${endpoint}-needed`;
   const editorId = `plugin-${endpoint}-editor-hint`;
   const pickIds = described(chosen === null && neededId, scanning && scanId);
   const send = (path: string) => ctx.send({ kind: 'choose_plugin', value: { endpoint, path } });
+  const card = chosen === null ? null : { name: chosen.name, path: chosen.path };
+  const asFile = chosen !== null && isPluginFile(chosen.path);
   ctx.offer('choose_plugin');
 
   let editor: HTMLButtonElement | null = null;
@@ -245,33 +259,43 @@ function plugin(ctx: Context, view: EndpointUpmixView): Child[] {
 
   return [
     h('h3', { id: `plugin-${endpoint}-title`, class: 'pd-label' }, text.upmix.pluginTitle),
-    ...(chosen === null
-      ? [h('p', { class: 'pd-small' }, text.upmix.noPlugin), fine(text.upmix.needsPlugin, neededId)]
-      : [
-          spec([
-            [text.upmix.pluginName, chosen.name],
-            [text.upmix.pluginVendor, chosen.vendor],
-            [text.upmix.pluginFormat, formatName(chosen.format)],
-            ...(view.inputs.length > 0 ? [[text.upmix.pluginInputs, view.inputs.join(' ')] as [string, Child]] : []),
-            [text.upmix.pluginPath, h('span', { class: 'pd-path' }, chosen.path), true],
-          ]),
-        ]),
     h(
       'div',
-      { class: 'pd-keys' },
-      pickKey(ctx, text.upmix.pickFolder, `plugin-folder-${endpoint}`, false, pickIds, () => ctx.shell.pickFolder(text.upmix.folderDialog), send),
-      pickKey(
-        ctx,
-        text.upmix.pickFile,
-        `plugin-file-${endpoint}`,
-        false,
-        pickIds,
-        () => ctx.shell.pickFile(text.upmix.fileDialog, { name: text.upmix.fileFilter, extensions: ['vst3', 'dll'] }),
+      { class: 'pd-slots' },
+      slot(ctx, {
+        key: `plugin-folder-${endpoint}`,
+        label: text.upmix.folderDialog,
+        card: asFile ? null : card,
+        describedBy: pickIds,
+        off: false,
+        busy: picked !== null && !isPluginFile(picked),
+        intent: 'choose_plugin',
+        pick: () => ctx.shell.pickFolder(text.upmix.folderDialog),
         send,
-      ),
-      editor,
+      }),
+      slot(ctx, {
+        key: `plugin-file-${endpoint}`,
+        label: text.upmix.fileDialog,
+        card: asFile ? card : null,
+        describedBy: pickIds,
+        off: false,
+        busy: picked !== null && isPluginFile(picked),
+        intent: 'choose_plugin',
+        pick: () => ctx.shell.pickFile(text.upmix.fileDialog, { name: text.upmix.fileFilter, extensions: ['vst3', 'dll'] }),
+        send,
+      }),
     ),
-    scanning ? fine(text.upmix.scanning, scanId) : null,
+    // What the empty slots want: the plugin the upmixer needs, for a screen reader.
+    chosen === null ? sr(text.upmix.needsPlugin, neededId) : null,
+    scanning ? sr(text.upmix.scanning, scanId) : null,
+    chosen === null
+      ? null
+      : spec([
+          [text.upmix.pluginVendor, chosen.vendor],
+          [text.upmix.pluginFormat, formatName(chosen.format)],
+          ...(view.inputs.length > 0 ? [[text.upmix.pluginInputs, view.inputs.join(' ')] as [string, Child]] : []),
+        ]),
+    editor === null ? null : h('div', { class: 'pd-keys' }, editor),
     editor !== null && !editorOpen(view) ? fine(text.upmix.editorHint, editorId) : null,
   ];
 }

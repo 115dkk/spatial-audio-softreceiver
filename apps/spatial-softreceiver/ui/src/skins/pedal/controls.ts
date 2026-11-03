@@ -118,11 +118,12 @@ export function outputRow(ctx: Context, keyPrefix: string): HTMLElement {
   ctx.offer('choose_output');
   const row = keyRow({
     label: text.wizard.outputsLabel,
+    // The ring of the output in use is lit (법칙 3); "current output" is for a screen reader, its label a plain string.
     choices: outputs.map((output, index) => ({
       value: output.id,
       label: output.name,
       key: `${keyPrefix}-${index}`,
-      detail: output.id === chosen_output?.id ? text.status.currentOutput : undefined,
+      said: output.id === chosen_output?.id ? text.status.currentOutput : undefined,
     })),
     chosen: chosen_output?.id ?? null,
     off: false,
@@ -159,11 +160,12 @@ export function discardRow(ctx: Context, keyPrefix: string, locked: string | nul
       value: output.id,
       label: output.name,
       key: `${keyPrefix}-${index}`,
-      detail: output.id === discard?.id ? text.status.currentOutput : undefined,
+      said: output.id === discard?.id ? text.status.currentOutput : undefined,
     })),
     chosen: discard?.id ?? null,
-    off: locked !== null,
-    locked: ctx.busy,
+    // While the engine runs the keys cannot be pressed, but the one in use keeps its light (법칙 3).
+    off: false,
+    locked: ctx.busy || locked !== null,
     busy: ctx.pending === 'choose_discard',
     sending: ctx.sending?.kind === 'choose_discard' ? ctx.sending.value : null,
     intent: 'choose_discard',

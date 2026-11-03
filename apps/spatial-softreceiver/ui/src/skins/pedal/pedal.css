@@ -92,6 +92,12 @@
   --pd-act-3: #8a8d90;
   --pd-act-rib-dark: rgba(0, 0, 0, 0.3);
   --pd-act-rib-light: rgba(255, 255, 255, 0.35);
+  /* A mark engraved on a momentary keycap (eject): dark on the bright cap. */
+  --pd-cap-mark: rgba(20, 22, 24, 0.72);
+  /* Label-maker tape, stuck on like the nameplate and inverted the same way: black vinyl, the raised letters stretched white. */
+  --pd-tape: #17181a;
+  --pd-tape-ink: #eceded;
+  --pd-tape-relief: -0.5px -0.5px 0 rgba(255, 255, 255, 0.22), 0.6px 0.8px 0 rgba(0, 0, 0, 0.9);
   --pd-box-shadow:
     0 18px 36px rgba(0, 0, 0, 0.2),
     0 3px 8px rgba(0, 0, 0, 0.16),
@@ -159,6 +165,11 @@
     --pd-act-3: #17191b;
     --pd-act-rib-dark: rgba(0, 0, 0, 0.55);
     --pd-act-rib-light: rgba(255, 255, 255, 0.22);
+    --pd-cap-mark: rgba(255, 255, 255, 0.62);
+    /* The tape inverted: pale vinyl, the raised letters inked dark. */
+    --pd-tape: #dddfe0;
+    --pd-tape-ink: #16181a;
+    --pd-tape-relief: -0.5px -0.5px 0 rgba(255, 255, 255, 0.85), 0.6px 0.8px 0 rgba(0, 0, 0, 0.3);
     --pd-box-shadow:
       0 34px 64px rgba(0, 0, 0, 0.8),
       0 8px 18px rgba(0, 0, 0, 0.65),
@@ -888,12 +899,14 @@ html[data-skin="pedal"] #app {
 }
 
 .pd-key.is-lit .pd-ikey::before,
+.pd-key.is-wait .pd-ikey::before,
 .pd-key[aria-busy="true"] .pd-ikey::before {
   background: radial-gradient(circle, #fff 0 55%, color-mix(in srgb, var(--c) 70%, #fff) 70%, var(--c) 100%);
   box-shadow: 0 0 5px 1px color-mix(in srgb, var(--c) 85%, transparent), inset 0 0 1px rgba(0, 0, 0, 0.3);
 }
 
 .pd-key.is-lit .pd-ikey::after,
+.pd-key.is-wait .pd-ikey::after,
 .pd-key[aria-busy="true"] .pd-ikey::after {
   content: "";
   position: absolute;
@@ -927,6 +940,18 @@ html[data-skin="pedal"] #app {
 .pd-key:active:not(:disabled) .pd-ikey-act {
   transform: scale(0.95) translateY(0.4px);
   box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.5);
+}
+
+/* Dim: the ring glows faintly in its colour and nothing spills, a quieter state than lit. */
+.pd-key.is-dim .pd-ikey::before {
+  background: radial-gradient(circle, color-mix(in srgb, var(--c) 45%, #c9cbce) 0 50%, color-mix(in srgb, var(--c) 78%, #3a3b3e) 100%);
+  box-shadow: 0 0 2px color-mix(in srgb, var(--c) 55%, transparent), inset 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+/* A latching key held in while what it opened stands open: the actuator stays sunk, its rim in the bezel's shade. */
+.pd-key.is-down .pd-ikey-act {
+  transform: scale(0.93) translateY(0.5px);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.55), inset 0.5px 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 .pd-key.is-sm .pd-ikey {
@@ -977,11 +1002,197 @@ html[data-skin="pedal"] #app {
     linear-gradient(135deg, var(--pd-act-2), var(--pd-act-3));
 }
 
+/* The small momentary key: a matrix row's end, a slot's eject. */
+.pd-key.is-sm .pd-mkey {
+  width: 34px;
+  height: 18px;
+  border-radius: 3px;
+}
+
+.pd-key.is-sm .pd-mkey-cap {
+  inset: 2.5px;
+  border-radius: 2px;
+}
+
+.pd-key.is-sm .pd-key-label {
+  font-size: 10.5px;
+}
+
+/* The eject mark engraved on its keycap: a triangle over a bar. */
+.pd-eject .pd-mkey-cap::before,
+.pd-eject .pd-mkey-cap::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 8px;
+  margin-left: -4px;
+  background: var(--pd-cap-mark);
+}
+
+.pd-eject .pd-mkey-cap::after {
+  top: 2px;
+  height: 5px;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.pd-eject .pd-mkey-cap::before {
+  top: 8.5px;
+  height: 1.5px;
+}
+
 .pd-keys {
   display: flex;
   flex-wrap: wrap;
   gap: 12px 20px;
   align-items: flex-start;
+}
+
+/* ---------- card slots ---------- */
+
+/* Slots side by side, each its name printed above it. */
+.pd-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 26px;
+  align-items: flex-start;
+}
+
+.pd-slotpart {
+  display: grid;
+  gap: 7px;
+  justify-items: start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pd-slotpart > .pd-slot-row {
+  justify-self: stretch;
+}
+
+.pd-slot-name {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  color: var(--pd-ink-2);
+}
+
+.pd-slot-row {
+  display: flex;
+  align-items: flex-start;
+  /* The print by the slot's LED stays out of its light. */
+  gap: 12px;
+  max-width: 100%;
+}
+
+.pd-slot {
+  position: relative;
+  flex: 0 1 auto;
+  width: 216px;
+  min-width: 112px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.pd-slot.is-loaded {
+  height: 58px;
+}
+
+.pd-slot:disabled {
+  cursor: default;
+}
+
+.pd-slot:focus-visible {
+  outline: 2px solid var(--pd-ink);
+  outline-offset: 3px;
+}
+
+/*
+ * The hood: a machined block standing on the plate, lit from the top left,
+ * the slit cut along its front lip. The slit is an opening into the box, so
+ * it is dark in both finishes.
+ */
+.pd-slot-hood {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  height: 22px;
+  border-radius: 4px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 45%),
+    linear-gradient(135deg, var(--pd-nut-1), var(--pd-nut-2) 55%, var(--pd-nut-3));
+  box-shadow: 1px 2.5px 3px var(--pd-cast), 0 0 0 0.5px rgba(0, 0, 0, 0.45), inset 0 -1px 0 rgba(0, 0, 0, 0.22);
+}
+
+.pd-slot-hood::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  bottom: 4px;
+  height: 5px;
+  border-radius: 1.5px;
+  background: linear-gradient(180deg, #000, #17181a);
+  box-shadow: inset 0 1.5px 2px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+/* Loaded: the card's edge fills the slit. */
+.pd-slot.is-loaded .pd-slot-hood::before {
+  background: linear-gradient(180deg, #000 0 35%, #3a3b3e 35%, #232426);
+}
+
+/*
+ * The card: black resin, standing out of the slit and lying on the plate
+ * under it, its paper label at the end carrying the name of what is in it.
+ */
+.pd-card {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 16px;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 7px 6px;
+  border-radius: 0 0 3px 3px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 3px, rgba(255, 255, 255, 0.06) 3px 4px) 50% 9px / 40px 6px no-repeat,
+    linear-gradient(180deg, var(--pd-resin-lo), var(--pd-resin) 35%, #2a2b2e);
+  box-shadow: 1px 2.5px 3px var(--pd-cast), 0 0 0 0.5px rgba(0, 0, 0, 0.6), inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+  /* A part of its own: the label's print is not cut into the box. */
+  text-shadow: none;
+}
+
+.pd-card-label {
+  display: block;
+  width: 100%;
+  padding: 2px 6px 3px;
+  border-radius: 1.5px;
+  background: linear-gradient(180deg, #f2f0ea, #e1dfd7);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.35);
+  color: #141516;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pd-slot-row > .pd-led {
+  margin-top: 5px;
+}
+
+.pd-slot-row > .pd-key {
+  flex: none;
+  margin-top: 2px;
+  white-space: nowrap;
 }
 
 /* While an intent is in flight its part's light blinks; with reduced motion it glows steady and dim. */
@@ -999,8 +1210,16 @@ html[data-skin="pedal"] #app {
 .pd-key[aria-busy="true"] .pd-ikey::before,
 .pd-key[aria-busy="true"] .pd-ikey::after,
 .pd-encoder[aria-busy="true"] .pd-ring-led.is-on,
-.pd-upstate.is-starting .pd-led::before {
+.pd-upstate.is-starting .pd-led::before,
+.pd-slot-led.is-busy::before,
+.pd-slot-led.is-busy::after {
   animation: pd-blink 900ms steps(1) infinite;
+}
+
+/* What a key stands for waits (a lane for its app's sound): a slower blink than an intent in flight. */
+.pd-key.is-wait:not([aria-busy="true"]) .pd-ikey::before,
+.pd-key.is-wait:not([aria-busy="true"]) .pd-ikey::after {
+  animation: pd-blink 1600ms steps(1) infinite;
 }
 
 /* ---------- slide switches ---------- */
@@ -2466,9 +2685,10 @@ html[data-skin="pedal"] #app {
 
 /* ---------- the settings face ---------- */
 
+/* The routing matrix's column is a little wider than the plates': an app's name, three keys and a row-end key across it. */
 .pd-settings {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1fr);
   gap: 16px;
   align-items: stretch;
   min-height: 100%;
@@ -2511,36 +2731,148 @@ html[data-skin="pedal"] #app {
   }
 }
 
-.pd-apps {
-  display: grid;
-  gap: 10px;
+/*
+ * The routing matrix: an app a row, an input a column, an illuminated key at
+ * each crossing. The inputs' names are printed once at the head, the rows
+ * ruled, each part of the matrix (the apps with sound now, the saved rules)
+ * under its printed name.
+ */
+.pd-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
-.pd-app {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-}
-
-.pd-app-head {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-}
-
-.pd-app-name {
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.pd-lanekeys {
-  display: flex;
-  gap: 10px;
-}
-
-.pd-lanekeys .pd-key-label {
+.pd-matrix thead th {
+  width: 38px;
+  padding: 0 0 5px;
+  border-bottom: 1.5px solid var(--pd-rule);
   font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--pd-ink);
+}
+
+.pd-matrix thead td {
+  border-bottom: 1.5px solid var(--pd-rule);
+}
+
+.pd-matrix thead td:last-child {
+  width: 68px;
+}
+
+.pd-mx-part th {
+  padding: 10px 0 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-align: left;
+  color: var(--pd-ink-2);
+}
+
+.pd-matrix tbody tr:not(.pd-mx-part) > * {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--pd-rule-2);
+  vertical-align: middle;
+}
+
+.pd-mx-name {
+  padding-right: 8px !important;
+  overflow: hidden;
+  text-align: left;
+  font-weight: inherit;
+}
+
+/* A name the factory printed: the built-in rules. */
+.pd-silk {
+  display: block;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pd-mx-cell {
+  position: relative;
+  text-align: center;
+}
+
+/* The factory's input: a small triangle printed under its key. */
+.pd-mx-cell.is-factory::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  margin-left: -3.5px;
+  border-right: 3.5px solid transparent;
+  border-bottom: 4px solid var(--pd-ink-2);
+  border-left: 3.5px solid transparent;
+}
+
+.pd-mx-end {
+  text-align: right;
+}
+
+.pd-mx-end > .pd-key {
+  justify-items: end;
+  gap: 4px;
+  text-align: right;
+}
+
+.pd-mx-end .pd-key-label {
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+/* The matrix's legend: a lit ring and a dim one, each with what it says. */
+.pd-mx-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  /* The print stays out of the LED's light. */
+  gap: 6px 9px;
+}
+
+.pd-mx-key > .pd-label + .pd-led,
+.pd-mx-key > .pd-small + .pd-led {
+  margin-left: 10px;
+}
+
+/*
+ * Label-maker tape stuck on the plate (법칙 8): a raised vinyl strip, the
+ * letters pressed up out of it. It is not the plate's print, so it keeps no
+ * engraved lip; the raised letters catch the light at their top left.
+ */
+.pd-tape {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 7px 3px;
+  border-radius: 2px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 42%, rgba(0, 0, 0, 0.14)),
+    var(--pd-tape);
+  box-shadow: 0.5px 1.5px 2px var(--pd-cast), inset 0 0 0 0.5px rgba(0, 0, 0, 0.35);
+  color: var(--pd-tape-ink);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.35;
+  text-shadow: var(--pd-tape-relief);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+/* A DIP position with a numbered note's mark after it. */
+.pd-dip-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .pd-attenuation {
@@ -2664,8 +2996,12 @@ html[data-skin="pedal"] #app {
   /* Steady and dim instead of blinking. */
   .pd-key[aria-busy="true"] .pd-ikey::before,
   .pd-key[aria-busy="true"] .pd-ikey::after,
+  .pd-key.is-wait:not([aria-busy="true"]) .pd-ikey::before,
+  .pd-key.is-wait:not([aria-busy="true"]) .pd-ikey::after,
   .pd-encoder[aria-busy="true"] .pd-ring-led.is-on,
-  .pd-upstate.is-starting .pd-led::before {
+  .pd-upstate.is-starting .pd-led::before,
+  .pd-slot-led.is-busy::before,
+  .pd-slot-led.is-busy::after {
     animation: none;
     opacity: 0.55;
   }

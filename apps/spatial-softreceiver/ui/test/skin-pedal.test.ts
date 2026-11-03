@@ -2,7 +2,9 @@
 // face its phase has, in both languages; the handles the gallery and the
 // other skins share are where they should be; the box's parts and the
 // faces' parts send what the standard screen sends; the face keys are tabs
-// lit by their own ring; a key whose press leaves no state has no light;
+// lit by their own ring; a key whose press leaves no state has no light; a
+// key shows what it stands for by its own light, not a word beside it; a
+// file goes in a card slot; the per-app entrance is a routing matrix;
 // and the 30 Hz meters never add or remove an element.
 
 import { readFileSync } from 'node:fs';
@@ -467,15 +469,240 @@ describe('the upmix face prints only what is chosen (법칙 5)', () => {
     expect(strip.querySelector('.pd-sr')?.textContent).toBe(ko.upmix.outputs(view.outputs.join(' ')));
   });
 
-  it('the plugin facts stand on a spec plate', () => {
+  it('the plugin stands as a card in its slot, the rest of its facts on a spec plate', () => {
     const start = fixture('running-upmix');
-    mounted(start, 'upmix');
+    const { sent } = mounted(start, 'upmix');
     const view = start.upmix.endpoints.find((endpoint) => endpoint.plugin !== null)!;
-    const plate = $(`.pd-upmix-input[data-lane="${view.endpoint}"] .pd-spec`)!;
+    const input = $(`.pd-upmix-input[data-lane="${view.endpoint}"]`)!;
+    // A .vst3 bundle is a folder: the card stands in the folder's slot, the file's is empty.
+    const card = input.querySelector(`[data-key="plugin-folder-${view.endpoint}"] .pd-card`)!;
+    expect(card.textContent).toBe(view.plugin!.name);
+    expect(card.getAttribute('title')).toBe(view.plugin!.path);
+    expect(input.querySelector(`[data-key="plugin-file-${view.endpoint}"] .pd-card`)).toBeNull();
+    // The path is not printed; a screen reader hears it with the slot.
+    expect(seen(input).includes(view.plugin!.path)).toBe(false);
+    const slot = input.querySelector(`[data-key="plugin-folder-${view.endpoint}"]`)!;
+    const said = (slot.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent);
+    expect(said).toContain(view.plugin!.path);
+    const plate = input.querySelector('.pd-spec')!;
     const rows = [...plate.querySelectorAll('.pd-spec-row')].map((row) => row.querySelector('dt')?.textContent);
-    expect(rows).toContain(ko.upmix.pluginName);
-    expect(plate.textContent).toContain(view.plugin!.name);
-    expect(plate.textContent).toContain(view.plugin!.path);
+    expect(rows).toEqual(expect.arrayContaining([ko.upmix.pluginVendor, ko.upmix.pluginFormat]));
+    expect(plate.textContent).toContain(view.plugin!.vendor);
+    expect(sent).toEqual([]);
+  });
+
+  it('an empty plugin slot says what it wants only to a screen reader', () => {
+    const start = fixture('ready-upmix');
+    start.upmix.endpoints[1]!.plugin = null;
+    mounted(start, 'upmix');
+    const input = $('.pd-upmix-input[data-lane="1"]')!;
+    expect(input.querySelectorAll('.pd-slot:not(.is-loaded)')).toHaveLength(2);
+    expect(seen(input).includes(ko.upmix.needsPlugin)).toBe(false);
+    expect(seen(input).includes(ko.upmix.noPlugin)).toBe(false);
+    const slot = input.querySelector('[data-key="plugin-file-1"]')!;
+    expect(document.getElementById(slot.getAttribute('aria-describedby') ?? '')?.textContent).toBe(ko.upmix.needsPlugin);
+  });
+});
+
+describe('a key shows its state by its own light (법칙 3)', () => {
+  it('a capturing lane’s key is lit in the lane’s colour, and no state word is printed by it', () => {
+    mounted(fixture('running-apps'), 'status');
+    const key = $<HTMLButtonElement>('[data-key="capture-app-0"]')!;
+    expect(key.classList.contains('is-lit')).toBe(true);
+    expect(key.classList.contains('is-off')).toBe(false);
+    expect(key.getAttribute('style')).toContain('--pd-lane-0');
+    // It cannot be pressed while the engine runs, but it keeps its light.
+    expect(key.disabled).toBe(true);
+    const lane = $('.pd-ch[data-lane="0"]')!;
+    expect(seen(lane).includes(ko.entrance.stateCapturing)).toBe(false);
+    expect(seen(key)).toContain('game.exe');
+    // A screen reader still hears the state with the key.
+    expect(key.textContent).toContain(ko.entrance.stateCapturing);
+  });
+
+  it('a lane waiting for its app blinks, and one without an app or with the engine off is dark', () => {
+    mounted(fixture('running-apps-waiting'), 'status');
+    const waiting = $('[data-key="capture-app-0"]')!;
+    expect(waiting.classList.contains('is-wait')).toBe(true);
+    expect(waiting.classList.contains('is-lit')).toBe(false);
+    expect(seen($('.pd-ch[data-lane="0"]')!).includes(ko.entrance.stateWaiting)).toBe(false);
+    expect($('[data-key="capture-app-1"]')!.className).not.toMatch(/is-(lit|wait)/);
+    root.replaceChildren();
+    // Off, the app is open but nothing is taken: the ring is dark.
+    mounted(fixture('ready-apps'), 'status');
+    expect($('[data-key="capture-app-0"]')!.className).not.toMatch(/is-(lit|wait)/);
+    expect(seen($('.pd-ch[data-lane="0"]')!).includes(ko.entrance.stateRunning)).toBe(false);
+  });
+
+  it('the profile’s kind keys print no "in use" by a dark key: the slide switch shows it', () => {
+    mounted(fixture('ready-speakers'), 'profile');
+    $('[data-key="profile-tab-headphones"]')!.click();
+    const speakers = $('[data-key="profile-tab-speakers"]')!;
+    expect(speakers.classList.contains('is-lit')).toBe(false);
+    expect(seen(speakers).includes(ko.profile.inUse)).toBe(false);
+    expect(speakers.textContent).toContain(ko.profile.inUse);
+  });
+
+  it('the discard output in use keeps its light while the engine runs, its keys locked', () => {
+    mounted(fixture('running-apps'), 'settings');
+    const start = fixture('running-apps');
+    const list = $('[data-region="discard-list"]')!;
+    const keys = [...list.querySelectorAll<HTMLButtonElement>('button')];
+    expect(keys.every((key) => key.disabled)).toBe(true);
+    const lit = keys.filter((key) => key.classList.contains('is-lit'));
+    expect(lit).toHaveLength(1);
+    expect(lit[0]!.textContent).toContain(start.app_capture!.discard!.name);
+    expect(seen(list).includes(ko.status.currentOutput)).toBe(false);
+  });
+});
+
+describe('a file goes in a card slot (법칙 2)', () => {
+  it('the correction’s card carries the file’s name, and its eject key sends clear_correction', () => {
+    const start = fixture('ready-speakers');
+    const { sent } = mounted(start, 'profile');
+    const correction = start.profile.speakers.correction!;
+    const group = $('[data-group="pd-correction"]')!;
+    const slot = group.querySelector<HTMLButtonElement>('[data-key="correction-import"]')!;
+    expect(slot.classList.contains('is-loaded')).toBe(true);
+    expect(slot.getAttribute('data-intent')).toBe('import_correction');
+    expect(slot.querySelector('.pd-card-label')?.textContent).toBe('secs_mixed.yml');
+    expect(slot.querySelector('.pd-card')?.getAttribute('title')).toBe(correction.path);
+    // The title stays on the spec plate; the long path and the instructions are not printed.
+    expect(group.querySelector('.pd-spec')?.textContent).toContain(correction.title);
+    const printed = seen(group);
+    expect(printed.includes(correction.path)).toBe(false);
+    expect(printed.includes(ko.profile.correctionBody)).toBe(false);
+    expect(slot.getAttribute('aria-describedby')?.split(' ')).toContain('correction-about');
+    expect(document.getElementById('correction-about')?.textContent).toBe(ko.profile.correctionBody);
+    const eject = group.querySelector<HTMLButtonElement>('[data-key="correction-clear"]')!;
+    expect(eject.classList.contains('pd-mkey-key')).toBe(true);
+    eject.click();
+    expect(sent).toEqual([{ kind: 'clear_correction' }]);
+  });
+
+  it('an empty correction slot opens the same picker and sends import_correction; its LED blinks while it is sent', async () => {
+    const start = fixture('ready');
+    let asked: [string, { name: string; extensions: string[] }] | null = null;
+    const sent: Intent[] = [];
+    const mock = createMockApi(start);
+    const api: Api = {
+      ...mock,
+      // The shell's file picker the old key called, with the same dialog and filter.
+      shell: {
+        ...mock.shell,
+        pickFile: async (title, filter) => {
+          asked = [title, filter];
+          return 'C:\\x\\room.yml';
+        },
+      },
+      dispatch: (intent) => {
+        sent.push(intent);
+        return new Promise<void>(() => {});
+      },
+    };
+    const app = mount(root, api, { tab: 'profile' });
+    app.draw(start);
+    const slot = $<HTMLButtonElement>('[data-key="correction-import"]')!;
+    expect(slot.classList.contains('is-loaded')).toBe(false);
+    expect($('[data-key="correction-clear"]')).toBeNull();
+    slot.click();
+    await tick();
+    await tick();
+    expect(asked).toEqual([ko.profile.correctionDialog, { name: ko.profile.correctionFilter, extensions: ['yml', 'yaml'] }]);
+    expect(sent).toEqual([{ kind: 'import_correction', value: 'C:\\x\\room.yml' }]);
+    const busy = $('[data-key="correction-import"]')!;
+    expect(busy.getAttribute('aria-busy')).toBe('true');
+    expect(busy.closest('.pd-slotpart')?.querySelector('.pd-slot-led')?.classList.contains('is-busy')).toBe(true);
+    expect(seen(busy.closest('[data-group="pd-correction"]')!).includes(ko.profile.importing)).toBe(false);
+  });
+
+  it('the BRIR set stands as a card in the slot of its kind: a folder’s, or a WAV file’s', () => {
+    mounted(fixture('ready-headphones'), 'profile');
+    expect($('[data-key="brir-folder"] .pd-card-label')?.textContent).toBe('living-room');
+    expect($('[data-key="brir-file"] .pd-card')).toBeNull();
+    root.replaceChildren();
+    mounted(fixture('ready-headphones-24-1-10'), 'profile');
+    expect($('[data-key="brir-file"] .pd-card-label')?.textContent).toBe('24.1.10.wav');
+    expect($('[data-key="brir-folder"] .pd-card')).toBeNull();
+    // profile.toml decides: the slots are shut.
+    root.replaceChildren();
+    mounted(fixture('ready-profile-file'), 'profile');
+    $('[data-key="profile-tab-headphones"]')?.click();
+    expect($$<HTMLButtonElement>('.pd-slot').every((slot) => slot.disabled)).toBe(true);
+  });
+});
+
+describe('the per-app entrance is a routing matrix', () => {
+  it('lights exactly the crossing of each rule, in its input’s colour', () => {
+    const start = fixture('ready');
+    mounted(start, 'settings');
+    const matrix = $('.pd-matrix')!;
+    const lit = [...matrix.querySelectorAll('.pd-key.is-lit')].map((key) => key.getAttribute('data-key')).sort();
+    const rows = [
+      ...start.routing.apps.map((app) => [app.exe, app.rule] as const),
+      ...start.routing.rules.filter((rule) => !start.routing.apps.some((app) => app.exe === rule.exe)).map((rule) => [rule.exe, rule.entrance] as const),
+    ];
+    expect(lit).toEqual(rows.filter(([, rule]) => rule !== null).map(([exe, rule]) => `routing-rule-${exe}-${rule}`).sort());
+    const lanes = ['main', 'music', 'pass'];
+    for (const key of matrix.querySelectorAll('.pd-key.is-lit')) {
+      const entrance = key.getAttribute('data-key')!.split('-').at(-1)!;
+      expect(key.getAttribute('style')).toContain(`--pd-lane-${lanes.indexOf(entrance)}`);
+    }
+    // Every row has a key per input, the input names printed once at the head.
+    expect(matrix.querySelectorAll('thead th')).toHaveLength(3);
+    expect(matrix.querySelectorAll('[data-key^="routing-rule-"] .pd-key-label')).toHaveLength(0);
+    expect(matrix.querySelectorAll('[data-key^="routing-rule-"]')).toHaveLength(rows.length * 3);
+  });
+
+  it('pressing the lit key clears the rule, another moves it, and a row-end key restores or removes', () => {
+    const start = fixture('ready');
+    const { sent } = mounted(start, 'settings');
+    $('[data-key="routing-rule-applemusic.exe-music"]')!.click();
+    expect(sent).toEqual([{ kind: 'set_app_rule', value: { exe: 'applemusic.exe', entrance: null } }]);
+    root.replaceChildren();
+    const again = mounted(start, 'settings');
+    $('[data-key="routing-rule-foobar2000.exe-main"]')!.click();
+    expect(again.sent).toEqual([{ kind: 'set_app_rule', value: { exe: 'foobar2000.exe', entrance: 'main' } }]);
+    // Changed from the factory's: restore. The user's own: remove. As shipped: no key.
+    expect($('[data-key="routing-remove-kodi.exe"]')?.textContent).toContain(ko.settings.routingRestore);
+    expect($('[data-key="routing-remove-player.exe"]')?.textContent).toContain(ko.settings.routingRemove);
+    expect($('[data-key="routing-remove-foobar2000.exe"]')).toBeNull();
+  });
+
+  it('prints the factory’s rules, tapes the names this PC gives, and dims the input an app plays into now', () => {
+    mounted(fixture('ready'), 'settings');
+    const name = (exe: string) => $(`[data-key="routing-rule-${exe}-main"]`)!.closest('tr')!.querySelector('th')!;
+    expect(name('foobar2000.exe').querySelector('.pd-silk')).not.toBeNull();
+    expect(name('player.exe').querySelector('.pd-tape')).not.toBeNull();
+    expect(name('browser.exe').querySelector('.pd-tape')?.textContent).toBe('Browser');
+    // "Default" is seen, not read: only a screen reader hears it.
+    expect(seen(name('foobar2000.exe')).includes(ko.settings.routingBuiltIn)).toBe(false);
+    expect(name('foobar2000.exe').textContent).toContain(ko.settings.routingBuiltIn);
+    // Apple Music is sent to music but plays in the game input now.
+    expect($('[data-key="routing-rule-applemusic.exe-main"]')!.classList.contains('is-dim')).toBe(true);
+    expect($('[data-key="routing-rule-applemusic.exe-music"]')!.classList.contains('is-lit')).toBe(true);
+    // The explanation is the group's description, not a printed paragraph.
+    const group = $('[data-group="pd-routing"]')!;
+    expect(group.getAttribute('aria-describedby')).toBe('routing-hint');
+    expect(seen(group).includes(document.getElementById('routing-hint')!.textContent!)).toBe(false);
+  });
+
+  it('where this PC cannot route apps, the DIP switch carries a numbered mark and the sentence is on the legend plate', () => {
+    mounted(fixture('ready-routing-unavailable'), 'settings');
+    const sentence = ko.settings.routingUnavailable;
+    const toggle = $<HTMLButtonElement>('[data-key="routing-enabled"]')!;
+    expect(toggle.disabled).toBe(true);
+    const mark = toggle.parentElement!.querySelector('.pd-mark:not([hidden])')!;
+    expect(mark.querySelector('.pd-mark-n')?.textContent).toBe('1');
+    expect(toggle.getAttribute('aria-describedby')?.split(' ')).toContain('routing-unavailable');
+    expect(document.getElementById('routing-unavailable')?.textContent).toBe(sentence);
+    const plate = $('#pd-settings-notes, [data-group="pd-settings-notes"]')!;
+    expect(plate.hidden).toBe(false);
+    expect(plate.textContent).toContain(sentence);
+    expect(seen($('[data-group="pd-routing"]')!).includes(sentence)).toBe(false);
+    root.replaceChildren();
+    mounted(fixture('ready'), 'settings');
+    expect($('[data-group="pd-settings-notes"]')!.hidden).toBe(true);
   });
 });
 

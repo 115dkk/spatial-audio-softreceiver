@@ -430,15 +430,17 @@ describe('the pedal with the app-sound entrance', () => {
     expect(jack(2).querySelector('.pd-led')?.getAttribute('data-glow')).toBe('off');
   });
 
-  it('opens a lane’s row of apps with its lit key and closes it after a choice', async () => {
+  it('opens a lane’s row of apps with its key latched down and closes it after a choice', async () => {
     mounted('pedal', withPlayer('ready-apps'), 'status');
     const toggle = $('[data-key="capture-app-1"]')!;
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle.classList.contains('is-lit')).toBe(false);
+    expect(toggle.classList.contains('is-down')).toBe(false);
     toggle.click();
     const opened = $('[data-key="capture-app-1"]')!;
     expect(opened.getAttribute('aria-expanded')).toBe('true');
-    expect(opened.classList.contains('is-lit')).toBe(true);
+    // The ring is the lane's state (no app on the music lane: dark); the open row is the key held in.
+    expect(opened.classList.contains('is-down')).toBe(true);
+    expect(opened.classList.contains('is-lit')).toBe(false);
     const list = $('[data-region="capture-apps-1"]')!;
     expect(list.getAttribute('role')).toBe('radiogroup');
     // "None" is lit: the music lane has no app.

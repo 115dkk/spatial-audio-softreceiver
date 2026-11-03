@@ -1,9 +1,10 @@
 // The profile face (ADR 0046, ADR 0034). The output kind in use is the
 // slide switch (an intent); which kind's settings stand on the face is view
 // state, two illuminated keys whose ring is lit on the kind shown.
-// Headphones: the BRIR set printed and the momentary keys that pick its
-// folder or file. Speakers: the sixteen layouts as illuminated keys in four
-// family lines of one radio group, the SECS 2R correction's keys and facts,
+// Headphones: the BRIR set's two card slots, a folder's and a file's, the set
+// in use standing as a card in one. Speakers: the sixteen layouts as
+// illuminated keys in four family lines of one radio group, the SECS 2R
+// correction's card slot with its eject key and the title on a spec plate,
 // and the channel table printed as a patch strip with an LED per device
 // channel, lit while the speakers play through it. Then the LEVEL encoder,
 // each kind's upmix switch, a test signal per direction (the map's buttons
@@ -19,7 +20,7 @@ import { type Context, type Drawn, described } from '../../screens/common';
 import { GAIN_MAX, GAIN_MIN } from '../../screens/profile';
 import { kindSlide, layoutFamilies, levelEncoder, upmixApply } from './controls';
 import { DENSE_DIRECTIONS, soundMap } from './map';
-import { type Led, fine, flowRoom, group, hairline, ikey, intentKey, keyRow, led, mkey, pickKey, print, spec } from './parts';
+import { type Led, baseName, fine, flowRoom, group, hairline, ikey, keyRow, led, mkey, print, slot, spec, spoken, sr } from './parts';
 import { type Scope, signed } from './scope';
 
 const KINDS: readonly ProfileKind[] = ['headphones', 'speakers'];
@@ -78,8 +79,8 @@ function kindKeys(ctx: Context, open: ProfileKind): HTMLElement {
     list.append(
       ikey({
         key: `profile-tab-${kind}`,
-        label: text.profile.kindNames[kind],
-        detail: kind === inUse ? text.profile.inUse : undefined,
+        // The kind in use is the slide switch's to show (법칙 3); a dark tab key prints no "in use" by it.
+        label: kind === inUse ? spoken(text.profile.kindNames[kind], text.profile.inUse) : text.profile.kindNames[kind],
         lit: selected,
         chosen: selected,
         attrs: {
@@ -101,37 +102,55 @@ function applyLine(ctx: Context, kind: ProfileKind): Child[] {
   return apply === null ? [] : [hairline(), apply, fine(text.profile.upmixApplyHint, 'upmix-apply-hint')];
 }
 
+/** A BRIR set read from one WAV file rather than a folder of them. */
+const isWav = (path: string) => /\.wav$/i.test(path);
+
+/**
+ * The BRIR set as two card slots side by side, a folder's and a file's (법칙
+ * 2): a set comes in either way, and each way has its own picker. The set
+ * in use stands as a card in the slot of its kind, its name on the label;
+ * putting a set in either slot replaces it. What a set may be is the slots'
+ * description, for a screen reader.
+ */
 function headphones(ctx: Context): Child[] {
   const { profile } = ctx.snapshot;
   const locked = profile.from_file;
-  const importing = ctx.pending === 'import_brir';
-  const ids = described(importing && 'brir-hint', ...changeHints(ctx));
+  const brir = profile.headphones.brir;
+  const sending = ctx.sending?.kind === 'import_brir' ? ctx.sending.value : null;
+  const ids = described('brir-about', sending !== null && 'brir-hint', ...changeHints(ctx));
   const send = (value: string) => ctx.send({ kind: 'import_brir', value });
+  const card = brir === null ? null : { name: baseName(brir), path: brir };
+  const asFile = brir !== null && isWav(brir);
   ctx.offer('import_brir');
   return [
-    spec([
-      [
-        text.profile.brir,
-        h('span', { class: profile.headphones.brir === null ? 'pd-none' : 'pd-path' }, profile.headphones.brir ?? text.profile.none),
-        profile.headphones.brir !== null,
-      ],
-    ]),
-    fine(text.profile.brirBody),
     h(
       'div',
-      { class: 'pd-keys' },
-      pickKey(ctx, text.profile.brirFolder, 'brir-folder', locked, ids, () => ctx.shell.pickFolder(text.profile.brirFolderDialog), send),
-      pickKey(
-        ctx,
-        text.profile.brirFile,
-        'brir-file',
-        locked,
-        ids,
-        () => ctx.shell.pickFile(text.profile.brirFileDialog, { name: text.profile.brirFilter, extensions: ['wav'] }),
+      { class: 'pd-slots' },
+      slot(ctx, {
+        key: 'brir-folder',
+        label: text.profile.brirFolderDialog,
+        card: asFile ? null : card,
+        describedBy: ids,
+        off: locked,
+        busy: sending !== null && !isWav(sending),
+        intent: 'import_brir',
+        pick: () => ctx.shell.pickFolder(text.profile.brirFolderDialog),
         send,
-      ),
+      }),
+      slot(ctx, {
+        key: 'brir-file',
+        label: text.profile.brirFileDialog,
+        card: asFile ? card : null,
+        describedBy: ids,
+        off: locked,
+        busy: sending !== null && isWav(sending),
+        intent: 'import_brir',
+        pick: () => ctx.shell.pickFile(text.profile.brirFileDialog, { name: text.profile.brirFilter, extensions: ['wav'] }),
+        send,
+      }),
     ),
-    importing ? fine(text.profile.importing, 'brir-hint') : null,
+    sr(text.profile.brirBody, 'brir-about'),
+    sending === null ? null : sr(text.profile.importing, 'brir-hint'),
     ...applyLine(ctx, 'headphones'),
   ];
 }
@@ -142,6 +161,7 @@ function layout(ctx: Context): HTMLElement {
   const { layout: current, correction } = profile.speakers;
   const changing = ctx.pending === 'set_speaker_layout';
   const byCorrection = correction !== null && !profile.from_file;
+  // The key being sent blinks (법칙 10); "applying" is only for a screen reader.
   const hint = changing ? text.profile.applying : byCorrection ? text.profile.layoutByCorrection : null;
   const children: Child[] = [];
   if (current === null) {
@@ -166,48 +186,63 @@ function layout(ctx: Context): HTMLElement {
       }),
     );
   }
-  if (hint !== null) children.push(hairline(), fine(hint, 'layout-hint'));
+  if (changing) children.push(sr(text.profile.applying, 'layout-hint'));
+  else if (hint !== null) children.push(hairline(), fine(hint, 'layout-hint'));
   return group('pd-layout', text.profile.layout, children, 'pd-sub');
 }
 
-/** The SECS 2R correction: the file, its title, and the keys that set and clear it. */
+/**
+ * The SECS 2R correction as a card slot (법칙 2): the slot named for what
+ * goes in it (a CamillaDSP configuration), the file in use standing out of
+ * it as a card with the file's name on its label and a small eject key that
+ * clears it, the correction's title on a spec plate under it. What to put in
+ * is the slot's description, for a screen reader.
+ */
 function correction(ctx: Context): HTMLElement {
   const { profile } = ctx.snapshot;
   const current = profile.speakers.correction;
   const locked = profile.from_file;
-  const hint =
-    ctx.pending === 'import_correction' ? text.profile.importing
-    : ctx.pending === 'clear_correction' ? text.profile.applying
-    : null;
-  const ids = described(hint !== null && 'correction-hint', ...changeHints(ctx));
-  const rows: [string, Child, boolean?][] = [
-    [text.profile.correctionFile, h('span', { class: current === null ? 'pd-none' : 'pd-path' }, current?.path ?? text.profile.none), current !== null],
-  ];
-  if (current !== null) rows.push([text.profile.correctionName, current.title]);
+  const importing = ctx.pending === 'import_correction';
+  const clearing = ctx.pending === 'clear_correction';
+  const hint = importing ? text.profile.importing : clearing ? text.profile.applying : null;
+  const ids = described('correction-about', hint !== null && 'correction-hint', ...changeHints(ctx));
   ctx.offer('import_correction');
+  let eject: HTMLElement | null = null;
+  if (current !== null) {
+    ctx.offer('clear_correction');
+    eject = mkey({
+      key: 'correction-clear',
+      label: text.profile.correctionClear,
+      size: 'sm',
+      beside: true,
+      off: locked,
+      locked: ctx.busy,
+      busy: clearing,
+      intent: 'clear_correction',
+      describedBy: described(hint !== null && 'correction-hint', ...changeHints(ctx)),
+      onClick: () => ctx.send({ kind: 'clear_correction' }),
+    });
+    eject.classList.add('pd-eject');
+  }
   return group(
     'pd-correction',
     text.profile.correctionTitle,
     [
-      fine(text.profile.correctionBody),
-      spec(rows),
-      h(
-        'div',
-        { class: 'pd-keys' },
-        pickKey(
-          ctx,
-          text.profile.correctionImport,
-          'correction-import',
-          locked,
-          ids,
-          () => ctx.shell.pickFile(text.profile.correctionDialog, { name: text.profile.correctionFilter, extensions: ['yml', 'yaml'] }),
-          (value) => ctx.send({ kind: 'import_correction', value }),
-        ),
-        current === null
-          ? null
-          : intentKey(ctx, text.profile.correctionClear, { kind: 'clear_correction' }, { key: 'correction-clear', off: locked, describedBy: ids }),
-      ),
-      hint === null ? null : fine(hint, 'correction-hint'),
+      slot(ctx, {
+        key: 'correction-import',
+        label: text.profile.correctionFilter,
+        card: current === null ? null : { name: baseName(current.path), path: current.path },
+        describedBy: ids,
+        off: locked,
+        busy: importing || clearing,
+        intent: 'import_correction',
+        pick: () => ctx.shell.pickFile(text.profile.correctionDialog, { name: text.profile.correctionFilter, extensions: ['yml', 'yaml'] }),
+        send: (value) => ctx.send({ kind: 'import_correction', value }),
+        eject,
+      }),
+      current === null ? null : spec([[text.profile.correctionName, current.title]]),
+      sr(text.profile.correctionBody, 'correction-about'),
+      hint === null ? null : sr(hint, 'correction-hint'),
     ],
     'pd-sub',
   );
