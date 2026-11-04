@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Proof behind deny.toml's exception for the zip advisories, and its cure.
 
-RustSec published three advisories against zip below 9.0.0 in October 2026
-(RUSTSEC-2026-0367, -0368, -0369). All three are in ``ZipArchive::extract``
-and ``ZipStreamReader::extract``, which velopack does not call: it reads
+RustSec published four advisories against zip below 9.0.0 in October and
+November 2026 (RUSTSEC-2026-0367, -0368, -0369, -0429). All four are in
+``ZipArchive::extract`` and ``ZipStreamReader::extract``, which velopack
+does not call: it reads
 entries with ``by_index`` and writes each file itself, so it creates no links
 and applies no permission bits. velopack, the app's updater, needs
 ``zip ^8.6``, so Cargo.lock keeps zip 8.6.0 and cargo-deny fails. deny.toml
@@ -45,7 +46,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-ADVISORIES = ("RUSTSEC-2026-0367", "RUSTSEC-2026-0368", "RUSTSEC-2026-0369")
+ADVISORIES = ("RUSTSEC-2026-0367", "RUSTSEC-2026-0368", "RUSTSEC-2026-0369", "RUSTSEC-2026-0429")
 PATCHED = (9, 0, 0)
 INDEX = "https://index.crates.io/ve/lo/velopack"
 BEGIN = "velopack-zip-guard: begin"

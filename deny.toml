@@ -42,8 +42,8 @@ ignore = true
 unmaintained = "workspace"
 yanked = "deny"
 # velopack-zip-guard: begin
-# Three advisories on zip below 9.0.0 (RUSTSEC-2026-0367, -0368, -0369) are
-# all in ZipArchive::extract and ZipStreamReader::extract, which velopack does
+# Four advisories on zip below 9.0.0 (RUSTSEC-2026-0367, -0368, -0369, -0429)
+# are all in ZipArchive::extract and ZipStreamReader::extract, which velopack does
 # not call: it reads entries with by_index and writes each file itself, so it
 # creates no links and applies no permission bits. velopack, the updater,
 # needs zip ^8.6 up to 1.2.161; upstream moved to zip 9 on develop on
@@ -56,6 +56,7 @@ ignore = [
     { id = "RUSTSEC-2026-0367", reason = "in ZipArchive::extract, which velopack does not call (velopack_zip_guard.py)" },
     { id = "RUSTSEC-2026-0368", reason = "in ZipArchive::extract, which velopack does not call (velopack_zip_guard.py)" },
     { id = "RUSTSEC-2026-0369", reason = "in ZipStreamReader::extract and ZipArchive::extract, which velopack does not call (velopack_zip_guard.py)" },
+    { id = "RUSTSEC-2026-0429", reason = "in ZipArchive::extract (the symlink target buffer), which velopack does not call (velopack_zip_guard.py)" },
 ]
 # velopack-zip-guard: end
 
