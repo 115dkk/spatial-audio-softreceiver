@@ -14,20 +14,23 @@
 // lanes, each with the key that opens its row of apps and whose ring is the
 // lane's state, and PASS stands dark.
 
-import type { AsioStatus, EndpointUpmixView, EngineStatus, Snapshot } from '../../bindings';
+import type { AsioStatus, CaptureLaneView, EndpointUpmixView, EngineStatus, Snapshot, SourceFormat } from '../../bindings';
 import { type Child, h, liveText, setAttr } from '../../dom';
 import {
   chainErrorEntries,
   chainErrorTotal,
+  codecName,
   count,
   describeCarrier,
   describeFormat,
   describeOutputFormat,
   describeOutputMode,
   describeRate,
+  describeSamples,
   describeUnsupported,
   describeVolume,
   oneDecimal,
+  rateKhz,
 } from '../../format';
 import { ASIO_DEFAULTS } from '../../guard';
 import { text } from '../../text';
@@ -35,7 +38,6 @@ import { type Drawn, type Live, described } from '../../screens/common';
 import {
   CAPTURE_LANES,
   PASS_LANE,
-  appLabel,
   appMode,
   captureStateWord,
   chooseApp,
@@ -62,10 +64,10 @@ import {
   keyRow,
   ladder,
   led,
+  lockLamp,
   notePlate,
   print,
   readout,
-  spoken,
   sr,
   strength,
 } from './parts';
@@ -134,17 +136,64 @@ function errorKinds(): { element: HTMLElement; set(map: EngineStatus['endpoints'
 }
 
 /**
- * One input's channel. `label` names an app-sound lane and its app in place
- * of the driver's endpoint (ADR 0043).
+ * An input's format as parts (법칙 1): its channel count and rate on segment
+ * readouts, the kind (PCM, direct output, a codec) and the sample word on a
+ * printed tag, a bitstream's carrier in small print under them, and the
+ * whole sentence for a screen reader. Dark with no input.
  */
-function channel(scope: Scope, plate: NotePlate, lane: number, label?: { name: string; sub: string }): Channel {
+function formatReadout(): { element: HTMLElement; set(format: SourceFormat | null): void } {
+  const s = text.status;
+  const channels = readout(2, 16, text.pedal.channelsUnit);
+  const rate = readout(3, 16, 'kHz');
+  const kind = liveText(s.noInput);
+  const carrier = liveText();
+  const carrierLine = h('p', { class: 'pd-small', hidden: true }, carrier.node);
+  const said = sr(s.noInput);
+  const element = h(
+    'div',
+    { class: 'pd-fmtparts' },
+    h('div', { class: 'pd-fmt-row', 'aria-hidden': 'true' }, channels.element, rate.element),
+    h('span', { class: 'pd-fmt-kind', 'aria-hidden': 'true' }, kind.node),
+    carrierLine,
+    said,
+  );
+  return {
+    element,
+    set(format) {
+      const sentence = describeFormat(format);
+      if (said.textContent !== sentence) said.textContent = sentence;
+      if (format === null) {
+        channels.set('-', '');
+        rate.set('-', '');
+        kind.set(s.noInput);
+      } else if (format.kind === 'pcm') {
+        const pcm = format.value;
+        channels.set(String(pcm.channels), '');
+        rate.set(rateKhz(pcm.sample_rate), '');
+        kind.set(`${pcm.channel_mask === 0 ? text.format.direct : text.format.pcm} · ${describeSamples(pcm)}`);
+      } else {
+        const stream = format.value;
+        channels.set(stream.encoded_channels > 0 ? String(stream.encoded_channels) : '-', '');
+        rate.set(stream.encoded_rate > 0 ? rateKhz(stream.encoded_rate) : '-', '');
+        kind.set(codecName(stream.codec));
+      }
+      const container = describeCarrier(format);
+      carrierLine.hidden = container === null;
+      if (container !== null) carrier.set(container);
+    },
+  };
+}
+
+/**
+ * One input's channel. `label` names an app-sound lane in place of the
+ * driver's endpoint (ADR 0043); the lane's app is printed on its key alone.
+ */
+function channel(scope: Scope, plate: NotePlate, lane: number, label?: string): Channel {
   const s = text.status;
   const name = text.pedal.lamps[lane] ?? String(lane);
-  const endpoint = label === undefined ? (text.endpoints[lane]?.name ?? name) : `${label.name} · ${label.sub}`;
-  const format = liveText(s.noInput);
-  const carrier = liveText();
+  const endpoint = label ?? text.endpoints[lane]?.name ?? name;
+  const format = formatReadout();
   const epoch = liveText();
-  const carrierLine = h('p', { class: 'pd-small', hidden: true }, carrier.node);
   // In reading order: the upmixer, a format it cannot play, the chain errors.
   const upmix = upmixNote(plate, name, scope.ctx.snapshot.upmix.endpoints.find((view) => view.endpoint === lane));
   const unsupported = plate.note('wait', { source: name });
@@ -157,7 +206,7 @@ function channel(scope: Scope, plate: NotePlate, lane: number, label?: { name: s
     'section',
     { class: 'pd-ch', 'data-lane': lane, 'data-signal': 'none', 'aria-labelledby': `pd-ch-${lane}` },
     h('h3', { id: `pd-ch-${lane}`, class: 'pd-ep' }, sr(`${name} · `), endpoint),
-    h('div', { class: 'pd-ch-format' }, h('p', { class: 'pd-fmt' }, format.node), carrierLine),
+    h('div', { class: 'pd-ch-format' }, format.element),
     h('div', { class: 'pd-ch-notes' }, upmix, unsupported.mark, errors.mark),
     h('div', { class: 'pd-ladder-row' }, bar.element, h('div', { class: 'pd-ch-level' }, muted, volume.element)),
   );
@@ -177,10 +226,7 @@ function channel(scope: Scope, plate: NotePlate, lane: number, label?: { name: s
       const sounding = level > -Infinity;
       setAttr(element, 'data-signal', sounding ? 'sound' : status.format !== null ? 'idle' : 'none');
       bar.set(sounding ? strength(level) : 0);
-      format.set(describeFormat(status.format));
-      const container = describeCarrier(status.format);
-      carrierLine.hidden = container === null;
-      if (container !== null) carrier.set(container);
+      format.set(status.format);
       volume.set(signed(status.volume_db), describeVolume(status.volume_db, status.muted));
       muted.hidden = !status.muted;
       unsupported.set(status.unsupported === null ? null : describeUnsupported(status.unsupported));
@@ -238,6 +284,13 @@ function asioChannel(plate: NotePlate, enabled: boolean): { element: HTMLElement
   };
 }
 
+/** The app's name over its exe, then the lane's state for a screen reader (법칙 3). */
+function appKeyLabel(view: CaptureLaneView): DocumentFragment {
+  const words = document.createDocumentFragment();
+  words.append(view.display_name, h('span', { class: 'pd-key-sub' }, view.exe), sr(` · ${captureStateWord(view.state)}`));
+  return words;
+}
+
 /**
  * A lane's app key (ADR 0043): an illuminated key with the app's name. Its
  * ring is the lane's state in the lane's colour (법칙 3): lit while the lane
@@ -259,8 +312,8 @@ function laneKey(scope: Scope, lane: number): { key: HTMLElement; row: HTMLEleme
   const sending = ctx.sending?.kind === 'choose_capture_app' && ctx.sending.value.lane === lane;
   const key = ikey({
     key: pickerKey(lane),
-    // The app's name is printed; its state is the ring's, and a screen reader hears it as words.
-    label: view === null ? (lane === 0 ? e.chooseApp : text.profile.none) : spoken(appLabel(view), captureStateWord(view.state)),
+    // The app's name is printed, its exe in small print under it; its state is the ring's, and a screen reader hears it as words.
+    label: view === null ? (lane === 0 ? e.chooseApp : text.profile.none) : appKeyLabel(view),
     lit: view?.state === 'capturing',
     // Running without its sound yet: the app is open but has not played into the lane.
     wait: running && (view?.state === 'waiting' || view?.state === 'running'),
@@ -318,12 +371,15 @@ function passLane(): HTMLElement {
   );
 }
 
-/** Why the app keys are off (running), and what happens to an app closed first. */
-function laneHints(scope: Scope): HTMLElement {
-  const locked = pickersLocked(scope.ctx.snapshot);
-  // The app keys' sentences in a printed legend box under the lanes, not loose on the metal (법칙 5).
+/**
+ * What happens to an app closed first, in a printed legend box under the
+ * lanes (법칙 5). While the engine runs the app keys are locked: a lock lamp
+ * lit in the box, its number pointing at the sentence on the legend plate.
+ */
+function laneHints(lock: HTMLElement | null): HTMLElement {
   return group('pd-lane-hints', text.entrance.appsTitle, [
-    ...(locked === null ? [] : [fine(locked, 'capture-locked'), hairline()]),
+    lock === null ? null : h('div', { class: 'pd-lockline' }, lock),
+    lock === null ? null : hairline(),
     fine(text.entrance.closedApp, 'capture-closed'),
   ]);
 }
@@ -402,6 +458,9 @@ function running(scope: Scope, engineNow: EngineStatus | null): Drawn {
   const asioOn = (snapshot.asio ?? ASIO_DEFAULTS).enabled;
 
   const plate = notePlate(text.banner.notesLabel, 'pd-status-notes');
+  // The app keys cannot be pressed while the engine runs (ADR 0043): the lock lamp's note.
+  const captureLock = plate.note('wait', { id: 'capture-locked', led: false });
+  captureLock.set(apps ? pickersLocked(snapshot) : null);
   const channels: Channel[] = [];
   const under: HTMLElement[] = [];
   const inputs: HTMLElement[] = [];
@@ -413,7 +472,7 @@ function running(scope: Scope, engineNow: EngineStatus | null): Drawn {
       if (view === null) {
         inputs.push(laneStandby(lane, key));
       } else {
-        const input = channel(scope, plate, lane, { name: laneName(lane), sub: appLabel(view) });
+        const input = channel(scope, plate, lane, laneName(lane));
         channels.push(input);
         input.element.querySelector('.pd-ch-format')?.append(key);
         inputs.push(input.element);
@@ -471,7 +530,7 @@ function running(scope: Scope, engineNow: EngineStatus | null): Drawn {
     { class: 'pd-status is-running' },
     main,
     under.length === 0 ? null : h('div', { class: 'pd-under' }, ...under),
-    apps ? laneHints(scope) : null,
+    apps ? laneHints(lockLamp(text.pedal.lock, true, captureLock.mark)) : null,
     h('div', { class: 'pd-rule', 'aria-hidden': 'true' }),
     h(
       'div',
@@ -578,7 +637,7 @@ function standby(scope: Scope): Drawn {
       [levelEncoder(scope), kindSlide(scope), facts([[profileLabel, profileName]])],
     ),
     under.length === 0 ? null : h('div', { class: 'pd-under' }, ...under),
-    apps ? laneHints(scope) : null,
+    apps ? laneHints(null) : null,
   );
   return { element };
 }

@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Api } from '../src/api';
 import type { EngineStatus, Intent, Language, Snapshot } from '../src/bindings';
 import { fixture, fixtureNames } from '../src/fixtures';
+import { describeFormat } from '../src/format';
 import { type MockOptions, createMockApi } from '../src/mock';
 import type { Tab } from '../src/screens/common';
 import { mount } from '../src/skins/pedal';
@@ -798,5 +799,137 @@ describe('the segment readouts', () => {
     // Wider than the readout: dashes, as a real one overflows.
     expect(segCells('123456', 4).map((cell) => cell.glyph)).toEqual(['-', '-', '-', '-']);
     expect(segCells('+2.0', 4).map((cell) => cell.glyph)).toEqual([' ', ' ', '2', '0']);
+  });
+});
+
+/** How many segments are lit in each cell of a readout's digits. */
+function litPerCell(readout: Element): number[] {
+  const polygons = [...readout.querySelectorAll('.pd-seg polygon')];
+  const cells: number[] = [];
+  for (let at = 0; at < polygons.length; at += 7) {
+    cells.push(polygons.slice(at, at + 7).filter((polygon) => polygon.classList.contains('is-on')).length);
+  }
+  return cells;
+}
+
+describe('a switch the running engine holds shows a lit lock lamp, not a sentence (법칙 3)', () => {
+  it('lights the lamps by the entrance, the output path and the discard output while running', () => {
+    mounted(fixture('running-apps'), 'settings');
+    const lamps = $$('.pd-lock');
+    expect(lamps).toHaveLength(3);
+    expect(lamps.every((lamp) => lamp.classList.contains('is-lit'))).toBe(true);
+    const entrance = $('[data-group="pd-entrance"]')!;
+    expect(entrance.querySelector('.pd-slide')?.classList.contains('is-off')).toBe(true);
+    // The sentence saying what to turn off is on the legend plate, not printed by the switch; a screen reader hears it at the switch.
+    expect(seen(entrance).includes(ko.entrance.locked)).toBe(false);
+    expect(seen($('[data-group="pd-settings-notes"]')!)).toContain(ko.entrance.locked);
+    expect(entrance.querySelector('.pd-slide')?.getAttribute('aria-describedby')?.split(' ')).toContain('entrance-locked');
+    expect(document.getElementById('entrance-locked')?.textContent).toBe(ko.entrance.locked);
+    expect(seen($('[data-group="pd-settings-notes"]')!)).toContain(ko.settings.outputPathLocked);
+  });
+
+  it('keeps the lamps dark while the engine is off, and the plate without their sentences', () => {
+    mounted(fixture('ready-apps'), 'settings');
+    expect($$('.pd-lock').length).toBeGreaterThan(0);
+    expect($$('.pd-lock.is-lit')).toHaveLength(0);
+    expect($('[data-group="pd-entrance"] .pd-slide')?.classList.contains('is-off')).toBe(false);
+    expect(root.textContent).not.toContain(ko.entrance.locked);
+    expect(root.textContent).not.toContain(ko.settings.outputPathLocked);
+  });
+
+  it('locks the app keys on the status face the same way, and only with the app-sound entrance', () => {
+    mounted(fixture('running-apps'), 'status');
+    const box = $('[data-group="pd-lane-hints"]')!;
+    expect(box.querySelector('.pd-lock.is-lit')).not.toBeNull();
+    expect(seen(box).includes(ko.entrance.appsLocked)).toBe(false);
+    expect(seen($('[data-group="pd-status-notes"]')!)).toContain(ko.entrance.appsLocked);
+    root.replaceChildren();
+    mounted(fixture('running'), 'status');
+    expect($('.pd-lock')).toBeNull();
+    expect(root.textContent).not.toContain(ko.entrance.appsLocked);
+  });
+});
+
+describe('the DIP legend prints what each position does now (법칙 5)', () => {
+  it('says the on sentence under an on lever and the off sentence under an off lever', () => {
+    const start = fixture('ready');
+    const { app } = mounted(start, 'settings');
+    const lines = () => [...$('[data-group="pd-options"] .pd-dip-legend')!.querySelectorAll('li')].map((line) => line.textContent ?? '');
+    const levers = () => $$('[data-group="pd-options"] .pd-dip-row').map((lever) => lever.getAttribute('aria-pressed'));
+    expect(levers()).toEqual(['false', 'true', 'true']);
+    const on = lines();
+    expect(on).toHaveLength(3);
+    // The plain browser has no autostart: the legend says so.
+    expect(on[0]).toContain(ko.settings.autostartUnavailable);
+    expect(on[1]).toContain(ko.settings.routingHint(ko.endpoints[2]!.name, ko.endpoints[0]!.name));
+    expect(on[2]).toContain(ko.settings.asioHint(ko.settings.asioDevice));
+    expect(on[1]).not.toContain(ko.settings.routingOff);
+    app.draw({ ...start, routing: { ...start.routing, enabled: false }, asio: { ...start.asio!, enabled: false } });
+    expect(levers()).toEqual(['false', 'false', 'false']);
+    const off = lines();
+    expect(off[1]).toContain(ko.settings.routingOff);
+    expect(off[2]).toContain(ko.settings.asioOff);
+    expect(off[2]).not.toContain(ko.settings.asioHint(ko.settings.asioDevice));
+    // The lever is described by its own line.
+    expect($('[data-key="asio-enabled"]')?.getAttribute('aria-describedby')?.split(' ')).toContain('asio-hint');
+    expect(document.getElementById('asio-hint')?.textContent).toBe(ko.settings.asioOff);
+  });
+
+  it('the exclusive switch of the app-sound entrance prints its position alone', () => {
+    const start = fixture('ready-apps');
+    const { app } = mounted(start, 'settings');
+    const line = () => document.getElementById('app-capture-exclusive-hint')?.textContent;
+    expect(start.app_capture!.exclusive).toBe(false);
+    expect(line()).toBe(ko.entrance.exclusiveOff);
+    expect(root.textContent).not.toContain(ko.entrance.exclusiveOn);
+    app.draw({ ...start, app_capture: { ...start.app_capture!, exclusive: true } });
+    expect(line()).toBe(ko.entrance.exclusiveOn);
+    expect(root.textContent).not.toContain(ko.entrance.exclusiveOff);
+  });
+});
+
+describe('an input\u2019s format is parts (법칙 1)', () => {
+  it('puts the channels and rate on readouts and the kind on a tag, and says the sentence to a screen reader', () => {
+    const start = fixture('running');
+    mounted(start, 'status');
+    const first = $('.pd-ch[data-lane="0"]')!;
+    const status = start.engine!.endpoints[0]!;
+    const readouts = [...first.querySelectorAll('.pd-fmtparts .pd-readout')];
+    expect(readouts).toHaveLength(2);
+    // 8 channels: the last cell of a two-cell readout shows an 8, every segment lit.
+    expect(litPerCell(readouts[0]!)).toEqual([0, 7]);
+    // 48 kHz: a blank, a 4 (four segments) and an 8.
+    expect(litPerCell(readouts[1]!)).toEqual([0, 4, 7]);
+    expect(readouts[0]!.querySelector('.pd-unit')?.textContent).toBe(ko.pedal.channelsUnit);
+    expect(readouts[1]!.querySelector('.pd-unit')?.textContent).toBe('kHz');
+    expect(first.querySelector('.pd-fmt-kind')?.textContent).toBe('PCM \u00b7 float32');
+    expect(first.querySelector('.pd-fmtparts > .pd-sr')?.textContent).toBe(describeFormat(status.format));
+    // The sentence is not printed as a line.
+    expect(seen(first).includes(describeFormat(status.format))).toBe(false);
+  });
+
+  it('leaves the readouts dark with no input', () => {
+    const start = fixture('running');
+    const { app } = mounted(start, 'status');
+    const engine = start.engine!;
+    app.updateMeters({ ...engine, endpoints: engine.endpoints.map((status) => ({ ...status, format: null })) as EngineStatus['endpoints'] });
+    // The three driver inputs; the ASIO input has no format readouts.
+    const dark = $$('.pd-ch[data-lane] .pd-fmtparts');
+    expect(dark).toHaveLength(3);
+    for (const parts of dark) {
+      expect(parts.querySelector('.pd-fmt-kind')?.textContent).toBe(ko.status.noInput);
+      // A dash lights one segment per readout, nothing else.
+      for (const readout of parts.querySelectorAll('.pd-readout')) expect(litPerCell(readout).reduce((sum, lit) => sum + lit, 0)).toBe(1);
+    }
+  });
+
+  it('prints an app-sound lane\u2019s name on the heading and its app on the key alone', () => {
+    const start = fixture('running-apps');
+    mounted(start, 'status');
+    const first = $('.pd-ch[data-lane="0"]')!;
+    expect(seen(first.querySelector('.pd-ep')!)).toBe(ko.entrance.lanes[0]);
+    const name = start.app_capture!.main!.display_name;
+    expect(seen(first).split(name).length - 1).toBe(1);
+    expect(first.querySelector('[data-key]')?.textContent).toContain(name);
   });
 });

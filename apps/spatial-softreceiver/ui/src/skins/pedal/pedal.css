@@ -1286,6 +1286,17 @@ html[data-skin="pedal"] #app {
   cursor: default;
 }
 
+/* A locked slide (the engine runs): the actuator sunk flat in its slot, no ribs catching light, its names in the quieter ink. */
+.pd-slide.is-off .pd-slide-knob {
+  background: linear-gradient(180deg, var(--pd-act-2), var(--pd-act-3));
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.55), inset 0 -0.5px 0 rgba(255, 255, 255, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.35);
+  transform: translateX(calc(var(--at) * var(--step))) scale(0.92);
+}
+
+.pd-slide.is-off .pd-slide-stop.is-chosen {
+  color: var(--pd-ink-2);
+}
+
 .pd-slide-knob {
   position: absolute;
   top: 2px;
@@ -1603,6 +1614,43 @@ html[data-skin="pedal"] #app {
 .pd-dip-name {
   font-size: 12.5px;
   font-weight: 600;
+}
+
+/* The legend under the bank: a line per position, numbered like the levers, saying what its state does now (법칙 5). */
+.pd-dip-legend {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0 0 0 50px;
+  list-style: none;
+}
+
+.pd-dip-legend-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: baseline;
+}
+
+/* A lock lamp by a switch the running engine holds (법칙 3): lit amber with its printed name, its number pointing at the legend plate. */
+.pd-lockline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+.pd-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pd-lock-name {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--pd-ink-2);
 }
 
 /* ---------- drawn hardware ---------- */
@@ -2076,9 +2124,45 @@ html[data-skin="pedal"] #app {
   align-content: start;
 }
 
-/* A lane's app key keeps its ring's light off the lane's printed name above it. */
-.pd-ch-format > .pd-key:first-child {
+/* A lane's app key keeps its ring's light off the print above it and inside the face's clipped left edge. */
+.pd-ch-format > .pd-key {
   margin-top: 6px;
+  margin-left: 12px;
+}
+
+/* An app key's exe under the app's name, in small print, so a narrow column breaks between them. */
+.pd-key-sub {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--pd-ink-2);
+}
+
+/* The format as parts: the channel and rate readouts, the kind on a printed tag; a bitstream's carrier under them. */
+.pd-fmtparts {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+.pd-fmt-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px 10px;
+}
+
+.pd-fmt-kind {
+  margin-top: 2px;
+  padding: 1px 5px;
+  border: 1px solid var(--pd-rule);
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--pd-ink);
+  white-space: nowrap;
 }
 
 .pd-fmt {

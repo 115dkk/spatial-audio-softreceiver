@@ -141,10 +141,11 @@ export function outputRow(ctx: Context, keyPrefix: string): HTMLElement {
  * The devices that can take the apps' original sound (ADR 0043) as a row of
  * keys, the one in use lit (`data-region="discard-list"`). With none, the
  * setup step's band carries the supervisor's sentence and this is the
- * recheck key; elsewhere the sentence is printed here. `locked` says why the
- * keys are off (a running engine).
+ * recheck key; elsewhere the sentence is printed here. `lockedId` names the
+ * note saying why the keys cannot be pressed (a running engine); the caller
+ * stands the lock lamp by the row.
  */
-export function discardRow(ctx: Context, keyPrefix: string, locked: string | null = null): HTMLElement {
+export function discardRow(ctx: Context, keyPrefix: string, lockedId: string | null = null): HTMLElement {
   const { discards, discard } = captureOf(ctx.snapshot);
   if (discards.length === 0) {
     return ctx.snapshot.phase.kind === 'setup'
@@ -152,10 +153,9 @@ export function discardRow(ctx: Context, keyPrefix: string, locked: string | nul
       : fine(text.entrance.noDiscards);
   }
   ctx.offer('choose_discard');
-  const lockedId = `${keyPrefix}-locked`;
   const row = keyRow({
     label: text.wizard.discardsLabel,
-    describedBy: locked === null ? null : lockedId,
+    describedBy: lockedId,
     choices: discards.map((output, index) => ({
       value: output.id,
       label: output.name,
@@ -165,14 +165,14 @@ export function discardRow(ctx: Context, keyPrefix: string, locked: string | nul
     chosen: discard?.id ?? null,
     // While the engine runs the keys cannot be pressed, but the one in use keeps its light (법칙 3).
     off: false,
-    locked: ctx.busy || locked !== null,
+    locked: ctx.busy || lockedId !== null,
     busy: ctx.pending === 'choose_discard',
     sending: ctx.sending?.kind === 'choose_discard' ? ctx.sending.value : null,
     intent: 'choose_discard',
     choose: (id) => ctx.send({ kind: 'choose_discard', value: id }),
   });
   row.setAttribute('data-region', 'discard-list');
-  return locked === null ? row : h('div', null, row, fine(locked, lockedId));
+  return row;
 }
 
 /**

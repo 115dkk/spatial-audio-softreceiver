@@ -40,8 +40,8 @@ interface SceneEntry {
   shell?: GalleryShell;
   hold?: boolean;
   steps?: Step[];
-  /** A skin whose controls differ gives its own steps for the same state. */
-  skinSteps?: Partial<Record<Skin, Step[]>>;
+  /** A skin whose controls differ gives its own steps for the same state; `null` where the skin has no such state. */
+  skinSteps?: Partial<Record<Skin, Step[] | null>>;
   size?: [number, number];
   schemes?: Scheme[];
 }
@@ -64,7 +64,7 @@ export interface Scene {
   shell: GalleryShell;
   hold: boolean;
   steps: Step[];
-  skinSteps: Partial<Record<Skin, Step[]>>;
+  skinSteps: Partial<Record<Skin, Step[] | null>>;
   size: [width: number, height: number];
   schemes: Scheme[];
 }
@@ -175,7 +175,9 @@ async function scenePage(root: HTMLElement, name: string, lang: Language, skin: 
   await drawWindow(root, scene.fixture, lang, skin, scene.tab, { shell: scene.shell, hold: scene.hold });
   // The shell's autostart and updater answers land before the first step.
   await new Promise((resolve) => setTimeout(resolve, 0));
-  for (const step of scene.skinSteps[skin] ?? scene.steps) await run(step, scene.name);
+  const steps = scene.skinSteps[skin];
+  if (steps === null) throw new Error(`scene ${scene.name} has no state on the ${skin} skin`);
+  for (const step of steps ?? scene.steps) await run(step, scene.name);
   await ready();
 }
 

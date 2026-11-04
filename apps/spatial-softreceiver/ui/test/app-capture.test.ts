@@ -293,7 +293,9 @@ describe.each(SKINS)('the %s skin', (skin) => {
     expect($('[data-key="entrance"], [data-key="entrance-driver"]')).not.toBeNull();
     const list = $('[data-region="discard-list"]')!;
     expect(list.textContent).toContain(start.app_capture!.discards[1]!.name);
-    expect(root.textContent).toContain(ko.entrance.exclusiveHint);
+    // The pedal prints the exclusive switch's current position alone (ADR 0046, 법칙 5).
+    const exclusiveWords = skin === 'pedal' ? (start.app_capture!.exclusive ? ko.entrance.exclusiveOn : ko.entrance.exclusiveOff) : ko.entrance.exclusiveHint;
+    expect(root.textContent).toContain(exclusiveWords);
     expect(root.textContent).toContain(ko.entrance.ksNotUsed);
     // Kernel streaming is not offered with the app-sound entrance.
     const kernel = $<HTMLButtonElement | HTMLOptionElement>('[data-key="output-path-kernel_streaming"], #output-path option[value="kernel_streaming"]');

@@ -4,7 +4,7 @@
     architecture_mismatch = '이 묶음은 x64용이지만 현재 Windows 아키텍처는 {arch} 입니다.'
     certificate_cleanup = '시험을 마치면 uninstall.ps1이 이 인증서를 삭제합니다.'
     certificate_installed = '시험 드라이버 서명을 신뢰하려고 인증서를 설치했습니다: {subject}, {thumbprint}'
-    collect_failed = 'collect.ps1: {path} 파일을 쓰지 못했습니다.'
+    collect_failed = 'collect.ps1: {path} 파일을 기록하지 못했습니다.'
     collected_heading = '수집한 항목:'
     delete_driver_failed = '{published} 패키지를 지우지 못했습니다({code})'
     deleting_driver = '드라이버 패키지를 지웁니다: {published}(원본 {original})'

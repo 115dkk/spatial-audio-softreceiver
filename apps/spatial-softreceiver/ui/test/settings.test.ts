@@ -192,7 +192,7 @@ describe('the per-app entrance', () => {
     const { app, sent } = mounted(fixture('ready'));
     expect(checkbox()?.checked).toBe(true);
     expect(checkbox()?.disabled).toBe(false);
-    expect($('label[for="routing-enabled"]')?.textContent).toBe('앱을 알맞은 입구로 보내기');
+    expect($('label[for="routing-enabled"]')?.textContent).toBe(ko.settings.routingEnabled);
     expect($('#routing-hint')?.textContent).toBe(
       ko.settings.routingHint(catalogKo.names.endpoint_pass, catalogKo.names.endpoint_main),
     );
@@ -228,7 +228,7 @@ describe('the per-app entrance', () => {
     ]);
     // Each choice is named by its row's app and the column.
     expect(ruleSelect('applemusic.exe')?.getAttribute('aria-labelledby')).toBe('routing-app-0 routing-rule-head');
-    expect($('#routing-rule-head')?.textContent).toBe('보낼 입구');
+    expect($('#routing-rule-head')?.textContent).toBe(ko.settings.routingRule);
     expect($('.routing-empty')).toBeNull();
   });
 

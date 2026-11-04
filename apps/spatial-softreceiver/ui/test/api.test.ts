@@ -52,9 +52,9 @@ describe('the mock bridge', () => {
   it('keeps a failed intent in the snapshot, as the supervisor does', async () => {
     const api = createMockApi(fixture('running'));
     await expect(api.dispatch({ kind: 'choose_output', value: 'x' })).rejects.toMatchObject({
-      message: '먼저 끈 뒤 출력을 바꾸십시오.',
+      message: '공간 소프트리시버를 끈 뒤 출력을 바꾸십시오.',
     });
-    expect((await api.snapshot()).error?.message).toBe('먼저 끈 뒤 출력을 바꾸십시오.');
+    expect((await api.snapshot()).error?.message).toBe('공간 소프트리시버를 끈 뒤 출력을 바꾸십시오.');
   });
 });
 

@@ -20,8 +20,13 @@ export const NBSP = '\u00a0';
  * by a no-break space (NBSP) so a narrow card never splits them.
  */
 export function describeRate(hz: number): string {
+  return `${rateKhz(hz)}${NBSP}kHz`;
+}
+
+/** The rate's digits alone, for a readout with its unit printed beside it: 48, 44.1, 192. */
+export function rateKhz(hz: number): string {
   const khz = hz / 1000;
-  return `${Number.isInteger(khz) ? khz.toFixed(0) : khz.toFixed(1)}${NBSP}kHz`;
+  return Number.isInteger(khz) ? khz.toFixed(0) : khz.toFixed(1);
 }
 
 /** float/32 → "float32", int/24 in 32 → "int24/32". */

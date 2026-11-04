@@ -37,6 +37,7 @@ import {
   type DipRow,
   type NotePlate,
   dip,
+  dipLegend,
   encoder,
   fine,
   flowRoom,
@@ -45,6 +46,7 @@ import {
   ikey,
   keyRow,
   led,
+  lockLamp,
   mkey,
   notePlate,
   print,
@@ -69,8 +71,10 @@ const shortName = (entrance: Entrance) => text.pedal.lamps[ENTRANCES.indexOf(ent
 
 /**
  * The on/off options: login autostart, the input per app, the ASIO input.
+ * Under the bank a legend line per position says what the position does in
+ * its current state, so the print never describes the other state (법칙 5).
  * Where this PC cannot send apps to an input, the routing position carries a
- * numbered mark and the sentence stands on the face's legend plate (법칙 5).
+ * numbered mark and the sentence stands on the face's legend plate.
  */
 function options(ctx: Context, plate: NotePlate): Child[] {
   const t = text.settings;
@@ -79,11 +83,16 @@ function options(ctx: Context, plate: NotePlate): Child[] {
   const routing = ctx.snapshot.routing;
   const asio = ctx.snapshot.asio ?? ASIO_DEFAULTS;
   const asioSending = ctx.sending?.kind === 'set_asio_enabled' ? ctx.sending.value : null;
+  const autostartOn = (ctx.view.autostartWanted ?? ctx.view.autostart) === true;
+  const asioOn = asioSending ?? asio.enabled;
+  const legend: { id: string | null; words: Child }[] = [
+    { id: 'autostart-hint', words: !native ? t.autostartUnavailable : autostartOn ? t.autostartHint : t.autostartOff },
+  ];
   const rows: DipRow[] = [
     {
       key: 'autostart',
       label: t.autostart,
-      on: (ctx.view.autostartWanted ?? ctx.view.autostart) === true,
+      on: autostartOn,
       off: !native || ctx.view.autostart === null,
       locked: inFlight,
       busy: inFlight,
@@ -121,32 +130,37 @@ function options(ctx: Context, plate: NotePlate): Child[] {
       mark: unavailable.mark,
       toggle: (on) => ctx.send({ kind: 'set_routing_enabled', value: on }),
     });
+    legend.push({ id: 'routing-hint', words: routing.available && routing.enabled ? t.routingHint(windowsName('pass'), windowsName('main')) : t.routingOff });
   }
   ctx.offer('set_asio_enabled');
   rows.push({
     key: 'asio-enabled',
     label: t.asioEnabled,
-    on: asioSending ?? asio.enabled,
+    on: asioOn,
     off: false,
     locked: ctx.busy,
     busy: asioSending !== null,
     describedBy: 'asio-hint asio-limits',
     toggle: (on) => ctx.send({ kind: 'set_asio_enabled', value: on }),
   });
-  return [dip(rows, text.facts.on), hairline(), fine(native ? t.autostartHint : t.autostartUnavailable, 'autostart-hint')];
+  legend.push({ id: 'asio-hint', words: asioOn ? t.asioHint(t.asioDevice) : t.asioOff });
+  return [dip(rows, text.facts.on), hairline(), dipLegend(legend)];
 }
 
 /**
  * The entrance sound comes in through (ADR 0043) as a slide switch; taken
- * only while the engine is off, the app-sound stop off beside the reason
- * where the PC cannot run it. What each receives and what the chosen one
- * needs are printed under it.
+ * only while the engine is off, when a lock lamp beside it is lit and its
+ * number points at the sentence on the legend plate (법칙 3). The app-sound
+ * stop is off beside the reason where the PC cannot run it. What the chosen
+ * one receives and needs is printed under it.
  */
-function entrance(ctx: Context): Child[] {
+function entrance(ctx: Context, plate: NotePlate): Child[] {
   const e = text.entrance;
   const { snapshot } = ctx;
   const current = entranceOf(snapshot);
   const running = snapshot.phase.kind === 'running';
+  const lock = plate.note('wait', { id: 'entrance-locked', led: false });
+  lock.set(running ? e.locked : null);
   const other = current === 'driver' ? 'app_sound' : 'driver';
   const blocked = running ? null : entranceBlocked(snapshot, other);
   ctx.offer('choose_entrance');
@@ -172,10 +186,9 @@ function entrance(ctx: Context): Child[] {
   });
   control.classList.add('pd-leads');
   return [
-    control,
+    h('div', { class: 'pd-lockline' }, control, lockLamp(text.pedal.lock, running, lock.mark)),
     h('p', { class: 'pd-callout', id: 'entrance-gets', 'data-chosen': current }, entranceGets(current)),
     ...ENTRANCE_KINDS.filter((kind) => kind !== current).map((kind) => sr(entranceGets(kind), getsOf(kind))),
-    running ? fine(e.locked, 'entrance-locked') : null,
     blocked === null ? null : h('p', { class: 'pd-fine', id: 'entrance-blocked' }, print(e.unavailable, 'pd-tag'), ' ', blocked),
     hairline(),
     fine(entranceNeeds(current, snapshot).join(' '), 'entrance-hint'),
@@ -184,15 +197,19 @@ function entrance(ctx: Context): Child[] {
 
 /**
  * WASAPI exclusive or kernel streaming (ADR 0028) as a slide switch; taken
- * only while the engine is off. The app-sound entrance opens WASAPI, shared
- * unless its exclusive switch says otherwise, and never kernel streaming
- * (ADR 0043): that stop stays off beside the reason.
+ * only while the engine is off, its lock lamp lit meanwhile. The app-sound
+ * entrance opens WASAPI, shared unless its exclusive switch says otherwise,
+ * and never kernel streaming (ADR 0043): that stop stays off beside the
+ * reason. The exclusive switch's legend says what its position does now;
+ * while the engine runs its change waits, a numbered note on the plate.
  */
-function outputPath(ctx: Context): Child[] {
+function outputPath(ctx: Context, plate: NotePlate): Child[] {
   const t = text.settings;
   const e = text.entrance;
   const apps = appMode(ctx.snapshot);
   const running = ctx.snapshot.phase.kind === 'running';
+  const lock = plate.note('wait', { id: 'output-path-locked', led: false });
+  lock.set(running ? t.outputPathLocked : null);
   ctx.offer('set_output_path');
   const current = ctx.snapshot.output_path;
   const hintId = apps ? 'output-path-apps' : 'output-path-hint';
@@ -207,23 +224,30 @@ function outputPath(ctx: Context): Child[] {
     },
   ];
   const children: Child[] = [
-    slide({
-      labelledBy: 'pd-output-path-title',
-      describedBy: described(running && 'output-path-locked', hintId),
-      stops,
-      at: current,
-      off: running,
-      locked: ctx.busy,
-      busy: ctx.pending === 'set_output_path',
-      intent: 'set_output_path',
-      choose: (value) => ctx.send({ kind: 'set_output_path', value }),
-    }),
-    running ? fine(t.outputPathLocked, 'output-path-locked') : null,
+    h(
+      'div',
+      { class: 'pd-lockline' },
+      slide({
+        labelledBy: 'pd-output-path-title',
+        describedBy: described(running && 'output-path-locked', hintId),
+        stops,
+        at: current,
+        off: running,
+        locked: ctx.busy,
+        busy: ctx.pending === 'set_output_path',
+        intent: 'set_output_path',
+        choose: (value) => ctx.send({ kind: 'set_output_path', value }),
+      }),
+      lockLamp(text.pedal.lock, running, lock.mark),
+    ),
     hairline(),
     fine(apps ? e.ksNotUsed : t.outputPathHint, hintId),
   ];
   if (apps) {
     const sending = ctx.sending?.kind === 'set_app_capture_exclusive' ? ctx.sending.value : null;
+    const exclusiveOn = sending ?? captureOf(ctx.snapshot).exclusive;
+    const when = plate.note('wait', { id: 'app-capture-exclusive-when', led: false });
+    when.set(running ? e.exclusiveWhen : null);
     ctx.offer('set_app_capture_exclusive');
     children.push(
       hairline(),
@@ -232,18 +256,18 @@ function outputPath(ctx: Context): Child[] {
           {
             key: 'app-capture-exclusive',
             label: e.exclusive,
-            on: sending ?? captureOf(ctx.snapshot).exclusive,
+            on: exclusiveOn,
             off: false,
             locked: ctx.busy,
             busy: sending !== null,
             describedBy: described('app-capture-exclusive-hint', running && 'app-capture-exclusive-when'),
+            mark: when.mark,
             toggle: (on) => ctx.send({ kind: 'set_app_capture_exclusive', value: on }),
           },
         ],
         text.facts.on,
       ),
-      fine(e.exclusiveHint, 'app-capture-exclusive-hint'),
-      running ? fine(e.exclusiveWhen, 'app-capture-exclusive-when') : null,
+      dipLegend([{ id: 'app-capture-exclusive-hint', words: exclusiveOn ? e.exclusiveOn : e.exclusiveOff }]),
     );
   }
   return children;
@@ -448,7 +472,6 @@ function routing(ctx: Context): Child[] {
     );
   }
   return [
-    sr(t.routingHint(windowsName('pass'), windowsName('main')), 'routing-hint'),
     parts.length === 0
       ? null
       : h(
@@ -503,7 +526,6 @@ function asio(scope: Scope): Child[] {
   };
   follow(shown);
   return [
-    fine(t.asioHint(t.asioDevice), 'asio-hint'),
     fine(t.asioLimits, 'asio-limits'),
     hairline(),
     h('h3', { id: 'asio-layout-label', class: 'pd-label' }, t.asioLayout),
@@ -609,8 +631,14 @@ export function settingsFace(scope: Scope): Drawn {
   const t = text.settings;
   const { platform, driver } = ctx.snapshot;
   const apps = appMode(ctx.snapshot);
+  const running = ctx.snapshot.phase.kind === 'running';
   const plate = notePlate(text.banner.notesLabel, 'pd-settings-notes');
   const optionParts = options(ctx, plate);
+  const entranceParts = entrance(ctx, plate);
+  const outputPathParts = outputPath(ctx, plate);
+  // The discard output's keys are locked while the engine runs, like the output path.
+  const discardLock = plate.note('wait', { id: 'discard-locked', led: false });
+  discardLock.set(apps && running ? t.outputPathLocked : null);
   plate.renumber();
   const routingGroup = group('pd-routing', t.routing, routing(ctx));
   if (!apps) routingGroup.setAttribute('aria-describedby', 'routing-hint');
@@ -627,8 +655,8 @@ export function settingsFace(scope: Scope): Drawn {
           'div',
           { class: 'pd-stack' },
           group('pd-options', text.pedal.options, optionParts),
-          group('pd-entrance', text.entrance.label, entrance(ctx)),
-          group('pd-output-path', t.outputPath, outputPath(ctx)),
+          group('pd-entrance', text.entrance.label, entranceParts),
+          group('pd-output-path', t.outputPath, outputPathParts),
           plate.element,
         ),
         h('div', { class: 'pd-stack' }, group('pd-language', t.language, language(ctx)), group('pd-skin', text.skins.label, skin(ctx))),
@@ -639,7 +667,14 @@ export function settingsFace(scope: Scope): Drawn {
       'div',
       { class: 'pd-stack' },
       routingGroup,
-      apps ? group('pd-discard', text.entrance.discard, [fine(text.entrance.discardHint), hairline(), discardRow(ctx, 'settings-discard', ctx.snapshot.phase.kind === 'running' ? t.outputPathLocked : null)]) : null,
+      apps
+        ? group('pd-discard', text.entrance.discard, [
+            fine(text.entrance.discardHint),
+            hairline(),
+            discardRow(ctx, 'settings-discard', running ? 'discard-locked' : null),
+            running ? h('div', { class: 'pd-lockline' }, lockLamp(text.pedal.lock, true, discardLock.mark)) : null,
+          ])
+        : null,
       group('pd-asio', text.asio, asio(scope)),
     ),
     h(

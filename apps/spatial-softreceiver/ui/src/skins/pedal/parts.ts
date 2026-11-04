@@ -1173,6 +1173,41 @@ export function dip(rows: DipRow[], onWord: string): HTMLElement {
   );
 }
 
+// ---------------------------------------------------------------- lock lamp and DIP legend
+
+/**
+ * A lock lamp by a switch that cannot be moved while the engine runs (법칙
+ * 3): an LED in its holder with its printed name, lit while the switch is
+ * locked and dark otherwise. The sentence saying what to turn off is a
+ * numbered note on the face's legend plate, and `mark` is that note's mark,
+ * so the eye sees a lit lamp and a number, and a screen reader hears the
+ * sentence at the switch.
+ */
+export function lockLamp(word: string, lit: boolean, mark: HTMLElement | null = null): HTMLElement {
+  return h(
+    'span',
+    { class: `pd-lock${lit ? ' is-lit' : ''}` },
+    led('wait', lit ? 'on' : 'off', 'sm').element,
+    h('span', { class: 'pd-lock-name', 'aria-hidden': 'true' }, word),
+    mark,
+  );
+}
+
+/**
+ * The legend printed under a DIP switch bank: one line per position, its
+ * number matching the lever's, saying what the position's current state
+ * does (법칙 5). A line has an id so the lever can be described by it.
+ */
+export function dipLegend(rows: { id: string | null; words: Child }[]): HTMLElement {
+  return h(
+    'ol',
+    { class: 'pd-dip-legend' },
+    ...rows.map((row, index) =>
+      h('li', { class: 'pd-dip-legend-row' }, h('b', { class: 'pd-dip-n', 'aria-hidden': 'true' }, String(index + 1)), h('span', { class: 'pd-fine', id: row.id }, row.words)),
+    ),
+  );
+}
+
 // ---------------------------------------------------------------- drawn hardware
 
 const hexPoints = (cx: number, cy: number, r: number) =>

@@ -27,7 +27,8 @@ interface SceneEntry {
   tab: Tab | null;
   size?: [number, number];
   schemes?: Scheme[];
-  skinSteps?: Partial<Record<string, unknown[]>>;
+  /** A skin's own steps for the scene, or `null` where the skin has no such state and is not photographed. */
+  skinSteps?: Partial<Record<string, unknown[] | null>>;
 }
 
 interface Table {
@@ -135,6 +136,7 @@ async function check(page: Page, language: Language, skin: Skin, problems: strin
 
 for (const skin of table.skins) {
   for (const scene of scenes) {
+    if (scene.skinSteps?.[skin] === null) continue;
     for (const language of table.languages) {
       for (const scheme of scene.schemes) {
         const file = `${scene.name}.${language}.${scheme}.png`;

@@ -1349,6 +1349,6 @@
   "roles_taken": true,
   "error": null,
   "notes": [
-    "ASIO 입구를 시작하지 못했습니다. 시스템 소리는 계속 재생합니다: ASIO transport failed: owner_exists"
+    "ASIO 입력을 시작하지 못했습니다. 시스템 소리는 계속 재생합니다: ASIO transport failed: owner_exists"
   ]
 }

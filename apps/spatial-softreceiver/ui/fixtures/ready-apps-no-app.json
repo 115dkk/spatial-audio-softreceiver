@@ -922,7 +922,7 @@
   "driver_unsupported": null,
   "roles_taken": false,
   "error": {
-    "message": "켜기 전에 소리를 받을 앱을 고르십시오.",
+    "message": "켜기 전에 소리를 받을 앱을 선택하십시오.",
     "next": "none"
   },
   "notes": []

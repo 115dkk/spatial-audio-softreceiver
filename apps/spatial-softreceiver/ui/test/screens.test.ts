@@ -88,14 +88,14 @@ describe('what each state says', () => {
   it('choose_output lists the three outputs', () => {
     draw('setup-choose-output');
     for (const output of fixture('setup-choose-output').outputs) expect(textOf()).toContain(output.name);
-    expect(buttons().filter((label) => label === '이 출력 쓰기')).toHaveLength(3);
+    expect(buttons().filter((label) => label === ko.wizard.useOutput)).toHaveLength(3);
   });
 
   it('choose_output with no outputs says so', () => {
     const snapshot = fixture('setup-choose-output');
     snapshot.outputs = [];
     mountApp(root, createMockApi(snapshot)).draw(snapshot);
-    expect(textOf()).toContain('쓸 수 있는 출력 장치가 없습니다. 장치를 꽂고 다시 확인하십시오.');
+    expect(textOf()).toContain(ko.wizard.noOutputs);
     expect(buttons()).toContain('다시 확인');
   });
 
@@ -211,7 +211,7 @@ describe('what each state says', () => {
     draw('running-reconnecting');
     expect(fixture('running-reconnecting').error).toBeNull();
     const state = root.querySelector('#power-state');
-    expect(state?.textContent).toContain('다시 연결하는 중');
+    expect(state?.textContent).toContain(ko.status.reconnecting);
     expect(state?.className).toContain('tone-warning');
     // The head already says it: no band repeats it.
     expect(root.querySelector('.banner')).toBeNull();
@@ -230,7 +230,7 @@ describe('what each state says', () => {
     expect(textOf()).toContain(ko.profile.usingSpeakers);
     expect(textOf()).toContain(ko.profile.mapTitle);
     expect(textOf()).not.toContain('다음 조각');
-    expect(buttons()).toEqual(expect.arrayContaining(['헤드폰', '스피커사용 중', '보정 파일 고르기']));
+    expect(buttons()).toEqual(expect.arrayContaining(['헤드폰', '스피커사용 중', ko.profile.correctionImport]));
     expect(root.querySelector<HTMLSelectElement>('[data-key="speaker-layout"]')?.disabled).toBe(false);
     expect(root.querySelectorAll('[data-intent="test_direction"]')).toHaveLength(2);
     const slider = root.querySelector<HTMLInputElement>('input[type="range"]');
@@ -437,7 +437,7 @@ describe('sending intents', () => {
     app.draw(start);
     install()?.click();
     // Only the power switch turns a spinner; this button says what it does.
-    expect(install()?.textContent).toBe('설치하는 중');
+    expect(install()?.textContent).toBe(ko.wizard.driverInstalling);
     expect(install()?.querySelector('.spinner')).toBeNull();
     expect(install()?.disabled).toBe(true);
     install()?.click();
@@ -776,7 +776,7 @@ describe('the profile screen', () => {
     mountApp(root, api, { tab: 'profile' }).draw(start);
     tab('speakers')?.click();
     byKey('use-speakers')?.click();
-    expect(byKey('use-speakers')?.textContent).toBe('바꾸는 중');
+    expect(byKey('use-speakers')?.textContent).toBe(ko.profile.switching);
     expect(byKey('use-speakers')?.getAttribute('aria-busy')).toBe('true');
     expect(byKey('use-speakers')?.disabled).toBe(true);
     expect(byKey('speaker-layout')?.disabled).toBe(true);
@@ -1420,15 +1420,15 @@ describe('the upmix screen', () => {
   it('asks for a plugin when the VST upmixer has none, and offers no editor', () => {
     recording(music('ready', { choice: 'plugin', effective: 'plugin' }));
     const block = card(1)?.querySelector('.upmix-plugin');
-    expect(block?.querySelector('.upmix-no-plugin')?.textContent).toBe('고른 플러그인이 없습니다.');
-    expect(block?.textContent).toContain('먼저 업믹스 플러그인을 고르십시오.');
+    expect(block?.querySelector('.upmix-no-plugin')?.textContent).toBe(ko.upmix.noPlugin);
+    expect(block?.textContent).toContain(ko.upmix.needsPlugin);
     expect(block?.querySelector('dl')).toBeNull();
     expect(byKey('plugin-editor-1')).toBeNull();
     for (const key of ['plugin-folder-1', 'plugin-file-1']) {
       expect(byKey(key)?.disabled, key).toBe(false);
       expect(describedBy(byKey(key)), key).toContain('plugin-1-needed');
     }
-    expect(stateOf(1)?.textContent).toBe('쓰지 않음');
+    expect(stateOf(1)?.textContent).toBe(ko.upmix.stateOff);
   });
 
   it.each([
@@ -1445,8 +1445,8 @@ describe('the upmix screen', () => {
       return path;
     };
     const { sent } = recording(fixture('ready-upmix'), { pickFolder: pick, pickFile: pick });
-    expect(byKey('plugin-folder-1')?.textContent).toBe('VST 3 묶음 폴더 고르기');
-    expect(byKey('plugin-file-1')?.textContent).toBe('플러그인 파일 고르기');
+    expect(byKey('plugin-folder-1')?.textContent).toBe(ko.upmix.pickFolder);
+    expect(byKey('plugin-file-1')?.textContent).toBe(ko.upmix.pickFile);
     byKey(key)?.click();
     await settle();
     expect(picked).toEqual([dialog]);
@@ -1491,35 +1491,35 @@ describe('the upmix screen', () => {
   describe('the state line', () => {
     it('stopped: off, or starting when turned on, or not applied to the kind in use', () => {
       draw('ready', 'upmix');
-      expect([stateOf(0)?.textContent, stateOf(1)?.textContent]).toEqual(['쓰지 않음', '쓰지 않음']);
+      expect([stateOf(0)?.textContent, stateOf(1)?.textContent]).toEqual([ko.upmix.stateOff, ko.upmix.stateOff]);
       expect(stateOf(0)?.classList.contains('tone-off')).toBe(true);
 
       draw('ready-upmix', 'upmix');
-      expect(stateOf(0)?.textContent).toBe('쓰지 않음');
-      expect(stateOf(1)?.textContent).toBe('켜면 시작합니다');
+      expect(stateOf(0)?.textContent).toBe(ko.upmix.stateOff);
+      expect(stateOf(1)?.textContent).toBe(ko.upmix.stateAfterEnable);
 
       // Speakers are in use and do not apply upmixing: it still starts when
       // turned on, and the sound will go around it, as the line says.
       draw('ready-speakers-upmix-off', 'upmix');
-      expect(stateOf(1)?.querySelector('.upmix-state-word')?.textContent).toBe('켜면 시작합니다');
-      expect(stateOf(1)?.querySelector('.upmix-state-reason')?.textContent).toBe('지금 쓰는 출력에는 적용하지 않음');
+      expect(stateOf(1)?.querySelector('.upmix-state-word')?.textContent).toBe(ko.upmix.stateAfterEnable);
+      expect(stateOf(1)?.querySelector('.upmix-state-reason')?.textContent).toBe(ko.upmix.bypassKindOff);
       expect(stateOf(1)?.classList.contains('tone-off')).toBe(true);
       expect(stateOf(1)?.classList.contains('is-alert')).toBe(false);
 
       // Running, but stopped: whatever the switch says, it is just off.
       recording(music('running-upmix', { state: { kind: 'stopped' }, latency_ms: null }));
-      expect(stateOf(1)?.textContent).toBe('쓰지 않음');
+      expect(stateOf(1)?.textContent).toBe(ko.upmix.stateOff);
       const off = fixture('running-upmix');
       off.upmix.headphones = false;
       Object.assign(off.upmix.endpoints[1]!, { state: { kind: 'stopped' }, latency_ms: null });
       recording(off);
-      expect(stateOf(1)?.textContent).toBe('쓰지 않음');
+      expect(stateOf(1)?.textContent).toBe(ko.upmix.stateOff);
     });
 
     it('starting turns the spinner', () => {
       recording(music('running-upmix', { state: { kind: 'starting' }, latency_ms: null }));
       const line = stateOf(1);
-      expect(line?.textContent).toBe('시작하는 중');
+      expect(line?.textContent).toBe(ko.upmix.stateStarting);
       expect(line?.querySelector('.spinner')?.getAttribute('aria-hidden')).toBe('true');
       expect(line?.querySelector('.lamp')).toBeNull();
     });
@@ -1748,7 +1748,7 @@ describe('the upmix screen', () => {
   describe('while the sound goes around a running upmixer', () => {
     const REASONS: [UpmixBypass, string][] = [
       ['native_surround', '모노·스테레오가 아니라 업믹스하지 않음'],
-      ['kind_off', '지금 쓰는 출력에는 적용하지 않음'],
+      ['kind_off', ko.upmix.bypassKindOff],
       ['rate_change', '새 표본율에 맞추는 중'],
     ];
 
@@ -1776,7 +1776,7 @@ describe('the upmix screen', () => {
         '지연 23.3\u00a0ms',
         '출력 L R C LFE Ls Rs',
       ]);
-      expect([stateOf(0)?.textContent, stateOf(1)?.textContent]).toEqual(['쓰지 않음', '쓰지 않음']);
+      expect([stateOf(0)?.textContent, stateOf(1)?.textContent]).toEqual([ko.upmix.stateOff, ko.upmix.stateOff]);
     });
 
     it.each(REASONS)('%s: the status card says it in words, the lamp unlit', (bypass, reason) => {

@@ -123,7 +123,7 @@ describe('the ASIO panel on the settings screen', () => {
   it('names the ASIO device as the DAW lists it, in English on the Korean screen too', () => {
     mounted(fixture('ready'));
     expect(catalogKo.names.product).not.toBe(catalogEn.names.product);
-    expect($('#asio-hint')?.textContent).toContain(`ASIO 장치로 ${catalogEn.names.product}를 고르면`);
+    expect($('#asio-hint')?.textContent).toBe(ko.settings.asioHint(catalogEn.names.product));
     expect($('#asio-hint')?.textContent).not.toContain(catalogKo.names.product + '를');
   });
 
