@@ -193,6 +193,7 @@
     "test_signing": true,
     "secure_boot": "disabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "The saved output device could not be found: DENON AVR (NVIDIA High Definition Audio)",

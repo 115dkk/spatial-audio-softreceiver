@@ -26,6 +26,7 @@ use ssr_types::{
 };
 use supervisor::machine::Config;
 use supervisor::restore_point::{self, RestorePoint, RestorePointError};
+use supervisor::text::Message;
 use supervisor::{
     EngineHandle, LaunchCapture, LaunchOptions, Launcher, PluginClass, PluginEvent, PluginHost,
     PluginHostError, PluginInstance, PluginSetting, Session, SessionError, SessionNotice, Settings,
@@ -1488,7 +1489,7 @@ fn the_wizard_walks_every_step_on_a_fresh_pc() {
     assert_eq!(
         supervisor.handle(Intent::ChooseOutput(id(OURS))),
         Err(error(
-            "Spatial SoftReceiver 자신을 출력으로 고를 수 없습니다.",
+            "Spatial SoftReceiver 자신을 출력으로 선택할 수 없습니다.",
             NextAction::None
         ))
     );
@@ -1772,6 +1773,51 @@ fn an_unknown_exclusive_policy_counts_as_fine() {
     assert_eq!(snapshot.error, None);
     assert_eq!(snapshot.driver, Some(unknown));
     assert!(shared.take_calls().is_empty());
+}
+
+#[test]
+fn snapshot_reports_the_driver_os_requirement() {
+    let mut world = ready_pc();
+    world.platform.os_build = 18_363;
+    let (_, mut supervisor) = start(world, Settings::default());
+    supervisor.handle(Intent::BeginSetup).unwrap_err();
+
+    assert_eq!(
+        supervisor.snapshot().driver_unsupported,
+        Some(
+            Message::OsRequirement {
+                min_build: Config::MIN_OS_BUILD,
+            }
+            .render(Language::Ko)
+        )
+    );
+}
+
+#[test]
+fn snapshot_omits_driver_unsupported_on_a_supported_pc() {
+    let (_, mut supervisor) = start(ready_pc(), Settings::default());
+    supervisor.handle(Intent::BeginSetup).unwrap();
+
+    assert_eq!(supervisor.snapshot().driver_unsupported, None);
+}
+
+#[test]
+fn snapshot_reports_the_driver_architecture_mismatch() {
+    let mut world = ready_pc();
+    world.platform.arch = Arch::Arm64;
+    let (_, mut supervisor) = start(world, Settings::default());
+    supervisor.handle(Intent::BeginSetup).unwrap_err();
+
+    assert_eq!(
+        supervisor.snapshot().driver_unsupported,
+        Some(
+            Message::ArchitectureMismatch {
+                build: Arch::X64,
+                pc: Arch::Arm64,
+            }
+            .render(Language::Ko)
+        )
+    );
 }
 
 #[test]
@@ -2094,8 +2140,8 @@ fn restore_notes_a_previous_device_that_disappeared() {
     assert_eq!(
         snapshot.notes,
         [
-            "이전 기본 장치(멀티미디어)를 찾을 수 없어 Windows가 고르게 둡니다.",
-            "이전 기본 장치(통신)를 찾을 수 없어 Windows가 고르게 둡니다.",
+            "이전 기본 장치(멀티미디어)를 찾을 수 없어 Windows가 선택하게 둡니다.",
+            "이전 기본 장치(통신)를 찾을 수 없어 Windows가 선택하게 둡니다.",
         ]
     );
     assert_eq!(snapshot.phase, Phase::Ready);
@@ -2126,7 +2172,7 @@ fn a_previous_role_already_ours_falls_back_to_the_chosen_output() {
     assert_eq!(
         supervisor.snapshot().notes,
         [format!(
-            "이전 기본 장치(콘솔)를 찾을 수 없어 고른 출력으로 되돌렸습니다: {DAC_NAME}"
+            "이전 기본 장치(콘솔)를 찾을 수 없어 선택한 출력으로 되돌렸습니다: {DAC_NAME}"
         )]
     );
     assert_eq!(shared.get().roles.console, Some(id(DAC)));
@@ -2152,9 +2198,9 @@ fn a_gone_previous_device_falls_back_to_the_chosen_output() {
     assert_eq!(
         supervisor.snapshot().notes,
         [
-            format!("이전 기본 장치(콘솔)를 찾을 수 없어 고른 출력으로 되돌렸습니다: {DAC_NAME}"),
+            format!("이전 기본 장치(콘솔)를 찾을 수 없어 선택한 출력으로 되돌렸습니다: {DAC_NAME}"),
             format!(
-                "이전 기본 장치(멀티미디어)를 찾을 수 없어 고른 출력으로 되돌렸습니다: {DAC_NAME}"
+                "이전 기본 장치(멀티미디어)를 찾을 수 없어 선택한 출력으로 되돌렸습니다: {DAC_NAME}"
             ),
         ]
     );
@@ -2619,7 +2665,10 @@ fn unlisted_and_refused_intents_leave_the_state_alone() {
     supervisor.handle(Intent::Enable).unwrap();
     assert_eq!(
         supervisor.handle(Intent::ChooseOutput(id(DAC))),
-        Err(error("먼저 끈 뒤 출력을 바꾸십시오.", NextAction::None))
+        Err(error(
+            "공간 소프트리시버를 끈 뒤 출력을 바꾸십시오.",
+            NextAction::None
+        ))
     );
     assert_eq!(supervisor.snapshot().phase, Phase::Running);
     assert!(shared.take_calls().contains(&"launch {realtek}".to_owned()));
@@ -3385,7 +3434,7 @@ fn the_device_must_accept_the_speaker_layout() {
     assert_eq!(
         supervisor.handle(Intent::SetSpeakerLayout(SpeakerLayout::Surround714)),
         Err(error(
-            "고른 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 고르십시오.",
+            "선택한 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 선택하십시오.",
             NextAction::None,
         ))
     );
@@ -3403,7 +3452,7 @@ fn the_device_must_accept_the_speaker_layout() {
     assert_eq!(
         supervisor.handle(Intent::SetProfileKind(ProfileKind::Speakers)),
         Err(error(
-            "고른 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 고르십시오.",
+            "선택한 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 선택하십시오.",
             NextAction::None,
         ))
     );
@@ -3416,7 +3465,7 @@ fn the_device_must_accept_the_speaker_layout() {
     assert_eq!(
         supervisor.handle(Intent::Enable),
         Err(error(
-            "고른 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 고르십시오.",
+            "선택한 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 선택하십시오.",
             NextAction::None,
         ))
     );
@@ -3444,7 +3493,7 @@ fn the_device_must_accept_the_correction_channels() {
     world.layout_support = Ok(false);
     let (shared, mut supervisor) = start(world, dac_settings());
     let unsupported = error(
-        "고른 출력 장치가 독점 모드에서 보정 파일에 지정된 3채널 출력을 지원하지 않습니다. 다른 출력 장치를 고르십시오.",
+        "선택한 출력 장치가 독점 모드에서 보정 파일에 지정된 3채널 출력을 지원하지 않습니다. 다른 출력 장치를 선택하십시오.",
         NextAction::None,
     );
     assert_eq!(
@@ -4077,10 +4126,10 @@ fn skin_changes_in_every_phase_and_is_refused_after_quit() {
 
     for mut supervisor in [setup, ready, running_machine, faulted] {
         let phase = supervisor.snapshot().phase;
-        supervisor.handle(Intent::SetSkin(Skin::Panel)).unwrap();
+        supervisor.handle(Intent::SetSkin(Skin::Pedal)).unwrap();
         let snapshot = supervisor.snapshot();
         assert_eq!(snapshot.phase, phase);
-        assert_eq!(snapshot.skin, Skin::Panel, "{phase:?}");
+        assert_eq!(snapshot.skin, Skin::Pedal, "{phase:?}");
     }
 
     let mut quit = start(ready_pc(), dac_settings()).1;
@@ -4114,12 +4163,25 @@ fn skin_settings_migrate_and_survive_a_supervisor_restart() {
     assert_eq!(old_settings.skin, Skin::Standard);
 
     let (_, mut supervisor) = start(ready_pc(), old_settings);
-    supervisor.handle(Intent::SetSkin(Skin::Panel)).unwrap();
+    supervisor.handle(Intent::SetSkin(Skin::Pedal)).unwrap();
     let saved = serde_json::to_string(supervisor.settings()).unwrap();
     let settings: Settings = serde_json::from_str(&saved).unwrap();
     let (_, restarted) = start(ready_pc(), settings);
-    assert_eq!(restarted.settings().skin, Skin::Panel);
-    assert_eq!(restarted.snapshot().skin, Skin::Panel);
+    assert_eq!(restarted.settings().skin, Skin::Pedal);
+    assert_eq!(restarted.snapshot().skin, Skin::Pedal);
+}
+
+#[test]
+fn a_stored_front_panel_skin_reads_as_the_pedal() {
+    // ADR 0046: the pedal replaced the front panel, so a settings file
+    // written before keeps its choice instead of falling back.
+    let mut old_json = serde_json::to_value(dac_settings()).unwrap();
+    old_json["skin"] = serde_json::json!("panel");
+    let old_settings: Settings = serde_json::from_value(old_json).unwrap();
+    assert_eq!(old_settings.skin, Skin::Pedal);
+
+    let saved = serde_json::to_value(&old_settings).unwrap();
+    assert_eq!(saved["skin"], serde_json::json!("pedal"));
 }
 
 #[test]
@@ -4149,7 +4211,7 @@ fn default_language_and_failed_profile_errors_follow_language_changes() {
         .unwrap();
     assert_eq!(
         supervisor.snapshot().error.unwrap().message,
-        "hesuvi.wav, hrir.wav, Impulcifer의 배치별 BRIR 파일 또는 방향별 WAV 폴더를 고르십시오."
+        "hesuvi.wav, hrir.wav, Impulcifer의 배치별 BRIR 파일 또는 방향별 WAV 폴더를 선택하십시오."
     );
 }
 
@@ -5152,6 +5214,50 @@ fn recovery_record(apps: Vec<supervisor::app_outputs::SentApp>) -> String {
 }
 
 #[test]
+fn app_sound_on_a_pc_too_old_for_both_reports_the_driver_requirement() {
+    let mut world = ready_pc();
+    world.platform.os_build = 18_363;
+    let settings = Settings {
+        entrance: EntranceKind::AppSound,
+        ..Settings::default()
+    };
+    let (_, mut supervisor) = start(world, settings);
+    let expected = Message::OsRequirement {
+        min_build: Config::MIN_OS_BUILD,
+    }
+    .render(Language::Ko);
+
+    assert_eq!(
+        supervisor.handle(Intent::BeginSetup),
+        Err(error(&expected, NextAction::None))
+    );
+    let snapshot = supervisor.snapshot();
+    assert_eq!(snapshot.phase, Phase::Setup(SetupStep::Unsupported));
+    assert_eq!(snapshot.error.unwrap().message, expected);
+}
+
+#[test]
+fn app_sound_on_a_driver_supported_pc_reports_its_own_requirement() {
+    let settings = Settings {
+        entrance: EntranceKind::AppSound,
+        ..Settings::default()
+    };
+    let (_, mut supervisor) = start(ready_pc(), settings);
+    let expected = Message::AppCaptureOsRequirement {
+        min_build: Config::MIN_APP_CAPTURE_BUILD,
+    }
+    .render(Language::Ko);
+
+    assert_eq!(
+        supervisor.handle(Intent::BeginSetup),
+        Err(error(&expected, NextAction::None))
+    );
+    let snapshot = supervisor.snapshot();
+    assert_eq!(snapshot.phase, Phase::Setup(SetupStep::Unsupported));
+    assert_eq!(snapshot.error.unwrap().message, expected);
+}
+
+#[test]
 fn app_entrance_choice_is_saved_even_when_the_build_is_unsupported() {
     let (_, mut supervisor) = start(ready_pc(), Settings::default());
     assert_eq!(supervisor.phase(), &Phase::Setup(SetupStep::Welcome));
@@ -5167,6 +5273,24 @@ fn app_entrance_choice_is_saved_even_when_the_build_is_unsupported() {
             .as_ref()
             .is_some_and(|error| error.next == NextAction::None)
     );
+}
+
+#[test]
+fn app_capture_enable_prefers_the_driver_blocker_when_neither_entrance_can_run() {
+    let (shared, mut supervisor) = start(app_capture_pc(), app_capture_settings(false));
+    shared.get().platform.os_build = 18_363;
+    let expected = Message::OsRequirement {
+        min_build: Config::MIN_OS_BUILD,
+    }
+    .render(Language::Ko);
+
+    assert_eq!(
+        supervisor.handle(Intent::Enable),
+        Err(error(&expected, NextAction::None))
+    );
+    let snapshot = supervisor.snapshot();
+    assert_eq!(snapshot.phase, Phase::Setup(SetupStep::Unsupported));
+    assert_eq!(snapshot.error.unwrap().message, expected);
 }
 
 #[test]

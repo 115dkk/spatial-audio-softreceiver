@@ -17,6 +17,7 @@ import {
   entranceName,
   entranceNeeds,
   entranceOf,
+  switchTarget,
 } from '../../screens/entrance';
 import { driverRows, platformRows } from '../../screens/facts';
 import { text } from '../../text';
@@ -162,7 +163,7 @@ function endpointNames(): HTMLElement {
 /**
  * The two entrances as a table (law 6): what each receives and needs, and
  * the button that chooses it (also the palette's command of that name). One
- * the PC cannot run is listed with the supervisor's reason, its command too.
+ * the PC cannot run is listed with the supervisor's reason, without a command.
  */
 function entranceTable(b: Build): HTMLElement {
   const e = text.entrance;
@@ -171,7 +172,7 @@ function entranceTable(b: Build): HTMLElement {
   const rows = ENTRANCE_KINDS.map((kind) => {
     const blocked = entranceBlocked(snapshot, kind);
     b.group = e.label;
-    const control = act(b, kind === 'driver' ? e.chooseDriver : e.chooseAppSound, { kind: 'choose_entrance', value: kind }, {
+    const control = blocked !== null ? null : act(b, kind === 'driver' ? e.chooseDriver : e.chooseAppSound, { kind: 'choose_entrance', value: kind }, {
       key: entranceKey(kind),
       // Neither entrance is the main action: the two weigh the same.
       variant: 'line',
@@ -201,9 +202,9 @@ function entranceTable(b: Build): HTMLElement {
   return table({ label: e.label, head: [e.label, e.gets, e.needs, null], rows, className: 'cn-entrance-choice' });
 }
 
-/** The button that moves to the other entrance, with why it cannot when the PC cannot run that one. */
+/** The button that moves to the other entrance, only when this PC can run it. */
 function switchEntrance(b: Build, kind: EntranceKind): Child[] {
-  const blocked = entranceBlocked(b.ctx.snapshot, kind);
+  if (switchTarget(b.ctx.snapshot) !== kind) return [];
   const w = text.wizard;
   return [
     h(
@@ -211,11 +212,8 @@ function switchEntrance(b: Build, kind: EntranceKind): Child[] {
       { class: 'cn-actions' },
       act(b, kind === 'driver' ? w.switchToDriver : w.switchToAppSound, { kind: 'choose_entrance', value: kind }, {
         key: entranceKey(kind),
-        locked: blocked,
-        describedBy: blocked === null ? null : `${entranceKey(kind)}-blocked`,
       }),
     ),
-    blocked === null ? null : hint(blocked, `${entranceKey(kind)}-blocked`, 'cn-measure'),
   ];
 }
 
@@ -259,7 +257,7 @@ function stepArea(b: Build, step: SetupStep): HTMLElement {
   const { ctx } = b;
   const { snapshot } = ctx;
   const w = text.wizard;
-  const apps = entranceOf(snapshot) === 'app_sound';
+  const apps = switchTarget(snapshot) === 'driver';
   const actions = (...children: Child[]) => h('div', { class: 'cn-actions' }, ...children);
   let title: string;
   let body: Child[];
@@ -282,7 +280,7 @@ function stepArea(b: Build, step: SetupStep): HTMLElement {
         para(w.testSigningBody, 'cn-measure'),
         snapshot.platform === null ? null : facts(platformRows(snapshot.platform)),
         actions(act(b, text.banner.recheck, { kind: 'recheck' }, { key: 'recheck', variant: 'ink' })),
-        para(w.testSigningOther, 'cn-measure cn-step-other'),
+        switchTarget(snapshot) === 'app_sound' ? para(w.testSigningOther, 'cn-measure cn-step-other') : null,
         ...switchEntrance(b, 'app_sound'),
       ];
       break;

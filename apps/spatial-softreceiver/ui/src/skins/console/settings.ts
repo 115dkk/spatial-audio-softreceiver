@@ -12,8 +12,8 @@ import { described } from '../../screens/common';
 import {
   ENTRANCE_KINDS,
   appMode,
-  appSoundBlocked,
   captureOf,
+  entranceBlocked,
   entranceGets,
   entranceName as kindName,
   entranceNeeds,
@@ -124,7 +124,8 @@ function entranceRows(b: Build): HTMLElement[] {
   const { snapshot } = ctx;
   const current = entranceOf(snapshot);
   const running = snapshot.phase.kind === 'running';
-  const blocked = appSoundBlocked(snapshot);
+  const other = current === 'driver' ? 'app_sound' : 'driver';
+  const blocked = running ? null : entranceBlocked(snapshot, other);
   ctx.offer('choose_entrance');
   const rows: HTMLElement[] = [
     row(
@@ -136,7 +137,7 @@ function entranceRows(b: Build): HTMLElement[] {
           label: e.label,
           options: ENTRANCE_KINDS.map((kind) => [kind, kindName(kind)] as const),
           current,
-          unavailable: new Map<EntranceKind, string>(blocked === null || current === 'app_sound' ? [] : [['app_sound', blocked]]),
+          unavailable: new Map<EntranceKind, string>(blocked === null ? [] : [[other, blocked]]),
           locked: running ? e.locked : null,
           busy: ctx.pending === 'choose_entrance',
           describedBy: described(running && 'entrance-locked', blocked !== null && 'entrance-blocked', 'entrance-hint'),

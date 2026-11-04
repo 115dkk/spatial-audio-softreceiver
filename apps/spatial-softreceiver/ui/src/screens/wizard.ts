@@ -7,7 +7,7 @@ import type { EntranceKind, SetupStep, Snapshot } from '../bindings';
 import { facts, h } from '../dom';
 import { text } from '../text';
 import { brand } from './nav';
-import { type Context, described, intentButton } from './common';
+import { type Context, intentButton } from './common';
 import {
   ENTRANCE_KINDS,
   captureOf,
@@ -19,6 +19,7 @@ import {
   entranceOf,
   stepIndex,
   stepLabels,
+  switchTarget,
 } from './entrance';
 import { driverRows, platformRows } from './facts';
 
@@ -50,23 +51,22 @@ const para = (sentence: string) => h('p', { class: 'body-text' }, sentence);
 /**
  * One entrance to choose at the first step: its name, what it receives and
  * what it needs, and the button that chooses it (`choose_entrance`, which
- * also starts the checks). One the PC cannot run stays in view, locked,
- * beside the supervisor's reason.
+ * also starts the checks). One the PC cannot run stays in view with the
+ * supervisor's reason, without a button.
  */
 function entranceChoice(ctx: Context, kind: EntranceKind): HTMLElement {
   const e = text.entrance;
   const titleId = `${entranceKey(kind)}-title`;
   const blockedId = `${entranceKey(kind)}-blocked`;
   const blocked = entranceBlocked(ctx.snapshot, kind);
-  const choose = intentButton(
+  const choose = blocked !== null ? null : intentButton(
     ctx,
     kind === 'driver' ? e.chooseDriver : e.chooseAppSound,
     { kind: 'choose_entrance', value: kind },
     // Neither entrance is the main action: the two weigh the same.
     { key: entranceKey(kind), variant: 'secondary' },
   );
-  if (blocked !== null) choose.disabled = true;
-  choose.setAttribute('aria-describedby', described(titleId, blocked !== null && blockedId) ?? titleId);
+  choose?.setAttribute('aria-describedby', titleId);
   return h(
     'article',
     { class: `entrance-choice${blocked === null ? '' : ' is-blocked'}`, 'aria-labelledby': titleId, 'data-entrance': kind },
@@ -95,22 +95,15 @@ function welcome(ctx: Context): HTMLElement {
   );
 }
 
-/**
- * The button that moves to the other entrance from a step this one cannot
- * pass; locked beside the reason when the PC cannot run that one either.
- */
-function switchEntrance(ctx: Context, kind: EntranceKind): HTMLElement {
-  const blocked = entranceBlocked(ctx.snapshot, kind);
-  const button = intentButton(
+/** The button that moves to the other entrance, only when this PC can run it. */
+function switchEntrance(ctx: Context, kind: EntranceKind): HTMLElement | null {
+  if (switchTarget(ctx.snapshot) !== kind) return null;
+  return intentButton(
     ctx,
     kind === 'driver' ? text.wizard.switchToDriver : text.wizard.switchToAppSound,
     { kind: 'choose_entrance', value: kind },
     { key: entranceKey(kind), variant: 'secondary' },
   );
-  if (blocked === null) return button;
-  button.disabled = true;
-  button.setAttribute('aria-describedby', `${entranceKey(kind)}-blocked`);
-  return h('div', { class: 'entrance-switch' }, button, h('p', { id: `${entranceKey(kind)}-blocked`, class: 'hint' }, blocked));
 }
 
 function platformFacts(snapshot: Snapshot): HTMLElement | null {
@@ -118,7 +111,7 @@ function platformFacts(snapshot: Snapshot): HTMLElement | null {
 }
 
 function unsupported(ctx: Context): HTMLElement {
-  if (entranceOf(ctx.snapshot) === 'app_sound') {
+  if (switchTarget(ctx.snapshot) === 'driver') {
     return card(
       text.wizard.appUnsupportedTitle,
       para(text.wizard.appUnsupportedBody),
@@ -144,7 +137,7 @@ function notTestSigning(ctx: Context): HTMLElement {
       { class: 'actions' },
       intentButton(ctx, text.banner.recheck, { kind: 'recheck' }, { key: 'recheck', variant: 'primary' }),
     ),
-    h('p', { class: 'body-text wizard-other' }, text.wizard.testSigningOther),
+    switchTarget(ctx.snapshot) === 'app_sound' ? h('p', { class: 'body-text wizard-other' }, text.wizard.testSigningOther) : null,
     h('div', { class: 'actions' }, switchEntrance(ctx, 'app_sound')),
   );
 }

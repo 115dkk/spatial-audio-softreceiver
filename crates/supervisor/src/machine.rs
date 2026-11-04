@@ -863,6 +863,11 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             .as_ref()
             .is_some_and(|platform| platform.os_build >= self.config.min_app_capture_build);
         let language = self.language();
+        let driver_unsupported = self
+            .platform
+            .as_ref()
+            .and_then(|platform| self.driver_unsupported(platform))
+            .map(|message| message.render(language));
         Snapshot {
             language,
             language_choice: self.settings.language,
@@ -892,6 +897,7 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             chosen_output: self.settings.output.clone(),
             driver: self.driver.clone(),
             platform: self.platform.clone(),
+            driver_unsupported,
             roles_taken: self.taken.is_some(),
             error: self.error.clone(),
             notes: self
@@ -915,6 +921,23 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
 
     fn say(&self, message: Message) -> String {
         message.render(self.language())
+    }
+
+    /// The first driver-entrance check this platform cannot pass. Test signing
+    /// is omitted because the setup wizard can change it.
+    fn driver_unsupported(&self, platform: &Platform) -> Option<Message> {
+        if platform.os_build < self.config.min_os_build {
+            Some(Message::OsRequirement {
+                min_build: self.config.min_os_build,
+            })
+        } else if platform.arch != self.config.arch {
+            Some(Message::ArchitectureMismatch {
+                build: self.config.arch,
+                pc: platform.arch,
+            })
+        } else {
+            None
+        }
     }
 
     fn message_error(&mut self, message: Message, next: NextAction) -> UserError {
@@ -1183,34 +1206,19 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
             self.driver = None;
             if platform.os_build < self.config.min_app_capture_build {
                 self.phase = Phase::Setup(SetupStep::Unsupported);
-                return Err(self.message_error(
+                let message = self.driver_unsupported(&platform).unwrap_or(
                     Message::AppCaptureOsRequirement {
                         min_build: self.config.min_app_capture_build,
                     },
-                    NextAction::None,
-                ));
+                );
+                return Err(self.message_error(message, NextAction::None));
             }
             self.phase = Phase::Setup(SetupStep::ChooseOutput);
             return self.resume_output();
         }
-        if platform.os_build < self.config.min_os_build {
+        if let Some(message) = self.driver_unsupported(&platform) {
             self.phase = Phase::Setup(SetupStep::Unsupported);
-            return Err(self.message_error(
-                Message::OsRequirement {
-                    min_build: self.config.min_os_build,
-                },
-                NextAction::None,
-            ));
-        }
-        if platform.arch != self.config.arch {
-            self.phase = Phase::Setup(SetupStep::Unsupported);
-            return Err(self.message_error(
-                Message::ArchitectureMismatch {
-                    build: self.config.arch,
-                    pc: platform.arch,
-                },
-                NextAction::None,
-            ));
+            return Err(self.message_error(message, NextAction::None));
         }
         if self.config.requires_test_signing && !platform.test_signing {
             self.phase = Phase::Setup(SetupStep::NotTestSigning);
@@ -1622,12 +1630,12 @@ impl<H: Host, L: Launcher> Supervisor<H, L> {
         self.driver = None;
         if platform.os_build < self.config.min_app_capture_build {
             self.phase = Phase::Setup(SetupStep::Unsupported);
-            return Err(self.message_error(
-                Message::AppCaptureOsRequirement {
-                    min_build: self.config.min_app_capture_build,
-                },
-                NextAction::None,
-            ));
+            let message =
+                self.driver_unsupported(&platform)
+                    .unwrap_or(Message::AppCaptureOsRequirement {
+                        min_build: self.config.min_app_capture_build,
+                    });
+            return Err(self.message_error(message, NextAction::None));
         }
         let outputs = self.host.get_mut().outputs();
         let Some(output) = self.find_output(&outputs) else {

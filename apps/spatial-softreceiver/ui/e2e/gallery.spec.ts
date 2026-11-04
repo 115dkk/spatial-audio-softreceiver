@@ -27,7 +27,8 @@ interface SceneEntry {
   tab: Tab | null;
   size?: [number, number];
   schemes?: Scheme[];
-  skinSteps?: Partial<Record<string, unknown[]>>;
+  /** A skin's own steps for the scene, or `null` where the skin has no such state and is not photographed. */
+  skinSteps?: Partial<Record<string, unknown[] | null>>;
 }
 
 interface Table {
@@ -59,7 +60,8 @@ const READY = 'html[data-gallery-ready="true"]';
 /** The faces each skin must have in place before its picture (ADR 0041). */
 const FONTS: Record<Skin, string[]> = {
   standard: ['400 14px "IBM Plex Sans KR"'],
-  panel: ['400 15px "Galmuri14"', '400 14px "IBM Plex Sans KR"'],
+  // The pedal prints nothing in Regular (ADR 0046, 법칙 6), so its lightest face is Medium.
+  pedal: ['500 14px "IBM Plex Sans KR"'],
   console: ['500 14px "Pretendard"'],
 };
 
@@ -134,6 +136,7 @@ async function check(page: Page, language: Language, skin: Skin, problems: strin
 
 for (const skin of table.skins) {
   for (const scene of scenes) {
+    if (scene.skinSteps?.[skin] === null) continue;
     for (const language of table.languages) {
       for (const scheme of scene.schemes) {
         const file = `${scene.name}.${language}.${scheme}.png`;

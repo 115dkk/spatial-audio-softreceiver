@@ -14,8 +14,8 @@ import { type Context, type Drawn, button, described, intentButton } from './com
 import {
   ENTRANCE_KINDS,
   appMode,
-  appSoundBlocked,
   captureOf,
+  entranceBlocked,
   entranceGets,
   entranceName as kindName,
   entranceNeeds,
@@ -172,7 +172,8 @@ function entrance(ctx: Context): Child[] {
   const { snapshot } = ctx;
   const current = entranceOf(snapshot);
   const running = snapshot.phase.kind === 'running';
-  const blocked = appSoundBlocked(snapshot);
+  const other = current === 'driver' ? 'app_sound' : 'driver';
+  const blocked = running ? null : entranceBlocked(snapshot, other);
   ctx.offer('choose_entrance');
   const select = h('select', {
     id: 'entrance',
@@ -184,7 +185,7 @@ function entrance(ctx: Context): Child[] {
   });
   for (const kind of ENTRANCE_KINDS) {
     select.append(
-      h('option', { value: kind, selected: kind === current, disabled: kind !== current && kind === 'app_sound' && blocked !== null }, kindName(kind)),
+      h('option', { value: kind, selected: kind === current, disabled: kind !== current && blocked !== null }, kindName(kind)),
     );
   }
   select.addEventListener('change', () => {

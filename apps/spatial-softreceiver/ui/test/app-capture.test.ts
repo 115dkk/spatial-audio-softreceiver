@@ -13,24 +13,26 @@ import type { Intent, Language, Snapshot } from '../src/bindings';
 import { fixture } from '../src/fixtures';
 import { createMockApi } from '../src/mock';
 import type { Tab } from '../src/screens/common';
+import { appSoundBlocked, entranceBlocked, switchTarget } from '../src/screens/entrance';
 import type { App } from '../src/skins/types';
 import { mount as mountConsole } from '../src/skins/console';
-import { mount as mountPanel } from '../src/skins/panel';
+import { mount as mountPedal } from '../src/skins/pedal';
 import { en, ko } from '../src/text';
 
 const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힯]/;
 
-type SkinName = 'standard' | 'panel' | 'console';
-const SKINS: readonly SkinName[] = ['standard', 'panel', 'console'];
+type SkinName = 'standard' | 'pedal' | 'console';
+const SKINS: readonly SkinName[] = ['standard', 'pedal', 'console'];
 const MOUNT: Record<SkinName, (root: HTMLElement, api: Api, options: { tab?: Tab }) => App> = {
   standard: mountApp,
-  panel: mountPanel,
+  pedal: mountPedal,
   console: mountConsole,
 };
 
 const APP_FIXTURES = [
   'setup-welcome',
   'setup-apps-unsupported',
+  'setup-apps-unsupported-old',
   'setup-choose-discard',
   'setup-choose-discard-empty',
   'ready-apps',
@@ -77,9 +79,9 @@ function withPlayer(name: string, language: Language = 'ko'): Snapshot {
   return snapshot;
 }
 
-/** Chooses a lane's app the way the skin offers it: a select, or the panel's row and list. */
+/** Chooses a lane's app the way the skin offers it: a select, or the pedal's key and its row of apps. */
 async function pickApp(skin: SkinName, lane: number, exe: string) {
-  if (skin === 'panel') {
+  if (skin === 'pedal') {
     $(`[data-key="capture-app-${lane}"]`)!.click();
     const list = $(`[data-region="capture-apps-${lane}"]`)!;
     const option = [...list.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes(exe));
@@ -135,8 +137,7 @@ describe.each(SKINS)('the %s skin', (skin) => {
     start.platform = { computer_name: 'PC', os_build: 19045, arch: 'x64', test_signing: false, secure_boot: 'enabled' };
     start.app_capture = { ...start.app_capture!, supported: false, min_build: 20348 };
     mounted(skin, start);
-    const apps = $<HTMLButtonElement>('[data-key="entrance-app-sound"]')!;
-    expect(apps.disabled).toBe(true);
+    expect($('[data-key="entrance-app-sound"]')).toBeNull();
     expect(root.textContent).toContain(ko.entrance.osRequirement(20348));
     expect(root.textContent).toContain(ko.entrance.unavailable);
     expect($<HTMLButtonElement>('[data-key="entrance-driver"]')!.disabled).toBe(false);
@@ -150,6 +151,66 @@ describe.each(SKINS)('the %s skin', (skin) => {
     $('[data-key="entrance-driver"]')!.click();
     await tick();
     expect(sent).toEqual([{ kind: 'choose_entrance', value: 'driver' }]);
+  });
+
+  for (const language of ['ko', 'en'] as const) {
+    for (const name of ['setup-unsupported', 'setup-apps-unsupported', 'setup-apps-unsupported-old']) {
+      it(`${name} (${language}) offers only an entrance this PC can run`, () => {
+        const start = fixture(name, language);
+        mounted(skin, start);
+        const t = language === 'ko' ? ko : en;
+        const canSwitch = name === 'setup-apps-unsupported';
+        const heading = $(skin === 'console' ? '.cn-step h3' : 'h1')!;
+        expect(heading.textContent).toBe(canSwitch ? t.wizard.appUnsupportedTitle : t.wizard.unsupportedTitle);
+        expect(root.textContent).toContain(canSwitch ? t.wizard.appUnsupportedBody : t.wizard.unsupportedBody);
+        expect(root.textContent).toContain(String(start.platform!.os_build));
+        expect($$('[data-intent="choose_entrance"]')).toHaveLength(canSwitch ? 1 : 0);
+        expect($('#entrance-driver-blocked, #entrance-app-sound-blocked')).toBeNull();
+        expect($('[aria-describedby*="entrance-driver-blocked"], [aria-describedby*="entrance-app-sound-blocked"]')).toBeNull();
+        if (canSwitch) {
+          expect($<HTMLButtonElement>('[data-key="entrance-driver"]')!.disabled).toBe(false);
+        } else {
+          expect(root.textContent).not.toContain(t.wizard.appUnsupportedTitle);
+          expect(root.textContent).not.toContain(t.wizard.appUnsupportedBody);
+          expect(root.textContent).not.toContain(t.entrance.appSoundBuild(start.app_capture!.min_build));
+          expect(root.textContent).not.toContain(t.entrance.osRequirement(start.app_capture!.min_build));
+        }
+      });
+    }
+  }
+
+  it('keeps blocked welcome choices and their reasons without offering their keys', () => {
+    const start = fixture('setup-apps-unsupported-old');
+    start.phase = { kind: 'setup', value: 'welcome' };
+    start.error = null;
+    mounted(skin, start);
+    expect($$('[data-entrance]')).toHaveLength(2);
+    expect($$('[data-intent="choose_entrance"]')).toHaveLength(0);
+    expect(root.textContent).toContain(ko.entrance.unavailable);
+    expect(root.textContent).toContain(start.driver_unsupported);
+    expect(root.textContent).toContain(ko.entrance.appSoundBuild(start.app_capture!.min_build));
+    expect(root.textContent).not.toContain(ko.entrance.osRequirement(start.app_capture!.min_build));
+  });
+
+  it('does not invite a blocked app-sound entrance from the test-signing step', () => {
+    const start = fixture('setup-not-test-signing');
+    start.platform!.os_build = 19045;
+    start.app_capture!.supported = false;
+    mounted(skin, start);
+    expect($('[data-key="entrance-app-sound"]')).toBeNull();
+    expect($('#entrance-app-sound-blocked')).toBeNull();
+    expect(root.textContent).not.toContain(ko.wizard.testSigningOther);
+    expect(root.textContent).not.toContain(ko.entrance.osRequirement(start.app_capture!.min_build));
+    expect($<HTMLButtonElement>('[data-key="recheck"]')!.disabled).toBe(false);
+  });
+
+  it('keeps a blocked driver option and its reason in settings', () => {
+    const start = fixture('ready-apps');
+    start.driver_unsupported = fixture('setup-apps-unsupported-old').driver_unsupported!;
+    mounted(skin, start, 'settings');
+    const driver = $<HTMLButtonElement | HTMLOptionElement>('[data-key="entrance-driver"], [data-key="entrance"] option[value="driver"]')!;
+    expect(driver.disabled).toBe(true);
+    expect(root.textContent).toContain(start.driver_unsupported);
   });
 
   it('offers the app-sound entrance where test signing is off', async () => {
@@ -232,7 +293,9 @@ describe.each(SKINS)('the %s skin', (skin) => {
     expect($('[data-key="entrance"], [data-key="entrance-driver"]')).not.toBeNull();
     const list = $('[data-region="discard-list"]')!;
     expect(list.textContent).toContain(start.app_capture!.discards[1]!.name);
-    expect(root.textContent).toContain(ko.entrance.exclusiveHint);
+    // The pedal prints the exclusive switch's current position alone (ADR 0046, 법칙 5).
+    const exclusiveWords = skin === 'pedal' ? (start.app_capture!.exclusive ? ko.entrance.exclusiveOn : ko.entrance.exclusiveOff) : ko.entrance.exclusiveHint;
+    expect(root.textContent).toContain(exclusiveWords);
     expect(root.textContent).toContain(ko.entrance.ksNotUsed);
     // Kernel streaming is not offered with the app-sound entrance.
     const kernel = $<HTMLButtonElement | HTMLOptionElement>('[data-key="output-path-kernel_streaming"], #output-path option[value="kernel_streaming"]');
@@ -281,6 +344,30 @@ describe.each(SKINS)('the %s skin', (skin) => {
   it('says the driver part is not in use in English too', () => {
     mounted(skin, fixture('ready-apps', 'en'), 'settings');
     expect(root.textContent).toContain(en.entrance.driverOnly);
+  });
+});
+
+describe('shared entrance availability', () => {
+  it('treats an absent driver restriction as unknown, not blocked', () => {
+    const start = fixture('setup-apps-unsupported');
+    delete start.driver_unsupported;
+    mounted('standard', start);
+    expect(entranceBlocked(start, 'driver')).toBeNull();
+    expect(switchTarget(start)).toBe('driver');
+    expect(appSoundBlocked(start)).toBe(ko.entrance.osRequirement(start.app_capture!.min_build));
+  });
+
+  it('keeps both entrances locked while running', () => {
+    const start = fixture('running-apps');
+    mounted('standard', start);
+    for (const kind of ['driver', 'app_sound'] as const) expect(entranceBlocked(start, kind)).toBe(ko.entrance.locked);
+    expect(switchTarget(start)).toBeNull();
+  });
+
+  it('offers app sound when the driver is blocked but capture is supported', () => {
+    const start = fixture('setup-unsupported');
+    start.app_capture!.supported = true;
+    expect(switchTarget(start)).toBe('app_sound');
   });
 });
 
@@ -333,26 +420,35 @@ describe('the console with the app-sound entrance', () => {
   });
 });
 
-describe('the front panel with the app-sound entrance', () => {
-  it('lights the lanes with an app and keeps PASS dark', () => {
-    mounted('panel', fixture('running-apps'), 'status');
-    const lamp = (lane: number) => $(`.pn-lamp[data-lane="${lane}"]`)!.dataset.signal;
-    expect(lamp(0)).not.toBe('none');
+describe('the pedal with the app-sound entrance', () => {
+  it('lights the jacks of the lanes with an app and keeps PASS dark', () => {
+    mounted('pedal', fixture('running-apps'), 'status');
+    const jack = (lane: number) => $(`.pd-jack[data-lane="${lane}"]`)!;
+    expect(jack(0).dataset.signal).not.toBe('none');
+    expect(jack(0).querySelector('.pd-led')?.getAttribute('data-glow')).not.toBe('off');
     // The fixture's engine has sound on the music and PASS endpoints, but no app feeds them.
-    expect(lamp(1)).toBe('none');
-    expect(lamp(2)).toBe('none');
+    expect(jack(1).dataset.signal).toBe('none');
+    expect(jack(2).dataset.signal).toBe('none');
+    expect(jack(2).querySelector('.pd-led')?.getAttribute('data-glow')).toBe('off');
   });
 
-  it('opens a lane’s list of apps in the display and closes it after a choice', async () => {
-    mounted('panel', withPlayer('ready-apps'), 'status');
+  it('opens a lane’s row of apps with its key latched down and closes it after a choice', async () => {
+    mounted('pedal', withPlayer('ready-apps'), 'status');
     const toggle = $('[data-key="capture-app-1"]')!;
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.classList.contains('is-down')).toBe(false);
     toggle.click();
-    expect($('[data-key="capture-app-1"]')!.getAttribute('aria-expanded')).toBe('true');
+    const opened = $('[data-key="capture-app-1"]')!;
+    expect(opened.getAttribute('aria-expanded')).toBe('true');
+    // The ring is the lane's state (no app on the music lane: dark); the open row is the key held in.
+    expect(opened.classList.contains('is-down')).toBe(true);
+    expect(opened.classList.contains('is-lit')).toBe(false);
     const list = $('[data-region="capture-apps-1"]')!;
     expect(list.getAttribute('role')).toBe('radiogroup');
-    // "None" is marked: the music lane has no app.
-    expect(list.querySelector('[aria-checked="true"]')?.textContent).toContain(ko.profile.none);
+    // "None" is lit: the music lane has no app.
+    const chosen = list.querySelector('[aria-checked="true"]')!;
+    expect(chosen.textContent).toContain(ko.profile.none);
+    expect(chosen.classList.contains('is-lit')).toBe(true);
     [...list.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('player.exe'))!.click();
     await tick();
     expect($('[data-region="capture-apps-1"]')).toBeNull();

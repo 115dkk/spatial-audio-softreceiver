@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Fetches the screen fonts (all OFL-1.1) into
 // apps/spatial-softreceiver/ui/public/fonts/<font>/: IBM Plex Sans KR for
-// every skin, Galmuri for the panel skin's display, Pretendard for the
-// console skin (ADR 0041).
+// the standard and pedal skins, Pretendard for the console skin (ADR 0041,
+// 0046).
 //
 // The font files stay out of the repository: this script takes them from the
 // npm tarballs, checks each tarball and every file it keeps against the
@@ -19,9 +19,9 @@ import { gunzipSync } from 'node:zlib';
 /**
  * Each font: the npm tarball it comes from (pinned by SHA-256), the folder in
  * the tarball, the files kept and their SHA-256, and the folder under
- * ui/public/fonts/ they go to. IBM Plex Sans KR is every skin's base; the
- * panel skin's display adds Galmuri and the console skin uses Pretendard
- * (ADR 0041). All three are OFL-1.1.
+ * ui/public/fonts/ they go to. IBM Plex Sans KR is the standard skin's and
+ * the pedal skin's print; the console skin uses Pretendard (ADR 0041, 0046).
+ * Both are OFL-1.1.
  */
 const FONTS = [
   {
@@ -41,19 +41,6 @@ const FONTS = [
         'cf874a368dc2c2c0e4d1933c35611b849e48942023bfdd1fa11128475dbc4860',
       'package/fonts/complete/woff2/hinted/license.txt':
         '91c25c350d3cac39da2736d74f7ba37ef648f5237a4e330a240615bc8d8c4360',
-    },
-  },
-  {
-    folder: 'galmuri',
-    tarball: {
-      url: 'https://registry.npmjs.org/galmuri/-/galmuri-2.40.3.tgz',
-      sha256: '7d6b2b8534d157dd5e4eb8e01145f7388c0383bed8a96f5ec719eaacf1f86816',
-    },
-    files: {
-      'package/dist/Galmuri14.woff2': '79b34b22b86536d0fe9ebe7105dd5f20f56558d691c67a0c6432807a03ec5a82',
-      'package/dist/Galmuri11.woff2': 'f467d1b10e6b88dfa8399c9f93b38c7643e050abfe4fc15800ac0b000f5a57d6',
-      'package/dist/Galmuri11-Bold.woff2': '8643094f395aa2dbad6bc4385cc043314801eaec2e759d549435ec8ac4f2d078',
-      'package/dist/LICENSE.txt': '86a3ee9495f942f0243f18c103da9faca27adb88142613edb8bb852e56c892c1',
     },
   },
   {

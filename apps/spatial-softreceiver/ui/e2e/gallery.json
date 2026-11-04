@@ -1,7 +1,7 @@
 {
   "$comment": "화면 갤러리의 장면 표. e2e/gallery.spec.ts가 장면마다 skins × languages × schemes 장을 <skin>/<name>.<language>.<scheme>.png로 찍고(스킨은 ADR 0041), tools/ui-gallery-issue.mjs가 같은 표로 찍힌 파일을 대조해 리뷰 이슈 본문을 만듭니다. fixture는 fixtures/index.json의 이름이고 모든 이름이 한 장면 이상에 나와야 합니다. tab은 status, profile, upmix, settings 중 하나(마법사와 종료 화면은 null). shell은 앱 셸이 OS에서 읽는 값(로그인 자동 시작, 업데이트)을 정합니다. hold가 true면 의도가 끝나지 않아 버튼이 진행 중인 모습으로 남습니다. steps는 찍기 전에 차례로 하는 일입니다: click은 그 선택자를 누르고 focus는 그 선택자에 키보드 초점을 두며 wait는 그 선택자가 보일 때까지 기다립니다. 컨트롤이 달라 그 단계를 따를 수 없는 스킨은 skinSteps에 스킨 이름을 키로 자기 단계를 둡니다.",
-  "skins": ["standard", "panel", "console"],
-  "skinNames": { "standard": "기본", "panel": "전면 패널", "console": "콘솔" },
+  "skins": ["standard", "pedal", "console"],
+  "skinNames": { "standard": "기본", "pedal": "이펙터", "console": "콘솔" },
   "languages": ["ko", "en"],
   "languageNames": { "ko": "한국어", "en": "English" },
   "schemeNames": { "light": "밝게", "dark": "어둡게" },
@@ -24,6 +24,7 @@
   "scenarios": [
     { "name": "setup-welcome", "group": "wizard", "title": "환영(입구 고르기)", "fixture": "setup-welcome", "tab": null },
     { "name": "setup-apps-unsupported", "group": "wizard", "title": "앱 소리 입구를 쓸 수 없는 Windows(드라이버 입구로 바꾸기)", "fixture": "setup-apps-unsupported", "tab": null },
+    { "name": "setup-apps-unsupported-old", "group": "wizard", "title": "앱 소리 입구도 드라이버 입구도 쓸 수 없는 Windows", "fixture": "setup-apps-unsupported-old", "tab": null },
     { "name": "setup-choose-discard", "group": "wizard", "title": "버리는 출력 고르기", "fixture": "setup-choose-discard", "tab": null },
     { "name": "setup-choose-discard-empty", "group": "wizard", "title": "고를 버리는 출력이 없음", "fixture": "setup-choose-discard-empty", "tab": null },
     { "name": "setup-unsupported", "group": "wizard", "title": "지원하지 않는 Windows", "fixture": "setup-unsupported", "tab": null },
@@ -73,11 +74,11 @@
     {
       "name": "ready-apps-picker",
       "group": "apps",
-      "title": "음악 차선의 앱 고르기(전면 패널은 표시부 안의 목록)",
+      "title": "음악 차선의 앱 고르기(이펙터는 앱 이름 단추 줄)",
       "fixture": "ready-apps",
       "tab": "status",
       "steps": [{ "focus": "[data-key=\"capture-app-1\"]" }],
-      "skinSteps": { "panel": [{ "click": "[data-key=\"capture-app-1\"]" }, { "wait": "[data-region=\"capture-apps-1\"]" }] }
+      "skinSteps": { "pedal": [{ "click": "[data-key=\"capture-app-1\"]" }, { "wait": "[data-region=\"capture-apps-1\"]" }] }
     },
     { "name": "ready-apps-no-app", "group": "apps", "title": "받을 앱을 고르지 않고 켬", "fixture": "ready-apps-no-app", "tab": "status" },
     { "name": "ready-apps-not-running", "group": "apps", "title": "고른 앱이 실행 중이 아님", "fixture": "ready-apps-not-running", "tab": "status" },
@@ -130,7 +131,7 @@
       "fixture": "running-upmix-pass",
       "tab": "upmix",
       "steps": [{ "focus": "[data-key=\"upmix-info\"]" }, { "wait": ".info-tip-wrap.is-open [role=\"tooltip\"]" }],
-      "skinSteps": { "panel": [{ "wait": "#upmix-info" }] }
+      "skinSteps": { "pedal": null }
     },
     { "name": "ready-upmix-failed", "group": "upmix", "title": "세 번 멈춰 꺼짐", "fixture": "ready-upmix-failed", "tab": "upmix" },
     {
@@ -196,7 +197,7 @@
       "size": [720, 480],
       "schemes": ["light"],
       "steps": [{ "focus": "[data-key=\"upmix-info\"]" }, { "wait": ".info-tip-wrap.is-open [role=\"tooltip\"]" }],
-      "skinSteps": { "panel": [{ "wait": "#upmix-info" }] }
+      "skinSteps": { "pedal": null }
     },
     { "name": "ready-settings-720x480", "group": "window", "title": "설정, 720×480", "fixture": "ready", "tab": "settings", "size": [720, 480], "schemes": ["light"] },
     { "name": "setup-choose-output-720x480", "group": "window", "title": "출력 고르기, 720×480", "fixture": "setup-choose-output", "tab": null, "size": [720, 480], "schemes": ["light"] },

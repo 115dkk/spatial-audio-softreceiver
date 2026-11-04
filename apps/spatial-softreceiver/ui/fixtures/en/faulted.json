@@ -974,6 +974,7 @@
     "test_signing": true,
     "secure_boot": "disabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "The engine could not reconnect for 15 seconds. The output device disconnected: the output device was removed",

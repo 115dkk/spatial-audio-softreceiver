@@ -1,0 +1,3253 @@
+/*
+ * The pedal skin (ADR 0046, 이펙터의 법칙). The window is one effects pedal:
+ * a cast box with the open function's parts on its face, the jacks on its
+ * top edge and the face keys, the nameplate, the indicators and the power
+ * footswitch on its foot. Colour comes only from LEDs; the box and its
+ * parts are achromatic metal and black resin, the print one ink.
+ *
+ * The palette changes the metal, not a paint: the light one is bead-blasted
+ * silver aluminium with black print (light, an even speckled grain, light
+ * spread wide and soft, thin bright edges, a pale shadow), the dark one dark
+ * metal with white print (heavy, a hairline grain running one way, a narrow
+ * reflection, thick lit edges, a deep shadow). LEDs and segment readouts
+ * are the same parts in both.
+ *
+ * Every selector is under the skin's own prefix (`pd-`); only this skin's
+ * stylesheet is on the page (src/skins/index.ts). The print is IBM Plex
+ * Sans KR (src/base.css) in 500, 600 and 700, never 400: Regular is thin on
+ * metal and reads as screen type (법칙 6). The letters are cut into the
+ * plate and filled, so each carries one crisp 1px lip (--pd-lip): bright
+ * under the glyph on aluminium, dark above it on dark metal. No blur, no
+ * glow, no drop shadow.
+ *
+ * Entrance colours (jack LEDs, bar graphs, map LEDs), chosen so every pair
+ * stays apart under protanopia and deuteranopia and away from the three
+ * state colours: game #677afb, music #fa97d1, PASS #defc3a, ASIO #b35598.
+ * Each also has its name printed, so colour is never the only cue.
+ */
+
+:root {
+  --pd-font: "IBM Plex Sans KR", "Malgun Gothic", system-ui, sans-serif;
+  /* LEDs: the same parts in both finishes. */
+  --pd-led-on: #3fe474;
+  --pd-led-wait: #ffae22;
+  --pd-led-fault: #ff3d32;
+  --pd-led-white: #f2f5ff;
+  --pd-lane-0: #677afb;
+  --pd-lane-1: #fa97d1;
+  --pd-lane-2: #defc3a;
+  --pd-lane-3: #b35598;
+  /* The segment readouts: warm white digits behind smoked acrylic. */
+  --pd-seg-on: #fbf6ea;
+  --pd-seg-glow: rgba(255, 240, 210, 0.6);
+  --pd-seg-off: rgba(255, 255, 255, 0.055);
+  /* Black resin parts: knob skirts, the DIP body, the bar graph's housing. */
+  --pd-resin-hi: #4b4c4f;
+  --pd-resin: #1d1e20;
+  --pd-resin-lo: #0c0c0d;
+
+  /*
+   * Light: bead-blasted silver aluminium, black print.
+   *
+   * Contrast (WCAG 2.x relative luminance), measured on 44 scenes of the
+   * gallery at 1280 × 800, 720 × 480 and 1920 × 1080, each at the top and
+   * the foot of its face: the darkest metal under any printed letter (its
+   * strokes and a pixel round them, the grain averaged over 3 × 3 pixels,
+   * etchings and the light of LEDs included, the rails' shadow left out, the
+   * print and its lip taken away to see the metal) is #bfc1c2 under --pd-ink
+   * #121416 (a legend plate's number by its amber LED), 10.22:1, and #babcbe
+   * under --pd-ink-2 #1f2225 (a name on the map's plan), 8.39:1. Bare metal
+   * at its darkest is #c3c6c8. The lip only lightens the metal round a
+   * letter, so it never lowers these.
+   */
+  --pd-room: #d4d4d1;
+  --pd-metal-1: #dfe1e2;
+  --pd-metal-2: #c4c7c9;
+  --pd-edge-hi: rgba(255, 255, 255, 0.95);
+  --pd-grain-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.4 -.45'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --pd-grain-size: 240px 240px;
+  --pd-grain: 0.18;
+  --pd-grain-blend: multiply;
+  --pd-sheen: radial-gradient(120% 90% at 0% 0%, rgba(255, 255, 255, 0.38), transparent 62%);
+  --pd-mled-off: #8a8d90;
+  --pd-mled-edge: rgba(0, 0, 0, 0.3);
+  --pd-spill: 38%;
+  --pd-under: rgba(0, 0, 0, 0.34);
+  --pd-rail-edge: rgba(0, 0, 0, 0.4);
+  --pd-etch: rgba(0, 0, 0, 0.1);
+  --pd-etch-lip: rgba(255, 255, 255, 0.55);
+  /* The engraving's lip under every printed letter: the cut's lower wall catching the light. */
+  --pd-lip: 0 1px 0 rgba(255, 255, 255, 0.7);
+  /* The nameplate: black anodised, the engraving shows bright aluminium (the Korean line 8.6:1 at the plate's lightest corner). */
+  --pd-plate-1: #2a2c2f;
+  --pd-plate-2: #161719;
+  --pd-plate-ink: #e4e6e8;
+  --pd-plate-ink-2: #c8cbce;
+  /* The slide switch and the momentary key: a dark slot, a bright machined actuator. */
+  --pd-slot-1: #040405;
+  --pd-slot-2: #151617;
+  --pd-slot-edge: rgba(255, 255, 255, 0.05);
+  --pd-act-1: #f5f6f7;
+  --pd-act-2: #b9bcbf;
+  --pd-act-3: #8a8d90;
+  --pd-act-rib-dark: rgba(0, 0, 0, 0.3);
+  --pd-act-rib-light: rgba(255, 255, 255, 0.35);
+  /* A mark engraved on a momentary keycap (eject): dark on the bright cap. */
+  --pd-cap-mark: rgba(20, 22, 24, 0.72);
+  /* Label-maker tape, stuck on like the nameplate and inverted the same way: black vinyl, the raised letters stretched white. */
+  --pd-tape: #17181a;
+  --pd-tape-ink: #eceded;
+  --pd-tape-relief: -0.5px -0.5px 0 rgba(255, 255, 255, 0.22), 0.6px 0.8px 0 rgba(0, 0, 0, 0.9);
+  --pd-box-shadow:
+    0 18px 36px rgba(0, 0, 0, 0.2),
+    0 3px 8px rgba(0, 0, 0, 0.16),
+    inset 1.5px 1.5px 1.5px rgba(255, 255, 255, 0.95),
+    inset -2px -2px 4px rgba(0, 0, 0, 0.2),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+  --pd-ink: #121416;
+  --pd-ink-2: #1f2225;
+  --pd-rule: rgba(18, 20, 22, 0.55);
+  --pd-rule-2: rgba(18, 20, 22, 0.28);
+  --pd-knockout: #d9dbdc;
+  --pd-cast: rgba(0, 0, 0, 0.32);
+  --pd-nut-1: #fbfbfb;
+  --pd-nut-2: #b9bcbe;
+  --pd-nut-3: #6f7275;
+  --pd-k: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /*
+     * Dark: dark metal, white print.
+     *
+     * Contrast, measured the same way against the lightest metal under a
+     * letter (white print reads worst there): under --pd-ink #f5f3ee the
+     * PASS jack LED's light by its name at 720 × 480, #4c533c, 7.26:1, and
+     * under --pd-ink-2 #e9e7e2 the green light of a setup step's LED by its
+     * name, #394742, 7.89:1. Bare metal at its lightest (the sheen band) is
+     * #414345. The lip only darkens the metal round a letter. Print keeps out
+     * of the brighter part of an LED's light: the gaps by LEDs and lit keys
+     * are set for that (the jack names keep 7 px at every size).
+     */
+    --pd-room: #101112;
+    --pd-metal-1: #303336;
+    --pd-metal-2: #1d1f22;
+    --pd-edge-hi: rgba(255, 255, 255, 0.2);
+    /* One tile wider than any window, so the hairlines never repeat side by side. */
+    --pd-grain-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2400' height='320'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.0011 .85' numOctaves='3' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .62 0 0 0 0 .63 0 0 0 0 .66 0 0 0 1 -.42'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    --pd-grain-size: 2400px 320px;
+    --pd-grain: 0.15;
+    --pd-grain-blend: screen;
+    --pd-sheen:
+      linear-gradient(114deg, transparent 30%, rgba(255, 255, 255, 0.03) 38%, rgba(255, 255, 255, 0.08) 42%, rgba(255, 255, 255, 0.025) 46.5%, transparent 54%),
+      radial-gradient(90% 70% at 0% 0%, rgba(255, 255, 255, 0.045), transparent 60%);
+    --pd-mled-off: #121315;
+    --pd-mled-edge: rgba(255, 255, 255, 0.16);
+    --pd-spill: 46%;
+    --pd-under: rgba(0, 0, 0, 0.6);
+    --pd-rail-edge: rgba(255, 255, 255, 0.2);
+    --pd-etch: rgba(255, 255, 255, 0.08);
+    --pd-etch-lip: rgba(0, 0, 0, 0.45);
+    /* The engraving's lip on dark metal: the cut's upper wall in shade, over the glyph. */
+    --pd-lip: 0 -1px 0 rgba(0, 0, 0, 0.7);
+    /* The nameplate inverted: brushed silver, the engraving cut dark (the Korean line 7.2:1 at the plate's darkest corner). */
+    --pd-plate-1: #d9dcdf;
+    --pd-plate-2: #a2a6aa;
+    --pd-plate-ink: #0f1112;
+    --pd-plate-ink-2: #17191b;
+    /* The slide switch inverted: a bright machined channel, a dark actuator with lit edges. */
+    --pd-slot-1: #9a9da1;
+    --pd-slot-2: #d4d6d9;
+    --pd-slot-edge: rgba(255, 255, 255, 0.5);
+    --pd-act-1: #5b5f64;
+    --pd-act-2: #2c2f33;
+    --pd-act-3: #17191b;
+    --pd-act-rib-dark: rgba(0, 0, 0, 0.55);
+    --pd-act-rib-light: rgba(255, 255, 255, 0.22);
+    --pd-cap-mark: rgba(255, 255, 255, 0.62);
+    /* The tape inverted: pale vinyl, the raised letters inked dark. */
+    --pd-tape: #dddfe0;
+    --pd-tape-ink: #16181a;
+    --pd-tape-relief: -0.5px -0.5px 0 rgba(255, 255, 255, 0.85), 0.6px 0.8px 0 rgba(0, 0, 0, 0.3);
+    --pd-box-shadow:
+      0 34px 64px rgba(0, 0, 0, 0.8),
+      0 8px 18px rgba(0, 0, 0, 0.65),
+      inset 3px 3px 2px rgba(255, 255, 255, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3),
+      inset -5px -5px 10px rgba(0, 0, 0, 0.75),
+      inset 0 0 0 1px rgba(0, 0, 0, 0.55);
+    --pd-ink: #f5f3ee;
+    --pd-ink-2: #e9e7e2;
+    --pd-rule: rgba(245, 243, 238, 0.5);
+    --pd-rule-2: rgba(245, 243, 238, 0.22);
+    --pd-knockout: #2d3033;
+    --pd-cast: rgba(0, 0, 0, 0.55);
+    --pd-nut-1: #d9dbdd;
+    --pd-nut-2: #8d9093;
+    --pd-nut-3: #45484b;
+  }
+}
+
+html[data-skin="pedal"],
+html[data-skin="pedal"] body {
+  height: 100%;
+  margin: 0;
+  background: var(--pd-room);
+}
+
+html[data-skin="pedal"] #app {
+  height: 100%;
+}
+
+/* ---------- the room and the box ---------- */
+
+.pd-room {
+  position: relative;
+  box-sizing: border-box;
+  height: 100%;
+  background: var(--pd-room);
+  color: var(--pd-ink);
+  font-family: var(--pd-font);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-shadow: var(--pd-lip);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  -webkit-font-smoothing: antialiased;
+  font-synthesis: none;
+}
+
+.pd-room *,
+.pd-room *::before,
+.pd-room *::after {
+  box-sizing: border-box;
+}
+
+.pd-room [hidden] {
+  display: none !important;
+}
+
+:where(.pd-room) :where(h1, h2, h3, p, ul, ol, dl, dd, figure) {
+  margin: 0;
+}
+
+:where(.pd-room) :where(ul, ol) {
+  padding: 0;
+  list-style: none;
+}
+
+:where(.pd-room) button {
+  font: inherit;
+  color: inherit;
+}
+
+.pd-sr {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.pd-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+/* The enclosure: one cast box with rounded edges that catch the light. */
+.pd-box {
+  position: absolute;
+  inset: 12px;
+  border-radius: 24px;
+  background: var(--pd-sheen), linear-gradient(135deg, var(--pd-metal-1), var(--pd-metal-2));
+  box-shadow: var(--pd-box-shadow);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.pd-box::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: var(--pd-grain-url);
+  background-size: var(--pd-grain-size);
+  opacity: var(--pd-grain);
+  mix-blend-mode: var(--pd-grain-blend);
+  pointer-events: none;
+}
+
+.pd-box > :not(.pd-screw) {
+  position: relative;
+}
+
+/* A bigger window makes every part bigger, up to half again (index.ts fit()). */
+.pd-strip,
+.pd-faceframe,
+.pd-foot {
+  zoom: var(--pd-k, 1);
+}
+
+/* The columns the jacks and the status face share: the inputs, the flow, the map, the flow, the output. */
+.pd-cols {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) 24px minmax(0, 2.5fr) 24px minmax(0, 2.4fr);
+  column-gap: 14px;
+}
+
+/* ---------- printed type ---------- */
+
+.pd-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--pd-ink-2);
+}
+
+.pd-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.pd-small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pd-ink-2);
+}
+
+.pd-ink {
+  color: var(--pd-ink);
+  font-weight: 600;
+}
+
+.pd-fine {
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--pd-ink-2);
+  max-width: 68ch;
+}
+
+.pd-centre {
+  text-align: center;
+}
+
+.pd-body {
+  font-size: 13.5px;
+  line-height: 1.55;
+  max-width: 72ch;
+}
+
+.pd-lead {
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.pd-title {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.pd-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.pd-path {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.pd-none {
+  color: var(--pd-ink-2);
+  font-weight: 500;
+}
+
+/* A short word printed in a thin frame (기본값, 사용 중). */
+.pd-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid var(--pd-rule);
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--pd-ink);
+  vertical-align: 1px;
+}
+
+/* A group's name on a knocked-out tab, its parts inside a printed frame. */
+.pd-tab {
+  display: inline-block;
+  padding: 1px 7px 2px;
+  border-radius: 3px;
+  background: var(--pd-ink);
+  color: var(--pd-knockout);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  /* A knocked-out field: the ink block is what is cut and filled, so the lip is the block's, not the letters'. */
+  text-shadow: none;
+  box-shadow: var(--pd-lip);
+}
+
+.pd-group {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-width: 0;
+  padding: 0 14px 14px;
+  border: 1.5px solid var(--pd-rule);
+  border-radius: 12px;
+}
+
+.pd-group > .pd-tab {
+  margin-top: -9px;
+  justify-self: start;
+}
+
+.pd-group.pd-sub {
+  border-color: var(--pd-rule-2);
+}
+
+.pd-rule {
+  height: 0;
+  border-top: 1.5px solid var(--pd-rule);
+}
+
+.pd-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 14px;
+  row-gap: 5px;
+}
+
+.pd-fact {
+  display: contents;
+}
+
+.pd-facts dt {
+  padding-top: 1px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--pd-ink-2);
+}
+
+.pd-facts dd {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* A printed hairline between a group's sections, its left end a heavier section tick. */
+.pd-hair {
+  position: relative;
+  height: 0;
+  border-top: 1px solid var(--pd-rule-2);
+}
+
+.pd-hair::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -1.5px;
+  width: 14px;
+  border-top: 2px solid var(--pd-rule);
+}
+
+/* A spec plate: ruled rows, the name left, the value right, a dotted leader printed between. */
+.pd-spec {
+  display: grid;
+  border-top: 1.5px solid var(--pd-rule);
+  border-bottom: 1.5px solid var(--pd-rule);
+}
+
+.pd-spec-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 0 5px;
+}
+
+.pd-spec-row + .pd-spec-row {
+  border-top: 1px solid var(--pd-rule-2);
+}
+
+.pd-spec dt {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: max-content;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--pd-ink-2);
+}
+
+/* The leader: an empty item whose bottom edge sits on the baseline. */
+.pd-spec dt::after {
+  content: "";
+  flex: 1 1 10px;
+  min-width: 10px;
+  border-bottom: 1.5px dotted var(--pd-rule);
+}
+
+.pd-spec dd {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* A path runs on its own line under its name. */
+.pd-spec-row.is-long {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.pd-spec-row.is-long dd {
+  flex-basis: 100%;
+  font-size: 11.5px;
+  text-align: left;
+}
+
+/* ---------- numbered notes and their legend plate ---------- */
+
+/* By the part: its state LED and a printed number in an engraved ring. */
+.pd-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  vertical-align: middle;
+}
+
+.pd-mark-n {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border: 1.25px solid var(--pd-ink);
+  border-radius: 8px;
+  box-shadow: var(--pd-lip);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--pd-ink);
+}
+
+/* The plate: a row per shown note, ruled, the number, the same LED, the sentence. */
+.pd-noterows {
+  display: grid;
+}
+
+.pd-noterow {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 9px;
+  padding: 5px 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--pd-ink-2);
+}
+
+.pd-noterow:not([hidden]) ~ .pd-noterow {
+  border-top: 1px solid var(--pd-rule-2);
+}
+
+.pd-noterow > .pd-led {
+  margin-top: 3px;
+}
+
+.pd-noterow-text {
+  white-space: pre-line;
+}
+
+/* The part the note belongs to, named before its sentence. */
+.pd-noterow-src {
+  margin-right: 8px;
+  font-weight: 700;
+  color: var(--pd-ink);
+}
+
+.pd-noterow > .pd-mark-n {
+  margin-top: 0.5px;
+}
+
+/* ---------- the channel indicator strip ---------- */
+
+/* A processor's channel indicators: a small LED per position, its name printed under it, lit for the channels carried. */
+.pd-chans {
+  display: inline-grid;
+  justify-items: start;
+  min-width: 0;
+}
+
+.pd-chans-lines {
+  display: grid;
+  gap: 7px;
+}
+
+.pd-chans-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 2px;
+}
+
+.pd-chan {
+  display: grid;
+  justify-items: center;
+  /* The name stands clear of its LED's light. */
+  gap: 4px;
+  min-width: 24px;
+}
+
+.pd-chan-name {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  color: var(--pd-ink-2);
+  white-space: nowrap;
+}
+
+.pd-chan.is-lit .pd-chan-name {
+  color: var(--pd-ink);
+  font-weight: 700;
+}
+
+/* ---------- LEDs ---------- */
+
+/*
+ * A panel LED is a part, not a hole: a machined holder ring seated in the
+ * plate, and in it a domed lens tinted with its colour even when dark. Lit,
+ * the light fills the lens, catches the inside of the ring and spills onto
+ * the metal around it. Dim: the lens glows, nothing spills.
+ */
+.pd-led {
+  --c: var(--pd-led-on);
+  --lens: 9px;
+  --rim: 2.5px;
+  position: relative;
+  isolation: isolate;
+  display: inline-block;
+  flex: none;
+  width: calc(var(--lens) + 2 * var(--rim));
+  height: calc(var(--lens) + 2 * var(--rim));
+  border-radius: 50%;
+  vertical-align: middle;
+  background: conic-gradient(from 200deg, var(--pd-nut-1), var(--pd-nut-3) 30%, var(--pd-nut-2) 55%, var(--pd-nut-1) 80%, var(--pd-nut-1));
+  box-shadow: 0.5px 1px 1.5px var(--pd-cast), 0 0 0 0.5px rgba(0, 0, 0, 0.4);
+}
+
+.pd-led::before {
+  content: "";
+  position: absolute;
+  inset: var(--rim);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 36% 28%, rgba(255, 255, 255, 0.75) 0 14%, transparent 40%),
+    radial-gradient(circle at 50% 60%, color-mix(in srgb, var(--c) 48%, #3a3b3d) 0 45%, color-mix(in srgb, var(--c) 26%, #141516) 100%);
+  box-shadow: inset 0 -1px 1px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(0, 0, 0, 0.55);
+}
+
+.pd-led[data-glow="on"]::before {
+  background: radial-gradient(circle at 40% 34%, #fff 0 22%, color-mix(in srgb, var(--c) 55%, #fff) 42%, var(--c) 72%, color-mix(in srgb, var(--c) 80%, #000) 100%);
+  box-shadow: 0 0 4px 1px color-mix(in srgb, var(--c) 90%, transparent);
+}
+
+.pd-led[data-glow="on"]::after {
+  content: "";
+  position: absolute;
+  inset: -9px;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--c) 70%, transparent) 0 26%,
+    color-mix(in srgb, var(--c) var(--pd-spill), transparent) 34%,
+    transparent 70%
+  );
+}
+
+.pd-led[data-glow="dim"]::before {
+  background: radial-gradient(circle at 40% 34%, color-mix(in srgb, var(--c) 60%, #fff) 0 18%, color-mix(in srgb, var(--c) 70%, #2a2b2d) 60%, color-mix(in srgb, var(--c) 40%, #141516) 100%);
+}
+
+.pd-led.is-lg {
+  --lens: 11px;
+}
+
+.pd-led.is-sm {
+  --lens: 7px;
+  --rim: 2px;
+}
+
+/* The channel indicators' LEDs: smaller, their light spilling a shorter way. */
+.pd-led.is-xs {
+  --lens: 6px;
+  --rim: 1.5px;
+}
+
+.pd-led.is-xs[data-glow="on"]::after {
+  inset: -5px;
+}
+
+/* ---------- segment readouts ---------- */
+
+.pd-seg {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 5px 7px 5px 5px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #08090a, #131416);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(0, 0, 0, 0.55), 0 1px 0 1px var(--pd-edge-hi);
+}
+
+.pd-digits {
+  display: block;
+  overflow: visible;
+}
+
+.pd-digits polygon,
+.pd-digits circle {
+  fill: var(--pd-seg-off);
+}
+
+.pd-digits .is-on {
+  fill: var(--pd-seg-on);
+  filter: drop-shadow(0 0 1.6px var(--pd-seg-glow));
+}
+
+.pd-readout {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.pd-unit {
+  padding-bottom: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pd-ink-2);
+  white-space: nowrap;
+}
+
+/* ---------- the LED bar graph ---------- */
+
+/* One part: a black housing seated in the plate, its segments tinted lenses that stay faintly coloured when dark. */
+.pd-ladder {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  flex: none;
+  height: 100%;
+  max-height: 292px;
+  min-height: 120px;
+  padding: 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--pd-resin), var(--pd-resin-lo));
+  box-shadow: 1px 2px 3px var(--pd-cast), 0 0 0 1px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.pd-ladder i {
+  display: block;
+  flex: 1 1 0;
+  width: 14px;
+  min-height: 3px;
+  max-height: 10px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 30%, #2a2b2d), color-mix(in srgb, var(--c) 18%, #18191a));
+}
+
+.pd-ladder i.is-on {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 55%, #fff), var(--c));
+  box-shadow: 0 0 5px 1px color-mix(in srgb, var(--c) 60%, transparent);
+}
+
+/* ---------- keys ---------- */
+
+.pd-key {
+  --c: var(--pd-led-white);
+  display: inline-grid;
+  justify-items: center;
+  align-content: start;
+  /* The print under a key stands clear of its ring's light on the metal. */
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  text-align: center;
+  cursor: pointer;
+}
+
+.pd-key.is-beside {
+  grid-auto-flow: column;
+  justify-content: start;
+  justify-items: start;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+/* A key is as wide as its part and its print, wherever it stands. */
+:is(.pd-group, .pd-wizard-body, .pd-ch-format, .pd-row-empty, .pd-attenuation-say, .pd-band-action) > .pd-key {
+  justify-self: start;
+}
+
+.pd-plays > .pd-key {
+  justify-self: center;
+}
+
+.pd-key:disabled {
+  cursor: default;
+}
+
+.pd-key:focus-visible,
+.pd-slide-stop:focus-visible,
+.pd-rotary-stop:focus-visible,
+.pd-dip-row:focus-visible,
+.pd-footswitch:focus-visible,
+.pd-map-point:focus-visible,
+.pd-face:focus-visible {
+  outline: 2px solid var(--pd-ink);
+  outline-offset: 3px;
+}
+
+.pd-face:focus-visible {
+  outline-offset: -2px;
+}
+
+.pd-key-text {
+  display: grid;
+  gap: 1px;
+  justify-items: inherit;
+  max-width: 14em;
+}
+
+.pd-key-label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pd-ink-2);
+}
+
+.pd-key.is-chosen .pd-key-label,
+.pd-key.is-lit .pd-key-label {
+  color: var(--pd-ink);
+  font-weight: 700;
+}
+
+.pd-key-detail {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--pd-ink-2);
+}
+
+/*
+ * The illuminated push button: a machined bezel, a light ring, and in it a
+ * dished metal actuator that sinks when pressed. The ring is the button's
+ * own light: lit, the state it stands for is on.
+ */
+.pd-ikey {
+  --d: 36px;
+  position: relative;
+  isolation: isolate;
+  display: block;
+  flex: none;
+  width: var(--d);
+  height: var(--d);
+  border-radius: 50%;
+  background: conic-gradient(from 200deg, var(--pd-nut-1), var(--pd-nut-3) 30%, var(--pd-nut-2) 55%, var(--pd-nut-1) 80%, var(--pd-nut-1));
+  box-shadow: 1px 2px 3px var(--pd-cast), 0 0 0 0.5px rgba(0, 0, 0, 0.45);
+}
+
+.pd-ikey::before {
+  content: "";
+  position: absolute;
+  inset: 13%;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--c) 22%, #232426) 0 100%);
+  box-shadow: inset 0 1px 1.5px rgba(0, 0, 0, 0.75), 0 0 0 0.5px rgba(0, 0, 0, 0.5);
+}
+
+.pd-key.is-lit .pd-ikey::before,
+.pd-key.is-wait .pd-ikey::before,
+.pd-key[aria-busy="true"] .pd-ikey::before {
+  background: radial-gradient(circle, #fff 0 55%, color-mix(in srgb, var(--c) 70%, #fff) 70%, var(--c) 100%);
+  box-shadow: 0 0 5px 1px color-mix(in srgb, var(--c) 85%, transparent), inset 0 0 1px rgba(0, 0, 0, 0.3);
+}
+
+.pd-key.is-lit .pd-ikey::after,
+.pd-key.is-wait .pd-ikey::after,
+.pd-key[aria-busy="true"] .pd-ikey::after {
+  content: "";
+  position: absolute;
+  inset: -12px;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--c) 60%, transparent) 0 30%,
+    color-mix(in srgb, var(--c) var(--pd-spill), transparent) 40%,
+    transparent 70%
+  );
+}
+
+.pd-ikey-act {
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 64% 70%, rgba(255, 255, 255, 0.6), transparent 58%),
+    repeating-radial-gradient(circle, rgba(0, 0, 0, 0.05) 0 0.6px, transparent 0.6px 1.6px),
+    linear-gradient(135deg, #9fa3a6, #d9dbdd 60%, #eceeef);
+  box-shadow: 0.5px 1px 1.5px rgba(0, 0, 0, 0.55), inset 0 0 0 0.5px rgba(0, 0, 0, 0.45);
+  transition: transform 90ms ease-out, box-shadow 90ms ease-out;
+}
+
+.pd-key.is-lit .pd-ikey-act {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent), 0.5px 1px 1.5px rgba(0, 0, 0, 0.45), inset 0 0 0 0.5px rgba(0, 0, 0, 0.4);
+}
+
+.pd-key:active:not(:disabled) .pd-ikey-act {
+  transform: scale(0.95) translateY(0.4px);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.5);
+}
+
+/* Dim: the ring glows faintly in its colour and nothing spills, a quieter state than lit. */
+.pd-key.is-dim .pd-ikey::before {
+  background: radial-gradient(circle, color-mix(in srgb, var(--c) 45%, #c9cbce) 0 50%, color-mix(in srgb, var(--c) 78%, #3a3b3e) 100%);
+  box-shadow: 0 0 2px color-mix(in srgb, var(--c) 55%, transparent), inset 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+/* A latching key held in while what it opened stands open: the actuator stays sunk, its rim in the bezel's shade. */
+.pd-key.is-down .pd-ikey-act {
+  transform: scale(0.93) translateY(0.5px);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.55), inset 0.5px 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.pd-key.is-sm .pd-ikey {
+  --d: 24px;
+}
+
+.pd-key.is-sm .pd-ikey::after {
+  inset: -8px;
+}
+
+/*
+ * The plain momentary key: a rectangular slot and a machined keycap that
+ * sinks when pressed and stays down while its intent is in flight. Slot and
+ * keycap invert on dark metal like the slide switch's.
+ */
+.pd-mkey {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 58px;
+  height: 24px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--pd-slot-1), var(--pd-slot-2));
+  box-shadow: inset 2px 3px 4px rgba(0, 0, 0, 0.7), inset -1px -1px 0 var(--pd-slot-edge), 0 1px 0 1px var(--pd-edge-hi), 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+.pd-mkey-cap {
+  position: absolute;
+  inset: 3px;
+  border-radius: 2.5px;
+  background:
+    radial-gradient(120% 90% at 30% 20%, rgba(255, 255, 255, 0.35), transparent 60%),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.04) 0 1px, transparent 1px 3px),
+    linear-gradient(135deg, var(--pd-act-1), var(--pd-act-2) 55%, var(--pd-act-3));
+  box-shadow: 1.5px 2.5px 3px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+  transition: transform 90ms ease-out, box-shadow 90ms ease-out;
+}
+
+.pd-key:active:not(:disabled) .pd-mkey-cap,
+.pd-key[aria-busy="true"] .pd-mkey-cap {
+  transform: translateY(0.8px) scale(0.98);
+  box-shadow: 0.5px 1px 1px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.pd-key.is-off .pd-mkey-cap {
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.04) 0 1px, transparent 1px 3px),
+    linear-gradient(135deg, var(--pd-act-2), var(--pd-act-3));
+}
+
+/* The small momentary key: a matrix row's end, a slot's eject. */
+.pd-key.is-sm .pd-mkey {
+  width: 34px;
+  height: 18px;
+  border-radius: 3px;
+}
+
+.pd-key.is-sm .pd-mkey-cap {
+  inset: 2.5px;
+  border-radius: 2px;
+}
+
+.pd-key.is-sm .pd-key-label {
+  font-size: 10.5px;
+}
+
+/* The eject mark engraved on its keycap: a triangle over a bar. */
+.pd-eject .pd-mkey-cap::before,
+.pd-eject .pd-mkey-cap::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 8px;
+  margin-left: -4px;
+  background: var(--pd-cap-mark);
+}
+
+.pd-eject .pd-mkey-cap::after {
+  top: 2px;
+  height: 5px;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.pd-eject .pd-mkey-cap::before {
+  top: 8.5px;
+  height: 1.5px;
+}
+
+.pd-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: flex-start;
+}
+
+/* ---------- card slots ---------- */
+
+/* Slots side by side, each its name printed above it. */
+.pd-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 26px;
+  align-items: flex-start;
+}
+
+.pd-slotpart {
+  display: grid;
+  gap: 7px;
+  justify-items: start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pd-slotpart > .pd-slot-row {
+  justify-self: stretch;
+}
+
+.pd-slot-name {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  color: var(--pd-ink-2);
+}
+
+.pd-slot-row {
+  display: flex;
+  align-items: flex-start;
+  /* The print by the slot's LED stays out of its light. */
+  gap: 12px;
+  max-width: 100%;
+}
+
+.pd-slot {
+  position: relative;
+  flex: 0 1 auto;
+  width: 216px;
+  min-width: 112px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.pd-slot.is-loaded {
+  height: 58px;
+}
+
+.pd-slot:disabled {
+  cursor: default;
+}
+
+.pd-slot:focus-visible {
+  outline: 2px solid var(--pd-ink);
+  outline-offset: 3px;
+}
+
+/*
+ * The hood: a machined block standing on the plate, lit from the top left,
+ * the slit cut along its front lip. The slit is an opening into the box, so
+ * it is dark in both finishes.
+ */
+.pd-slot-hood {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  height: 22px;
+  border-radius: 4px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 45%),
+    linear-gradient(135deg, var(--pd-nut-1), var(--pd-nut-2) 55%, var(--pd-nut-3));
+  box-shadow: 1px 2.5px 3px var(--pd-cast), 0 0 0 0.5px rgba(0, 0, 0, 0.45), inset 0 -1px 0 rgba(0, 0, 0, 0.22);
+}
+
+.pd-slot-hood::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  bottom: 4px;
+  height: 5px;
+  border-radius: 1.5px;
+  background: linear-gradient(180deg, #000, #17181a);
+  box-shadow: inset 0 1.5px 2px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+/* Loaded: the card's edge fills the slit. */
+.pd-slot.is-loaded .pd-slot-hood::before {
+  background: linear-gradient(180deg, #000 0 35%, #3a3b3e 35%, #232426);
+}
+
+/*
+ * The card: black resin, standing out of the slit and lying on the plate
+ * under it, its paper label at the end carrying the name of what is in it.
+ */
+.pd-card {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 16px;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 7px 6px;
+  border-radius: 0 0 3px 3px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 3px, rgba(255, 255, 255, 0.06) 3px 4px) 50% 9px / 40px 6px no-repeat,
+    linear-gradient(180deg, var(--pd-resin-lo), var(--pd-resin) 35%, #2a2b2e);
+  box-shadow: 1px 2.5px 3px var(--pd-cast), 0 0 0 0.5px rgba(0, 0, 0, 0.6), inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+  /* A part of its own: the label's print is not cut into the box. */
+  text-shadow: none;
+}
+
+.pd-card-label {
+  display: block;
+  width: 100%;
+  padding: 2px 6px 3px;
+  border-radius: 1.5px;
+  background: linear-gradient(180deg, #f2f0ea, #e1dfd7);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.35);
+  color: #141516;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pd-slot-row > .pd-led {
+  margin-top: 5px;
+}
+
+.pd-slot-row > .pd-key {
+  flex: none;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* While an intent is in flight its part's light blinks; with reduced motion it glows steady and dim. */
+@keyframes pd-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.25;
+  }
+}
+
+.pd-key[aria-busy="true"] .pd-ikey::before,
+.pd-key[aria-busy="true"] .pd-ikey::after,
+.pd-encoder[aria-busy="true"] .pd-ring-led.is-on,
+.pd-upstate.is-starting .pd-led::before,
+.pd-slot-led.is-busy::before,
+.pd-slot-led.is-busy::after {
+  animation: pd-blink 900ms steps(1) infinite;
+}
+
+/* What a key stands for waits (a lane for its app's sound): a slower blink than an intent in flight. */
+.pd-key.is-wait:not([aria-busy="true"]) .pd-ikey::before,
+.pd-key.is-wait:not([aria-busy="true"]) .pd-ikey::after {
+  animation: pd-blink 1600ms steps(1) infinite;
+}
+
+/* ---------- slide switches ---------- */
+
+/*
+ * A slot cut through the plate, dark inside, its lower edge catching the
+ * light; in it a machined actuator with grip ribs across the travel.
+ * Choosing slides the actuator to its stop; nothing else moves.
+ */
+.pd-slide {
+  --step: 22px;
+  display: inline-grid;
+  grid-template-columns: minmax(0, max-content) auto minmax(0, max-content);
+  align-items: center;
+  justify-content: start;
+  justify-self: start;
+  gap: 10px;
+  max-width: 100%;
+}
+
+.pd-slide.is-2 > .pd-slide-stop:first-child {
+  text-align: right;
+}
+
+.pd-slide-stop {
+  margin: 0;
+  padding: 2px 1px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pd-ink-2);
+  text-align: left;
+  cursor: pointer;
+  transition: color 150ms;
+}
+
+.pd-slide-stop.is-chosen {
+  color: var(--pd-ink);
+  font-weight: 700;
+}
+
+.pd-slide-stop:disabled,
+.pd-slide-stop[aria-disabled="true"] {
+  cursor: default;
+}
+
+.pd-slide-hole {
+  position: relative;
+  flex: none;
+  width: calc((var(--n) - 1) * var(--step) + 24px);
+  height: 22px;
+  border-radius: 4px;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 2px),
+    linear-gradient(180deg, var(--pd-slot-1), var(--pd-slot-2));
+  box-shadow: inset 2px 3px 4px rgba(0, 0, 0, 0.75), inset -1px -1px 0 var(--pd-slot-edge), 0 1px 0 1px var(--pd-edge-hi), 0 0 0 1px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+.pd-slide.is-off .pd-slide-hole {
+  cursor: default;
+}
+
+/* A locked slide (the engine runs): the actuator sunk flat in its slot, no ribs catching light, its names in the quieter ink. */
+.pd-slide.is-off .pd-slide-knob {
+  background: linear-gradient(180deg, var(--pd-act-2), var(--pd-act-3));
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.55), inset 0 -0.5px 0 rgba(255, 255, 255, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.35);
+  transform: translateX(calc(var(--at) * var(--step))) scale(0.92);
+}
+
+.pd-slide.is-off .pd-slide-stop.is-chosen {
+  color: var(--pd-ink-2);
+}
+
+.pd-slide-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 18px;
+  border-radius: 2.5px;
+  background:
+    repeating-linear-gradient(90deg, var(--pd-act-rib-dark) 0 1px, var(--pd-act-rib-light) 1px 2px, transparent 2px 4px),
+    radial-gradient(120% 90% at 30% 20%, rgba(255, 255, 255, 0.35), transparent 60%),
+    linear-gradient(135deg, var(--pd-act-1), var(--pd-act-2) 55%, var(--pd-act-3));
+  background-size: 12px 100%, 100% 100%, 100% 100%;
+  background-position: center, 0 0, 0 0;
+  background-repeat: no-repeat;
+  box-shadow: 2px 3px 3px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 -1px 0 rgba(0, 0, 0, 0.45), inset 1px 0 0 rgba(255, 255, 255, 0.3);
+  transform: translateX(calc(var(--at) * var(--step)));
+  transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Three stops: the names printed under each stop. */
+.pd-slide:not(.is-2) {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.pd-slide-legend {
+  position: relative;
+  height: 18px;
+  width: calc((var(--n) - 1) * var(--step) + 24px);
+}
+
+.pd-slide-legend .pd-slide-stop {
+  position: absolute;
+  white-space: nowrap;
+  top: 0;
+  left: calc(var(--i) * var(--step) + 12px);
+  font-size: 11.5px;
+  transform: translateX(-50%);
+}
+
+.pd-switchline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+/* ---------- knobs ---------- */
+
+.pd-knob {
+  position: relative;
+  display: block;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 30%, var(--pd-resin-hi), var(--pd-resin) 55%, var(--pd-resin-lo));
+  box-shadow: 5px 8px 10px var(--pd-cast), 1px 2px 3px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -2px 3px rgba(0, 0, 0, 0.7);
+}
+
+/* The knurled skirt. */
+.pd-knob::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0.11) 0 2.5deg, transparent 2.5deg 7deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 66%, #000 67%);
+  mask: radial-gradient(circle, transparent 0 66%, #000 67%);
+}
+
+/* The machined aluminium top with the lathe's fine rings. */
+.pd-knob-cap {
+  position: absolute;
+  inset: 17%;
+  border-radius: 50%;
+  background:
+    repeating-radial-gradient(circle, rgba(0, 0, 0, 0.07) 0 0.6px, rgba(255, 255, 255, 0.05) 0.6px 1.2px, transparent 1.2px 2.1px),
+    radial-gradient(circle at 40% 35%, rgba(255, 255, 255, 0.5), transparent 55%),
+    conic-gradient(from 20deg, #e9eaeb, #a7aaac, #f4f5f5, #9c9fa1, #e3e4e5, #a6a9ab, #e9eaeb);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+/*
+ * The pointer is a slot milled into the cap, not a line laid on it. Its
+ * floor darkens the metal under it; the wall facing the light shows as a
+ * bright lip on the far side. The light stays at the top left however the
+ * knob turns, so the lip and the shade are the same line moved in screen
+ * space before it turns (parts.ts knobBody).
+ */
+.pd-ptr {
+  --pw: max(1.8px, 3%);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--pw);
+  height: 50%;
+  margin-left: calc(var(--pw) / -2);
+  transform-origin: 50% 0;
+}
+
+.pd-ptr::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 24%;
+  height: 44%;
+  border-radius: 0.4px;
+  background: rgba(16, 17, 19, 0.82);
+  mix-blend-mode: multiply;
+}
+
+.pd-ptr.is-lip::after {
+  background: rgba(255, 255, 255, 0.85);
+  mix-blend-mode: screen;
+}
+
+.pd-ptr.is-shade::after {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* An encoder: the knob in an LED ring that sits flush behind a diffuser. */
+.pd-encoder {
+  position: relative;
+  flex: none;
+  border-radius: 50%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.pd-encoder[aria-disabled="true"] {
+  cursor: default;
+}
+
+.pd-encoder > .pd-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.pd-ring {
+  position: absolute;
+  inset: 0;
+}
+
+.pd-ring-led {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--pd-led-white) 14%, #2a2b2d), #18191a);
+  box-shadow: inset 0 0.5px 1px rgba(0, 0, 0, 0.6);
+}
+
+.pd-ring-led.is-on {
+  background: radial-gradient(circle, #fff 0 40%, var(--pd-led-white) 70%, color-mix(in srgb, var(--pd-led-white) 70%, #888));
+  box-shadow: 0 0 4px 1px color-mix(in srgb, var(--pd-led-white) 70%, transparent);
+}
+
+.pd-level {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.pd-level-say {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+/* A rotary selector: a pointer knob between printed ticks, each position's name at its tick. */
+.pd-rotary {
+  position: relative;
+  width: 100%;
+}
+
+.pd-ticks {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+}
+
+.pd-ticks line {
+  stroke: var(--pd-rule);
+  stroke-width: 1.4;
+}
+
+.pd-rotary-knob {
+  position: absolute;
+  cursor: pointer;
+}
+
+.pd-rotary.is-off .pd-rotary-knob {
+  cursor: default;
+}
+
+.pd-rotary-stop {
+  position: absolute;
+  margin: 0;
+  padding: 1px 3px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--pd-ink-2);
+  text-align: left;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.pd-rotary-stop.is-chosen {
+  color: var(--pd-ink);
+  font-weight: 700;
+}
+
+.pd-rotary-stop:disabled {
+  cursor: default;
+}
+
+/* ---------- DIP switches ---------- */
+
+.pd-dip {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  padding: 20px 0 8px;
+}
+
+/* The switch body: black plastic behind the levers' column. */
+.pd-dip::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 42px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #232426, #141516);
+  box-shadow: 2px 3px 4px var(--pd-cast), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.pd-dip-on {
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: 42px;
+  padding-right: 5px;
+  text-align: right;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #d9d9d9;
+  /* Printed on the switch's black body, not cut into the plate. */
+  text-shadow: none;
+}
+
+.pd-dip-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 42px 10px auto;
+  align-items: center;
+  column-gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pd-dip-row:disabled {
+  cursor: default;
+}
+
+.pd-dip-sw {
+  justify-self: center;
+  position: relative;
+  width: 30px;
+  height: 12px;
+  border-radius: 2px;
+  background: #0a0a0b;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.pd-dip-sw i {
+  position: absolute;
+  top: 1.5px;
+  left: 2px;
+  width: 13px;
+  height: 9px;
+  border-radius: 1.5px;
+  background: linear-gradient(180deg, #ffffff, #cfcfcf);
+  transition: left 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.pd-dip-row.is-on .pd-dip-sw i {
+  left: 15px;
+}
+
+.pd-dip-n {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--pd-ink-2);
+}
+
+.pd-dip-name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* The legend under the bank: a line per position, numbered like the levers, saying what its state does now (법칙 5). */
+.pd-dip-legend {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0 0 0 50px;
+  list-style: none;
+}
+
+.pd-dip-legend-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: baseline;
+}
+
+/* A lock lamp by a switch the running engine holds (법칙 3): lit amber with its printed name, its number pointing at the legend plate. */
+.pd-lockline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+.pd-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pd-lock-name {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--pd-ink-2);
+}
+
+/* ---------- drawn hardware ---------- */
+
+.pd-flow {
+  align-self: center;
+  justify-self: center;
+  color: var(--pd-rule);
+}
+
+.pd-screw {
+  position: absolute;
+  z-index: 1;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, var(--pd-nut-1), var(--pd-nut-2) 55%, var(--pd-nut-3));
+  box-shadow: 0.5px 1px 1.5px var(--pd-cast), inset 0 0 0 0.5px rgba(0, 0, 0, 0.4);
+}
+
+.pd-screw::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 1px;
+  background: #1a1b1d;
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  opacity: 0.8;
+}
+
+.pd-screw.is-tl {
+  left: 14px;
+  top: 14px;
+}
+
+.pd-screw.is-tr {
+  right: 14px;
+  top: 14px;
+}
+
+.pd-screw.is-bl {
+  left: 14px;
+  bottom: 14px;
+}
+
+.pd-screw.is-br {
+  right: 14px;
+  bottom: 14px;
+}
+
+/* Laser etching: lines cut into the metal, never ink and never words. */
+.pd-etch-cut {
+  fill: none;
+  stroke: var(--pd-etch);
+  stroke-width: 1;
+}
+
+.pd-etch-lip {
+  fill: none;
+  stroke: var(--pd-etch-lip);
+  stroke-width: 1;
+}
+
+.pd-etch-field {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: -1;
+  width: 1600px;
+  height: 1600px;
+  margin: -800px 0 0 -800px;
+  pointer-events: none;
+  -webkit-mask: radial-gradient(circle, #000 0 9%, rgba(0, 0, 0, 0.9) 12%, transparent 46%);
+  mask: radial-gradient(circle, #000 0 9%, rgba(0, 0, 0, 0.9) 12%, transparent 46%);
+}
+
+/* Off, nothing stands under the columns: the rings run on to the face's edges. */
+.pd-status.is-standby .pd-etch-field {
+  -webkit-mask: radial-gradient(circle, #000 0 9%, rgba(0, 0, 0, 0.9) 30%, transparent 68%);
+  mask: radial-gradient(circle, #000 0 9%, rgba(0, 0, 0, 0.9) 30%, transparent 68%);
+}
+
+.pd-etch-flow {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 170px;
+}
+
+.pd-etch-flow .pd-etch-cut,
+.pd-etch-flow .pd-etch-lip {
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- the top edge: jacks ---------- */
+
+.pd-strip {
+  padding: 18px 32px 0;
+}
+
+.pd-jacks {
+  align-items: center;
+}
+
+.pd-jack-list {
+  display: contents;
+}
+
+.pd-jack {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pd-jack.is-out {
+  grid-column: 8;
+}
+
+.pd-jack-nut {
+  flex: none;
+  filter: drop-shadow(1.5px 2.5px 1.5px var(--pd-cast));
+}
+
+.pd-jack-text {
+  display: grid;
+  min-width: 0;
+}
+
+.pd-jack-device {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.3;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.pd-strip > .pd-rule {
+  margin-top: 14px;
+}
+
+/* ---------- the face between the rails ---------- */
+
+.pd-faceframe {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+/* Each in its own row whichever are there, so the face alone gives way when a band comes. */
+.pd-top {
+  grid-row: 1;
+  display: grid;
+  gap: 8px;
+  padding: 10px 40px 0 32px;
+}
+
+.pd-refusals {
+  grid-row: 3;
+  display: grid;
+  gap: 8px;
+  padding: 6px 40px 4px 32px;
+}
+
+.pd-facewin {
+  grid-row: 2;
+  position: relative;
+  min-height: 0;
+}
+
+.pd-face {
+  height: 100%;
+  overflow: auto;
+  padding: 14px 44px 8px 32px;
+  scrollbar-width: none;
+  isolation: isolate;
+}
+
+.pd-face::-webkit-scrollbar {
+  display: none;
+}
+
+/* Where parts run on past an edge they pass under the rail, which casts its shadow on them. */
+.pd-facewin::before,
+.pd-facewin::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 20px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms;
+}
+
+.pd-facewin::before {
+  top: 0;
+  background: linear-gradient(to bottom, var(--pd-rail-edge) 0 1px, var(--pd-under) 1px, transparent);
+}
+
+.pd-facewin::after {
+  bottom: 0;
+  background: linear-gradient(to top, var(--pd-rail-edge) 0 1px, var(--pd-under) 1px, transparent);
+}
+
+.pd-facewin.more-up::before,
+.pd-facewin.more-down::after {
+  opacity: 1;
+}
+
+.pd-cue {
+  position: absolute;
+  right: 8px;
+  z-index: 3;
+  display: none;
+}
+
+.pd-facewin.scrolls .pd-cue {
+  display: inline-grid;
+}
+
+.pd-cue.is-up {
+  top: 8px;
+}
+
+.pd-cue.is-down {
+  bottom: 8px;
+}
+
+/* The arrow engraved on the actuator. */
+.pd-cue .pd-ikey-act::after {
+  content: "";
+  position: absolute;
+  inset: 28%;
+  background: rgba(20, 22, 24, 0.75);
+  clip-path: polygon(50% 14%, 94% 84%, 6% 84%);
+}
+
+.pd-cue.is-down .pd-ikey-act::after {
+  transform: rotate(180deg);
+}
+
+/* The plate itself can be taken and moved: a hand over its bare metal while there is more to see. */
+.pd-facewin.scrolls .pd-face {
+  cursor: grab;
+}
+
+.pd-facewin.scrolls .pd-face.is-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.pd-facewin.scrolls .pd-face :is(button, [role="slider"], .pd-slide-hole, .pd-rotary-knob) {
+  cursor: pointer;
+}
+
+.pd-facewin.scrolls .pd-face :is(button:disabled, [aria-disabled="true"]) {
+  cursor: default;
+}
+
+/* ---------- errors and notes ---------- */
+
+/* A printed warning field: a frame, a red LED, the sentence and its key. */
+.pd-band {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--pd-rule);
+  border-radius: 8px;
+}
+
+.pd-band-text {
+  display: grid;
+  gap: 2px;
+}
+
+.pd-band-message {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.pd-notes {
+  display: grid;
+  gap: 4px;
+}
+
+.pd-notes li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pd-ink-2);
+}
+
+.pd-notes .pd-led {
+  transform: translateY(1px);
+}
+
+/* ---------- the foot ---------- */
+
+.pd-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 10px 32px 18px;
+}
+
+.pd-facekeys {
+  display: flex;
+  align-items: flex-end;
+  gap: 22px;
+}
+
+.pd-plate {
+  position: relative;
+  /* A part of its own with its own engraving (법칙 8): the plate's letters keep no lip of the box. */
+  text-shadow: none;
+  margin-bottom: 8px;
+  padding: 7px 28px 6px;
+  border-radius: 4px;
+  text-align: center;
+  background: linear-gradient(135deg, var(--pd-plate-1), var(--pd-plate-2));
+  box-shadow: 1px 2px 4px var(--pd-cast), inset 1px 1px 0 rgba(255, 255, 255, 0.25), inset -1px -1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.pd-plate b {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--pd-plate-ink);
+}
+
+.pd-plate span {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--pd-plate-ink-2);
+}
+
+.pd-plate i {
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, var(--pd-nut-1), var(--pd-nut-3));
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.5);
+}
+
+.pd-plate i:first-of-type {
+  left: 10px;
+}
+
+.pd-plate i:last-of-type {
+  right: 10px;
+}
+
+.pd-power {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.pd-lamps {
+  display: flex;
+  gap: 16px;
+  padding-bottom: 10px;
+}
+
+.pd-lamp {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+}
+
+/* The footswitch: a metal plunger that goes down under the foot, no light of its own. */
+.pd-footswitch {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+
+.pd-footswitch:disabled {
+  cursor: default;
+}
+
+.pd-foot-drawing {
+  display: block;
+  filter: drop-shadow(3px 5px 4px var(--pd-cast));
+  transition: transform 90ms ease-out;
+}
+
+.pd-footswitch:active:not(:disabled) .pd-foot-drawing,
+.pd-footswitch[aria-busy="true"] .pd-foot-drawing {
+  transform: translateY(1px) scale(0.985);
+}
+
+/* ---------- the status face ---------- */
+
+.pd-status {
+  position: relative;
+  overflow: clip;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-height: 100%;
+}
+
+.pd-status.is-running {
+  grid-template-rows: minmax(0, 1fr);
+  grid-auto-rows: auto;
+}
+
+/* The channels share their rows, so every bar graph starts and ends on the same line. */
+.pd-status-main {
+  align-items: stretch;
+  grid-template-rows: auto auto auto minmax(150px, 1fr);
+  row-gap: 6px;
+}
+
+.pd-status-main > * {
+  grid-row: 1 / span 4;
+}
+
+/* Off or stopped the channels have no bar graphs, so nothing holds their last row open. */
+.pd-status.is-standby .pd-status-main {
+  grid-template-rows: repeat(4, auto);
+}
+
+.pd-chs {
+  display: contents;
+}
+
+.pd-ch {
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: 1 / span 4;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.pd-ep {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--pd-ink-2);
+}
+
+.pd-ch-format {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+
+/* A lane's app key keeps its ring's light off the print above it and inside the face's clipped left edge. */
+.pd-ch-format > .pd-key {
+  margin-top: 6px;
+  margin-left: 12px;
+}
+
+/* An app key's exe under the app's name, in small print, so a narrow column breaks between them. */
+.pd-key-sub {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--pd-ink-2);
+}
+
+/* The format as parts: the channel and rate readouts, the kind on a printed tag; a bitstream's carrier under them. */
+.pd-fmtparts {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+.pd-fmt-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px 10px;
+}
+
+.pd-fmt-kind {
+  margin-top: 2px;
+  padding: 1px 5px;
+  border: 1px solid var(--pd-rule);
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--pd-ink);
+  white-space: nowrap;
+}
+
+.pd-fmt {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.pd-ch.is-dark .pd-fmt {
+  font-weight: 500;
+  color: var(--pd-ink-2);
+}
+
+.pd-ch-notes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: start;
+  gap: 6px 12px;
+}
+
+/* The DAW's facts, a line each. */
+.pd-asio-facts {
+  display: grid;
+  gap: 1px;
+}
+
+/* The output's rate printed, its channels on the indicator strip under it. */
+.pd-outfmt {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.pd-ladder-row {
+  display: flex;
+  align-items: stretch;
+  /* The print by the bar graph stays out of its segments' light. */
+  gap: 12px;
+  min-height: 0;
+  padding-top: 8px;
+}
+
+.pd-ch-level {
+  display: grid;
+  gap: 4px;
+  align-self: flex-end;
+  justify-items: start;
+}
+
+.pd-mapcol {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pd-mapwrap {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+}
+
+.pd-outcol {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.pd-plays {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.pd-device {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.pd-device.is-none {
+  color: var(--pd-ink-2);
+}
+
+.pd-kind {
+  display: grid;
+  gap: 6px;
+}
+
+.pd-under {
+  display: grid;
+  gap: 10px;
+}
+
+.pd-under-row {
+  display: grid;
+  gap: 8px;
+}
+
+.pd-meters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px 26px;
+}
+
+.pd-meter {
+  display: grid;
+  gap: 5px;
+  justify-items: start;
+}
+
+.pd-meter .pd-label {
+  display: flex;
+  align-items: center;
+  /* The name stays out of its LED's light. */
+  gap: 10px;
+}
+
+.pd-sep {
+  align-self: stretch;
+  width: 1.5px;
+  background: var(--pd-rule-2);
+}
+
+.pd-counters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 18px;
+}
+
+.pd-details {
+  display: grid;
+  gap: 8px;
+}
+
+.pd-details-grid {
+  grid-template-columns: repeat(2, auto minmax(0, 1fr));
+}
+
+.pd-kinds {
+  display: grid;
+  gap: 1px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--pd-ink-2);
+}
+
+.pd-kinds li {
+  display: flex;
+  gap: 8px;
+}
+
+/* A row of keys: outputs, apps, layouts, upmixers. */
+.pd-keyrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 18px;
+}
+
+.pd-keyrow.is-lined {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.pd-keyline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 14px;
+}
+
+.pd-keyline + .pd-keyline {
+  padding-top: 8px;
+  border-top: 1px solid var(--pd-rule-2);
+}
+
+.pd-row-empty {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+/* ---------- the map ---------- */
+
+.pd-map {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.pd-map-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.pd-map-plan {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.pd-print-line {
+  fill: none;
+  stroke: var(--pd-rule);
+  stroke-width: 1.2;
+}
+
+.pd-print-line.is-quiet {
+  stroke: var(--pd-rule-2);
+  stroke-width: 1;
+}
+
+.pd-map-head {
+  fill: var(--pd-metal-1);
+}
+
+.pd-map-name {
+  fill: var(--pd-ink-2);
+  font-family: var(--pd-font);
+  font-size: 12px;
+  font-weight: 600;
+  /* SVG text takes no text-shadow in every engine: the same 1px lip as a zero-blur filter. */
+  text-shadow: none;
+  filter: drop-shadow(var(--pd-lip));
+}
+
+.pd-map.is-dense .pd-map-name {
+  font-size: 11px;
+}
+
+.pd-map-mark {
+  fill: none;
+  stroke: var(--pd-rule);
+  stroke-width: 1;
+}
+
+.pd-map-mark.is-down {
+  stroke-dasharray: 3 2.5;
+}
+
+.pd-mled {
+  --c: var(--pd-lane-0);
+  fill: var(--pd-mled-off);
+  stroke: var(--pd-mled-edge);
+  stroke-width: 0.8;
+}
+
+.pd-mled.lane-1 {
+  --c: var(--pd-lane-1);
+}
+
+.pd-mled.lane-2 {
+  --c: var(--pd-lane-2);
+}
+
+.pd-mled.lane-x {
+  --c: var(--pd-lane-3);
+}
+
+.pd-mled.is-lit {
+  r: 3.4px;
+  fill: var(--c);
+  stroke: none;
+  filter: drop-shadow(0 0 3px var(--c));
+}
+
+/* A sound below the ears lights its LED dimmer: it lies under the plan. */
+.pd-mled.is-lit.is-down {
+  fill: color-mix(in srgb, var(--c) 60%, #2a2b2d);
+  filter: drop-shadow(0 0 1.5px var(--c));
+}
+
+/* A direction's push button: a washer and a dark cap that goes down when pressed. */
+.pd-map-points {
+  position: absolute;
+  inset: 0;
+}
+
+.pd-map-point {
+  position: absolute;
+  /* The button's width in the drawing's 300 units (map.ts: smaller for many directions or close ones). */
+  width: calc(var(--pd-point, 17) / 300 * 100%);
+  aspect-ratio: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, var(--pd-nut-1), var(--pd-nut-2) 60%, var(--pd-nut-3));
+  box-shadow: 1px 1.6px 1px var(--pd-cast), 0 0 0 0.6px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+}
+
+.pd-map-point:disabled {
+  cursor: default;
+}
+
+.pd-map-cap {
+  position: absolute;
+  inset: 17%;
+  border-radius: 50%;
+  background: #1a1b1d;
+  transition: transform 90ms ease-out;
+}
+
+.pd-map-point:active:not(:disabled) .pd-map-cap,
+.pd-map-point[aria-busy="true"] .pd-map-cap {
+  transform: scale(0.9);
+}
+
+.pd-map-status {
+  text-align: center;
+}
+
+.pd-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pd-ink-2);
+}
+
+.pd-map-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The legend's marks are printed, a dot for a direction's button and the plan's rings round it. */
+.pd-swatch {
+  position: relative;
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--pd-ink-2);
+}
+
+.pd-swatch.is-up,
+.pd-swatch.is-down {
+  margin: 0 3px;
+  box-shadow: 0 0 0 2px transparent, 0 0 0 3px var(--pd-rule);
+}
+
+.pd-swatch.is-down {
+  box-shadow: none;
+  outline: 1px dashed var(--pd-rule);
+  outline-offset: 2px;
+}
+
+/* ---------- the profile face ---------- */
+
+.pd-profile {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  min-height: 100%;
+  padding-top: 8px;
+}
+
+.pd-profile-main,
+.pd-profile-side {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  min-width: 0;
+}
+
+/* The shorter column's spare room carries the etched signal flow. */
+.pd-profile-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.pd-profile-main > .pd-flowroom {
+  flex: 1 1 0;
+  align-items: start;
+  padding-top: 28px;
+}
+
+.pd-kindkeys {
+  display: flex;
+  gap: 22px;
+}
+
+.pd-kindpanel {
+  display: grid;
+  gap: 14px;
+}
+
+.pd-filenote {
+  display: grid;
+  gap: 4px;
+}
+
+[data-group="pd-profile-map"] .pd-map {
+  max-width: 300px;
+  justify-self: center;
+}
+
+.pd-tests {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+
+.pd-tests.is-dense {
+  gap: 8px 10px;
+}
+
+.pd-tests.is-dense .pd-mkey {
+  width: 40px;
+  height: 20px;
+}
+
+.pd-tests.is-dense .pd-key-detail {
+  font-variant-numeric: tabular-nums;
+}
+
+.pd-table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.pd-table th,
+.pd-table td {
+  padding: 2px 14px 2px 0;
+  border-bottom: 1px solid var(--pd-rule-2);
+  text-align: left;
+}
+
+.pd-table thead th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pd-ink-2);
+}
+
+.pd-table tbody th {
+  font-weight: 600;
+}
+
+/* The patch strip: each device channel's number, its LED, the speaker on it. */
+.pd-patch .pd-patch-led,
+.pd-patch thead td {
+  width: 1px;
+  padding-right: 10px;
+  line-height: 0;
+  vertical-align: middle;
+}
+
+.pd-patch tr > :first-child {
+  width: 1px;
+  white-space: nowrap;
+}
+
+/* ---------- the upmix face ---------- */
+
+.pd-upmix {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 100%;
+  padding-top: 8px;
+}
+
+.pd-upmix > .pd-flowroom {
+  flex: 1 1 0;
+}
+
+.pd-upmix-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.pd-upmix-info {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 12px;
+  max-width: none;
+}
+
+.pd-upmix-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.pd-upstate {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pd-upstate .pd-led {
+  transform: translateY(2px);
+}
+
+.pd-upstate .pd-mark {
+  align-self: center;
+}
+
+/* What the running upmixer puts out, on the channel indicators, under the state's word. */
+.pd-upout {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.pd-upout-label {
+  padding-top: 1px;
+}
+
+/* The three upmixers in even columns, so each key's leader drops from its own centre. */
+.pd-keyrow.pd-upkeys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  justify-items: center;
+  gap: 12px 8px;
+}
+
+.pd-upkeys > .pd-key {
+  align-self: stretch;
+}
+
+/*
+ * A row of choices whose chosen one's description is printed under it
+ * (법칙 5): the chosen part's leader, a dot under its print and a line down
+ * to the caption's frame, a group's gap below.
+ */
+.pd-leads > .is-chosen {
+  position: relative;
+}
+
+.pd-leads > .is-chosen::before,
+.pd-leads > .is-chosen::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+}
+
+.pd-leads > .is-chosen::before {
+  top: calc(100% + 1px);
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: var(--pd-ink-2);
+  box-shadow: var(--pd-lip);
+}
+
+.pd-leads > .is-chosen::after {
+  top: calc(100% + 3px);
+  height: var(--lead, 9px);
+  margin-left: -0.75px;
+  border-left: 1.5px solid var(--pd-rule);
+}
+
+/* A slide stop's print sits a little above the switch's foot. */
+.pd-slide.pd-leads {
+  --lead: 11px;
+}
+
+/* The chosen one's description, in the printed frame its leader runs to. */
+.pd-callout {
+  padding: 7px 10px 8px;
+  border: 1.5px solid var(--pd-rule);
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--pd-ink-2);
+}
+
+.pd-updelay {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---------- the settings face ---------- */
+
+/* The routing matrix's column is a little wider than the plates': an app's name, three keys and a row-end key across it. */
+.pd-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  min-height: 100%;
+  padding-top: 8px;
+}
+
+.pd-stack {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  min-width: 0;
+}
+
+.pd-pair {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+.pd-cols2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+/* The spare room under the switches: the signal flow etched, drawn only when there is room for it. */
+.pd-flowroom {
+  display: grid;
+  place-items: center;
+  justify-self: stretch;
+  min-height: 0;
+  container-type: size;
+}
+
+@container (max-height: 80px) {
+  .pd-etch-flow {
+    display: none;
+  }
+}
+
+/*
+ * The routing matrix: an app a row, an input a column, an illuminated key at
+ * each crossing. The inputs' names are printed once at the head, the rows
+ * ruled, each part of the matrix (the apps with sound now, the saved rules)
+ * under its printed name.
+ */
+.pd-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.pd-matrix thead th {
+  width: 38px;
+  padding: 0 0 5px;
+  border-bottom: 1.5px solid var(--pd-rule);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--pd-ink);
+}
+
+.pd-matrix thead td {
+  border-bottom: 1.5px solid var(--pd-rule);
+}
+
+.pd-matrix thead td:last-child {
+  width: 68px;
+}
+
+.pd-mx-part th {
+  padding: 10px 0 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-align: left;
+  color: var(--pd-ink-2);
+}
+
+.pd-matrix tbody tr:not(.pd-mx-part) > * {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--pd-rule-2);
+  vertical-align: middle;
+}
+
+.pd-mx-name {
+  padding-right: 8px !important;
+  overflow: hidden;
+  text-align: left;
+  font-weight: inherit;
+}
+
+/* A name the factory printed: the built-in rules. */
+.pd-silk {
+  display: block;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pd-mx-cell {
+  position: relative;
+  text-align: center;
+}
+
+/* The factory's input: a small triangle printed under its key. */
+.pd-mx-cell.is-factory::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  margin-left: -3.5px;
+  border-right: 3.5px solid transparent;
+  border-bottom: 4px solid var(--pd-ink-2);
+  border-left: 3.5px solid transparent;
+}
+
+.pd-mx-end {
+  text-align: right;
+}
+
+.pd-mx-end > .pd-key {
+  justify-items: end;
+  gap: 4px;
+  text-align: right;
+}
+
+.pd-mx-end .pd-key-label {
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+/* The matrix's legend: a lit ring and a dim one, each with what it says. */
+.pd-mx-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  /* The print stays out of the LED's light. */
+  gap: 6px 9px;
+}
+
+.pd-mx-key > .pd-label + .pd-led,
+.pd-mx-key > .pd-small + .pd-led {
+  margin-left: 10px;
+}
+
+/*
+ * Label-maker tape stuck on the plate (법칙 8): a raised vinyl strip, the
+ * letters pressed up out of it. It is not the plate's print, so it keeps no
+ * engraved lip; the raised letters catch the light at their top left.
+ */
+.pd-tape {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 7px 3px;
+  border-radius: 2px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 42%, rgba(0, 0, 0, 0.14)),
+    var(--pd-tape);
+  box-shadow: 0.5px 1.5px 2px var(--pd-cast), inset 0 0 0 0.5px rgba(0, 0, 0, 0.35);
+  color: var(--pd-tape-ink);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.35;
+  text-shadow: var(--pd-tape-relief);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+/* A DIP position with a numbered note's mark after it. */
+.pd-dip-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pd-attenuation {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.pd-attenuation-say {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+/* ---------- setup and quit ---------- */
+
+.pd-wizard {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 14px;
+  min-height: 100%;
+  max-width: 1040px;
+  padding-top: 8px;
+}
+
+.pd-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+}
+
+.pd-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pd-step.is-current .pd-small {
+  color: var(--pd-ink);
+  font-weight: 700;
+}
+
+.pd-wizard-body {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+
+.pd-other {
+  padding-top: 8px;
+  border-top: 1px solid var(--pd-rule-2);
+}
+
+.pd-entrances {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px 16px;
+  width: 100%;
+  padding-top: 8px;
+}
+
+.pd-need {
+  display: block;
+}
+
+/* The step's sentences in their legend box, as wide as the step. */
+.pd-wizard-body > .pd-steptext {
+  justify-self: stretch;
+}
+
+/* A spec plate on the step, a readable width. */
+.pd-wizard-body > .pd-spec {
+  justify-self: stretch;
+  max-width: 640px;
+}
+
+.pd-endpoints dt {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--pd-ink);
+}
+
+.pd-endpoints dd {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pd-ink-2);
+}
+
+.pd-quit {
+  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+  max-width: none;
+  justify-items: center;
+  text-align: center;
+}
+
+.pd-quit .pd-wizard-body {
+  grid-row: 2;
+  justify-items: center;
+}
+
+.pd-quit > .pd-flowroom {
+  grid-row: 3;
+}
+
+/* ---------- motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .pd-slide-knob,
+  .pd-slide-stop,
+  .pd-dip-sw i,
+  .pd-ikey-act,
+  .pd-mkey-cap,
+  .pd-map-cap,
+  .pd-foot-drawing,
+  .pd-facewin::before,
+  .pd-facewin::after {
+    transition: none;
+  }
+
+  /* Steady and dim instead of blinking. */
+  .pd-key[aria-busy="true"] .pd-ikey::before,
+  .pd-key[aria-busy="true"] .pd-ikey::after,
+  .pd-key.is-wait:not([aria-busy="true"]) .pd-ikey::before,
+  .pd-key.is-wait:not([aria-busy="true"]) .pd-ikey::after,
+  .pd-encoder[aria-busy="true"] .pd-ring-led.is-on,
+  .pd-upstate.is-starting .pd-led::before,
+  .pd-slot-led.is-busy::before,
+  .pd-slot-led.is-busy::after {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
+/* ---------- smaller windows: the parts move, the face runs on ---------- */
+
+@media (max-width: 1100px) {
+  .pd-settings {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pd-settings > .pd-pair {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1000px) {
+  .pd-box {
+    inset: 8px;
+    border-radius: 18px;
+  }
+
+  .pd-strip {
+    padding: 12px 20px 0;
+  }
+
+  .pd-top,
+  .pd-refusals {
+    padding-left: 20px;
+    padding-right: 36px;
+  }
+
+  .pd-face {
+    padding: 10px 40px 6px 20px;
+  }
+
+  .pd-foot {
+    padding: 8px 32px 14px 20px;
+  }
+
+  .pd-screw.is-bl,
+  .pd-screw.is-br {
+    bottom: 10px;
+  }
+
+  .pd-screw.is-bl {
+    left: 10px;
+  }
+
+  .pd-screw.is-br {
+    right: 10px;
+  }
+
+  .pd-cols {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.3fr);
+    column-gap: 10px;
+  }
+
+  .pd-jack.is-out {
+    grid-column: 5;
+  }
+
+  .pd-cols > .pd-flow {
+    display: none;
+  }
+
+  .pd-status-main {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: auto auto auto minmax(150px, auto) auto;
+  }
+
+  .pd-status-main > .pd-mapcol {
+    grid-column: 1 / 3;
+    grid-row: 5;
+    margin-top: 14px;
+  }
+
+  .pd-status-main > .pd-outcol {
+    grid-column: 3 / 5;
+    grid-row: 5;
+    margin-top: 14px;
+  }
+
+  .pd-plate {
+    margin-bottom: 6px;
+    padding: 5px 20px 4px;
+  }
+
+  .pd-plate b {
+    font-size: 11.5px;
+    letter-spacing: 0.12em;
+  }
+
+  .pd-plate span {
+    font-size: 9.5px;
+  }
+
+  .pd-plate i:first-of-type {
+    left: 7px;
+  }
+
+  .pd-plate i:last-of-type {
+    right: 7px;
+  }
+
+  .pd-foot-drawing {
+    width: 56px;
+    height: 56px;
+  }
+
+  .pd-jack-nut {
+    width: 30px;
+    height: 30px;
+  }
+
+  .pd-jack {
+    gap: 7px;
+  }
+
+  .pd-jack .pd-name {
+    font-size: 13px;
+  }
+
+  .pd-profile,
+  .pd-upmix-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pd-details-grid {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .pd-cols2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pd-facekeys {
+    gap: 12px;
+  }
+
+  .pd-lamps {
+    gap: 10px;
+  }
+
+  .pd-foot {
+    gap: 12px;
+  }
+
+  .pd-jack-nut {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* The name keeps the 7 px it has everywhere: closer, its last letter stands in the jack LED's light. */
+  .pd-jack .pd-name {
+    font-size: 12px;
+  }
+
+  .pd-meters {
+    gap: 12px 18px;
+  }
+}

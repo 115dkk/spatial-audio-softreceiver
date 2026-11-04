@@ -165,6 +165,7 @@
     "test_signing": false,
     "secure_boot": "enabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "시험서명 모드가 꺼져 있습니다. Secure Boot를 끈 뒤 관리자 명령으로 bcdedit /set testsigning on을 실행하고 다시 시작하십시오. Secure Boot가 켜져 있어 먼저 꺼야 합니다.",

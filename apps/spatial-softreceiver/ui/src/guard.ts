@@ -200,7 +200,7 @@ function carrying<K extends string, V>(kind: K, inner: Guard<V>): Guard<{ kind: 
 
 // Unit enums: the keys are checked against the bindings' unions.
 export const LANGUAGES: Record<Language, true> = { ko: true, en: true };
-export const SKINS: Record<Skin, true> = { standard: true, panel: true, console: true };
+export const SKINS: Record<Skin, true> = { standard: true, pedal: true, console: true };
 export const HEALTH_PARTS: Record<HealthPart, true> = { driver: true, engine: true, output: true, plugins: true };
 export const MINUTE_STATES: Record<MinuteState, true> = {
   no_record: true,
@@ -685,10 +685,11 @@ const snapshot = object<Snapshot>({
   chosen_output: nullable(outputChoice),
   driver: nullable(driverState),
   platform: nullable(platform),
+  driver_unsupported: nullable(string),
   roles_taken: boolean,
   error: nullable(userError),
   notes: array(string),
-}, ['entrance', 'app_capture']);
+}, ['entrance', 'app_capture', 'driver_unsupported']);
 
 const intent = tagged<Intent>({
   set_language: carrying('set_language', nullable(language)),

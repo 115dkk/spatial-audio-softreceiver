@@ -165,6 +165,7 @@
     "test_signing": false,
     "secure_boot": "enabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "The app-sound entrance requires Windows build 20348 or newer. This PC has an older version, so only the driver entrance is available.",
