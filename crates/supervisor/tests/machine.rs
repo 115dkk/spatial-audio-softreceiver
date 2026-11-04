@@ -1489,7 +1489,7 @@ fn the_wizard_walks_every_step_on_a_fresh_pc() {
     assert_eq!(
         supervisor.handle(Intent::ChooseOutput(id(OURS))),
         Err(error(
-            "Spatial SoftReceiver 자신을 출력으로 고를 수 없습니다.",
+            "Spatial SoftReceiver 자신을 출력으로 선택할 수 없습니다.",
             NextAction::None
         ))
     );
@@ -2140,8 +2140,8 @@ fn restore_notes_a_previous_device_that_disappeared() {
     assert_eq!(
         snapshot.notes,
         [
-            "이전 기본 장치(멀티미디어)를 찾을 수 없어 Windows가 고르게 둡니다.",
-            "이전 기본 장치(통신)를 찾을 수 없어 Windows가 고르게 둡니다.",
+            "이전 기본 장치(멀티미디어)를 찾을 수 없어 Windows가 선택하게 둡니다.",
+            "이전 기본 장치(통신)를 찾을 수 없어 Windows가 선택하게 둡니다.",
         ]
     );
     assert_eq!(snapshot.phase, Phase::Ready);
@@ -2172,7 +2172,7 @@ fn a_previous_role_already_ours_falls_back_to_the_chosen_output() {
     assert_eq!(
         supervisor.snapshot().notes,
         [format!(
-            "이전 기본 장치(콘솔)를 찾을 수 없어 고른 출력으로 되돌렸습니다: {DAC_NAME}"
+            "이전 기본 장치(콘솔)를 찾을 수 없어 선택한 출력으로 되돌렸습니다: {DAC_NAME}"
         )]
     );
     assert_eq!(shared.get().roles.console, Some(id(DAC)));
@@ -2198,9 +2198,9 @@ fn a_gone_previous_device_falls_back_to_the_chosen_output() {
     assert_eq!(
         supervisor.snapshot().notes,
         [
-            format!("이전 기본 장치(콘솔)를 찾을 수 없어 고른 출력으로 되돌렸습니다: {DAC_NAME}"),
+            format!("이전 기본 장치(콘솔)를 찾을 수 없어 선택한 출력으로 되돌렸습니다: {DAC_NAME}"),
             format!(
-                "이전 기본 장치(멀티미디어)를 찾을 수 없어 고른 출력으로 되돌렸습니다: {DAC_NAME}"
+                "이전 기본 장치(멀티미디어)를 찾을 수 없어 선택한 출력으로 되돌렸습니다: {DAC_NAME}"
             ),
         ]
     );
@@ -2665,7 +2665,10 @@ fn unlisted_and_refused_intents_leave_the_state_alone() {
     supervisor.handle(Intent::Enable).unwrap();
     assert_eq!(
         supervisor.handle(Intent::ChooseOutput(id(DAC))),
-        Err(error("먼저 끈 뒤 출력을 바꾸십시오.", NextAction::None))
+        Err(error(
+            "공간 소프트리시버를 끈 뒤 출력을 바꾸십시오.",
+            NextAction::None
+        ))
     );
     assert_eq!(supervisor.snapshot().phase, Phase::Running);
     assert!(shared.take_calls().contains(&"launch {realtek}".to_owned()));
@@ -3431,7 +3434,7 @@ fn the_device_must_accept_the_speaker_layout() {
     assert_eq!(
         supervisor.handle(Intent::SetSpeakerLayout(SpeakerLayout::Surround714)),
         Err(error(
-            "고른 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 고르십시오.",
+            "선택한 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 선택하십시오.",
             NextAction::None,
         ))
     );
@@ -3449,7 +3452,7 @@ fn the_device_must_accept_the_speaker_layout() {
     assert_eq!(
         supervisor.handle(Intent::SetProfileKind(ProfileKind::Speakers)),
         Err(error(
-            "고른 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 고르십시오.",
+            "선택한 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 선택하십시오.",
             NextAction::None,
         ))
     );
@@ -3462,7 +3465,7 @@ fn the_device_must_accept_the_speaker_layout() {
     assert_eq!(
         supervisor.handle(Intent::Enable),
         Err(error(
-            "고른 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 고르십시오.",
+            "선택한 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 선택하십시오.",
             NextAction::None,
         ))
     );
@@ -3490,7 +3493,7 @@ fn the_device_must_accept_the_correction_channels() {
     world.layout_support = Ok(false);
     let (shared, mut supervisor) = start(world, dac_settings());
     let unsupported = error(
-        "고른 출력 장치가 독점 모드에서 보정 파일에 지정된 3채널 출력을 지원하지 않습니다. 다른 출력 장치를 고르십시오.",
+        "선택한 출력 장치가 독점 모드에서 보정 파일에 지정된 3채널 출력을 지원하지 않습니다. 다른 출력 장치를 선택하십시오.",
         NextAction::None,
     );
     assert_eq!(
@@ -4208,7 +4211,7 @@ fn default_language_and_failed_profile_errors_follow_language_changes() {
         .unwrap();
     assert_eq!(
         supervisor.snapshot().error.unwrap().message,
-        "hesuvi.wav, hrir.wav, Impulcifer의 배치별 BRIR 파일 또는 방향별 WAV 폴더를 고르십시오."
+        "hesuvi.wav, hrir.wav, Impulcifer의 배치별 BRIR 파일 또는 방향별 WAV 폴더를 선택하십시오."
     );
 }
 
