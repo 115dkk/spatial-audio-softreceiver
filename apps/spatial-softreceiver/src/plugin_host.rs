@@ -105,7 +105,8 @@ pub struct StateStore {
     current: PathBuf,
     previous: PathBuf,
     /// The newest state on disk, by hash: the same state again is not
-    /// saved, so it does not push the previous one out.
+    /// saved, so it does not push the previous one out. A state with other
+    /// bytes is compared with the file by `vst_audio_protocol::state::equivalent`.
     saved: Option<u64>,
 }
 
@@ -141,6 +142,14 @@ impl StateStore {
     pub fn save(&mut self, blob: &[u8]) {
         let hash = state_hash(blob);
         if self.saved == Some(hash) {
+            return;
+        }
+        // Some plugins stamp the time of the read into their state (a ZIP
+        // archive's modification times), so an unchanged plugin returns
+        // different bytes each time. Such a state is the one already saved.
+        if fs::read(&self.current)
+            .is_ok_and(|newest| vst_audio_protocol::state::equivalent(&newest, blob))
+        {
             return;
         }
         match self.write(blob) {
@@ -802,6 +811,70 @@ mod tests {
         assert_eq!(StateStore::new(&dir, 1).load(), (None, None));
         store.clear();
         assert_eq!(store.load(), (None, None));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A ZIP archive holding one stored `state.json`, stamped with `time`:
+    /// what some plugins return as their state, with the time of the read.
+    fn stamped_state(content: &[u8], time: u16) -> Vec<u8> {
+        let name = b"state.json";
+        let size = content.len() as u32;
+        let mut zip = Vec::new();
+        zip.extend_from_slice(b"PK\x03\x04");
+        zip.extend_from_slice(&[20, 0, 0, 0, 0, 0]);
+        zip.extend_from_slice(&time.to_le_bytes());
+        zip.extend_from_slice(&0x5b6a_u16.to_le_bytes());
+        zip.extend_from_slice(&[0; 4]);
+        zip.extend_from_slice(&size.to_le_bytes());
+        zip.extend_from_slice(&size.to_le_bytes());
+        zip.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        zip.extend_from_slice(&[0, 0]);
+        zip.extend_from_slice(name);
+        zip.extend_from_slice(content);
+        let central = zip.len() as u32;
+        zip.extend_from_slice(b"PK\x01\x02");
+        zip.extend_from_slice(&[20, 0, 20, 0, 0, 0, 0, 0]);
+        zip.extend_from_slice(&time.to_le_bytes());
+        zip.extend_from_slice(&0x5b6a_u16.to_le_bytes());
+        zip.extend_from_slice(&[0; 4]);
+        zip.extend_from_slice(&size.to_le_bytes());
+        zip.extend_from_slice(&size.to_le_bytes());
+        zip.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        zip.extend_from_slice(&[0; 16]);
+        zip.extend_from_slice(name);
+        let central_size = zip.len() as u32 - central;
+        zip.extend_from_slice(b"PK\x05\x06");
+        zip.extend_from_slice(&[0, 0, 0, 0, 1, 0, 1, 0]);
+        zip.extend_from_slice(&central_size.to_le_bytes());
+        zip.extend_from_slice(&central.to_le_bytes());
+        zip.extend_from_slice(&[0, 0]);
+        zip
+    }
+
+    #[test]
+    fn a_state_read_again_with_another_time_keeps_the_previous_one() {
+        let dir = std::env::temp_dir().join(format!(
+            "ssr-plugin-stamps-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let (first, second) = (stamped_state(b"one", 0x1000), stamped_state(b"two", 0x1000));
+        let mut store = StateStore::new(&dir, 0);
+        store.save(&first);
+        store.save(&second);
+        // The plugin did not change; only the time in its archive did.
+        store.save(&stamped_state(b"two", 0x1001));
+        assert_eq!(store.load(), (Some(second.clone()), Some(first.clone())));
+        // A store that has not read the files yet compares with the file too.
+        StateStore::new(&dir, 0).save(&stamped_state(b"two", 0x1002));
+        assert_eq!(store.load(), (Some(second.clone()), Some(first)));
+        // Another state still takes its place.
+        let third = stamped_state(b"six", 0x1002);
+        store.save(&third);
+        assert_eq!(store.load(), (Some(third), Some(second)));
         let _ = fs::remove_dir_all(&dir);
     }
 
