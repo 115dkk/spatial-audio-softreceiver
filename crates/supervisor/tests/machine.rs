@@ -4130,6 +4130,13 @@ fn skin_changes_in_every_phase_and_is_refused_after_quit() {
         let snapshot = supervisor.snapshot();
         assert_eq!(snapshot.phase, phase);
         assert_eq!(snapshot.skin, Skin::Pedal, "{phase:?}");
+
+        supervisor
+            .handle(Intent::SetSkin(Skin::Playground))
+            .unwrap();
+        let snapshot = supervisor.snapshot();
+        assert_eq!(snapshot.phase, phase);
+        assert_eq!(snapshot.skin, Skin::Playground, "{phase:?}");
     }
 
     let mut quit = start(ready_pc(), dac_settings()).1;

@@ -1734,6 +1734,7 @@ fn intents() -> Vec<Intent> {
         Intent::SetSkin(Skin::Standard),
         Intent::SetSkin(Skin::Pedal),
         Intent::SetSkin(Skin::Console),
+        Intent::SetSkin(Skin::Playground),
         Intent::SetOutputPath(ssr_types::app::OutputPath::KernelStreaming),
         Intent::SetOutputPath(ssr_types::app::OutputPath::Wasapi),
         Intent::SetRoutingEnabled(false),

@@ -2242,3 +2242,130 @@ body {
     transition: none;
   }
 }
+
+/* ---------- details a console is expected to have ---------- */
+
+/* Past the sidebar and the top bar in one step: seen only with keyboard focus. */
+.cn-skip {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 80;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--cn-ink);
+  color: var(--cn-on-ink);
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+
+.cn-skip:focus {
+  transform: none;
+}
+
+#main:focus {
+  outline: none;
+}
+
+/* The section the page is scrolled to. */
+.cn-subnav-item[aria-current="location"] {
+  color: var(--cn-text);
+  font-weight: 700;
+  box-shadow: -11px 0 0 -9px var(--cn-ink);
+}
+
+/* What waits on a page, at the right of its sidebar item. */
+.cn-nav-count,
+.cn-nav-dot {
+  flex: none;
+  margin-left: auto;
+}
+
+.cn-nav-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--tint);
+  color: var(--tone);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  text-align: center;
+}
+
+.cn-nav-dot {
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--cn-ink);
+}
+
+/* The running version at the sidebar's foot. */
+.cn-version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 0 12px;
+  color: var(--cn-text-2);
+  font-size: 13px;
+}
+
+.cn-version-new {
+  padding: 0 7px;
+  border: 1px solid var(--cn-line-strong);
+  border-radius: 999px;
+  color: var(--cn-text);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* A copy button: a quiet glyph beside a value, or a worded button in a section's head. */
+.cn-copy {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px solid var(--cn-line-strong);
+  border-radius: 8px;
+  background: var(--cn-surface);
+  color: var(--cn-text-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.cn-copy.is-glyph {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+  border-color: transparent;
+  background: none;
+}
+
+.cn-copy:hover {
+  background: var(--cn-raised);
+  color: var(--cn-text);
+}
+
+.cn-copy.is-done {
+  color: var(--cn-good);
+}
+
+.cn-pathline {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.cn-pathline .cn-copy {
+  margin-top: -4px;
+}

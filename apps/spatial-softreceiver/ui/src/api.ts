@@ -30,6 +30,7 @@ export interface Shell {
   pickFile(title: string, filter: { name: string; extensions: string[] }): Promise<string | null>;
   autostartEnabled(): Promise<boolean>;
   setAutostart(enabled: boolean): Promise<void>;
+  openLink(link: 'repo' | 'sponsors'): Promise<void>;
   updateState(): Promise<UpdateState>;
   /** Quits the app and applies the downloaded update; rejects with a UserError. */
   applyUpdate(): Promise<void>;
@@ -82,6 +83,7 @@ const tauriShell: Shell = {
   },
   autostartEnabled: () => autostart.isEnabled(),
   setAutostart: (enabled) => (enabled ? autostart.enable() : autostart.disable()),
+  openLink: (link) => invoke<void>('open_link', { link }),
   updateState: () => invoke<UpdateState>('update_state'),
   async applyUpdate() {
     try {

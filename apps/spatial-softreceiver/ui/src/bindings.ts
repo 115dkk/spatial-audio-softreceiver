@@ -705,7 +705,11 @@ export type Skin =
 /**
  * An operations console: health first, a pipeline map, commands.
  */
-"console"
+"console" |
+/**
+ * The console's renderer under overblown SaaS copy, a parody (ADR 0047).
+ */
+"playground"
 
 export type Snapshot = {
 /**

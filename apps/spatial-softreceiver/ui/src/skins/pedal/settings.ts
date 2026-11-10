@@ -47,6 +47,8 @@ import {
   keyRow,
   led,
   lockLamp,
+  manual,
+  manualRule,
   mkey,
   notePlate,
   print,
@@ -144,7 +146,7 @@ function options(ctx: Context, plate: NotePlate): Child[] {
     toggle: (on) => ctx.send({ kind: 'set_asio_enabled', value: on }),
   });
   legend.push({ id: 'asio-hint', words: asioOn ? t.asioHint(t.asioDevice) : t.asioOff });
-  return [dip(rows, text.facts.on), hairline(), dipLegend(legend)];
+  return [dip(rows, text.facts.on), manualRule(), dipLegend(legend)];
 }
 
 /**
@@ -187,11 +189,11 @@ function entrance(ctx: Context, plate: NotePlate): Child[] {
   control.classList.add('pd-leads');
   return [
     h('div', { class: 'pd-lockline' }, control, lockLamp(text.pedal.lock, running, lock.mark)),
-    h('p', { class: 'pd-callout', id: 'entrance-gets', 'data-chosen': current }, entranceGets(current)),
+    h('p', { class: 'pd-callout pd-manual', id: 'entrance-gets', 'data-chosen': current }, entranceGets(current)),
     ...ENTRANCE_KINDS.filter((kind) => kind !== current).map((kind) => sr(entranceGets(kind), getsOf(kind))),
     blocked === null ? null : h('p', { class: 'pd-fine', id: 'entrance-blocked' }, print(e.unavailable, 'pd-tag'), ' ', blocked),
-    hairline(),
-    fine(entranceNeeds(current, snapshot).join(' '), 'entrance-hint'),
+    manualRule(),
+    manual(entranceNeeds(current, snapshot).join(' '), 'entrance-hint'),
   ];
 }
 
@@ -240,8 +242,8 @@ function outputPath(ctx: Context, plate: NotePlate): Child[] {
       }),
       lockLamp(text.pedal.lock, running, lock.mark),
     ),
-    hairline(),
-    fine(apps ? e.ksNotUsed : t.outputPathHint, hintId),
+    manualRule(),
+    manual(apps ? e.ksNotUsed : t.outputPathHint, hintId),
   ];
   if (apps) {
     const sending = ctx.sending?.kind === 'set_app_capture_exclusive' ? ctx.sending.value : null;
@@ -293,8 +295,8 @@ function language(ctx: Context): Child[] {
       intent: 'set_language',
       choose: (value) => ctx.send({ kind: 'set_language', value: value === 'auto' ? null : value }),
     }),
-    hairline(),
-    fine(t.languageHint, 'language-hint'),
+    manualRule(),
+    manual(t.languageHint, 'language-hint'),
   ];
 }
 
@@ -313,8 +315,8 @@ function skin(ctx: Context): Child[] {
       intent: 'set_skin',
       choose: (value) => ctx.send({ kind: 'set_skin', value }),
     }),
-    hairline(),
-    fine(text.skins.hint, 'skin-hint'),
+    manualRule(),
+    manual(text.skins.hint, 'skin-hint'),
   ];
 }
 
@@ -526,8 +528,8 @@ function asio(scope: Scope): Child[] {
   };
   follow(shown);
   return [
-    fine(t.asioLimits, 'asio-limits'),
-    hairline(),
+    manual(t.asioLimits, 'asio-limits'),
+    manualRule(),
     h('h3', { id: 'asio-layout-label', class: 'pd-label' }, t.asioLayout),
     keyRow({
       labelledBy: 'asio-layout-label',
@@ -547,7 +549,7 @@ function asio(scope: Scope): Child[] {
       size: 'sm',
       choose: (value) => ctx.send({ kind: 'set_asio_layout', value }),
     }),
-    fine(t.asioLayoutHint, 'asio-layout-hint'),
+    manual(t.asioLayoutHint, 'asio-layout-hint'),
     hairline(),
     h('h3', { id: 'asio-attenuation-label', class: 'pd-label' }, t.asioAttenuation),
     h(
@@ -575,7 +577,7 @@ function asio(scope: Scope): Child[] {
       }),
       h('span', { class: 'pd-attenuation-say' }, digits.element, muted),
     ),
-    fine(t.asioAttenuationHint, 'asio-attenuation-hint'),
+    manual(t.asioAttenuationHint, 'asio-attenuation-hint'),
   ];
 }
 
@@ -588,7 +590,7 @@ function update(ctx: Context): Child[] {
   return [
     h('p', { class: 'pd-small pd-ink' }, t.updateCurrent(state.current)),
     ...(state.ready === null
-      ? [fine(t.updateNone)]
+      ? [manual(t.updateNone)]
       : [
           h('p', { class: 'pd-small pd-ink' }, t.updateReady(state.ready)),
           mkey({
@@ -621,8 +623,8 @@ function diagnostics(ctx: Context): Child[] {
       describedBy: 'record-hint',
       onClick: () => ctx.send({ kind: 'start_diagnostic_recording' }),
     }),
-    hairline(),
-    fine(t.recordHint, 'record-hint'),
+    manualRule(),
+    manual(t.recordHint, 'record-hint'),
   ];
 }
 
@@ -669,8 +671,8 @@ export function settingsFace(scope: Scope): Drawn {
       routingGroup,
       apps
         ? group('pd-discard', text.entrance.discard, [
-            fine(text.entrance.discardHint),
-            hairline(),
+            manual(text.entrance.discardHint),
+            manualRule(),
             discardRow(ctx, 'settings-discard', running ? 'discard-locked' : null),
             running ? h('div', { class: 'pd-lockline' }, lockLamp(text.pedal.lock, true, discardLock.mark)) : null,
           ])

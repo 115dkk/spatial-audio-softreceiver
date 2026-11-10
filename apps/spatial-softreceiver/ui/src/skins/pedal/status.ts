@@ -65,6 +65,7 @@ import {
   ladder,
   led,
   lockLamp,
+  manual,
   notePlate,
   print,
   readout,
@@ -495,7 +496,7 @@ function running(scope: Scope, engineNow: EngineStatus | null): Drawn {
   const [profileLabel, profileName] = profileFact(scope);
   const main = columns(
     inputs,
-    [h('div', { class: 'pd-mapwrap' }, etchedField(), map.element), fine(text.pedal.mapTest, null, 'pd-centre')],
+    [h('div', { class: 'pd-mapwrap' }, etchedField(), map.element), manual(text.pedal.mapTest, null, 'pd-centre')],
     [
       levelEncoder(scope),
       kindSlide(scope),

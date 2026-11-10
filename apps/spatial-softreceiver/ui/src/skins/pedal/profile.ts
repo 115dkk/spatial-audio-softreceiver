@@ -20,7 +20,7 @@ import { type Context, type Drawn, described } from '../../screens/common';
 import { GAIN_MAX, GAIN_MIN } from '../../screens/profile';
 import { kindSlide, layoutFamilies, levelEncoder, upmixApply } from './controls';
 import { DENSE_DIRECTIONS, soundMap } from './map';
-import { type Led, baseName, fine, flowRoom, group, hairline, ikey, keyRow, led, mkey, print, slot, spec, spoken, sr } from './parts';
+import { type Led, baseName, fine, flowRoom, group, hairline, ikey, keyRow, led, manual, manualRule, mkey, print, slot, spec, spoken, sr } from './parts';
 import { type Scope, signed } from './scope';
 
 const KINDS: readonly ProfileKind[] = ['headphones', 'speakers'];
@@ -99,7 +99,7 @@ function kindKeys(ctx: Context, open: ProfileKind): HTMLElement {
 
 function applyLine(ctx: Context, kind: ProfileKind): Child[] {
   const apply = upmixApply(ctx, kind, text.profile.upmixApply);
-  return apply === null ? [] : [hairline(), apply, fine(text.profile.upmixApplyHint, 'upmix-apply-hint')];
+  return apply === null ? [] : [hairline(), apply, manual(text.profile.upmixApplyHint, 'upmix-apply-hint')];
 }
 
 /** A BRIR set read from one WAV file rather than a folder of them. */
@@ -303,8 +303,8 @@ function gain(scope: Scope): HTMLElement {
   return group('pd-gain', text.profile.gainTitle, [
     levelEncoder(scope, 64),
     print(`${signed(GAIN_MIN)} … ${signed(GAIN_MAX)} ${text.profile.gainUnit}`, 'pd-small pd-num'),
-    hairline(),
-    fine(text.pedal.gainBody),
+    manualRule(),
+    manual(text.pedal.gainBody),
   ]);
 }
 
@@ -344,8 +344,8 @@ function tests(ctx: Context): HTMLElement {
     }),
   );
   return group('pd-tests', text.profile.testTitle, [
-    fine(text.profile.testBody),
-    hairline(),
+    manual(text.profile.testBody),
+    manualRule(),
     empty ? fine(text.profile.noDirections) : list,
     running || empty ? null : fine(text.profile.testOff, 'test-hint'),
   ]);
@@ -394,7 +394,7 @@ export function profileFace(scope: Scope, engineNow: EngineStatus | null): Drawn
       'div',
       { class: 'pd-profile-side' },
       gain(scope),
-      group('pd-profile-map', text.profile.mapTitle, [fine(text.pedal.mapBody), hairline(), map.element, running ? fine(text.pedal.mapTest) : null]),
+      group('pd-profile-map', text.profile.mapTitle, [manual(text.pedal.mapBody), manualRule(), map.element, running ? manual(text.pedal.mapTest) : null]),
       tests(ctx),
     ),
   );

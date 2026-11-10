@@ -25,12 +25,13 @@ import {
   type NotePlate,
   type Tone,
   channelStrip,
-  fine,
   flowRoom,
   group,
   hairline,
   keyRow,
   led,
+  manual,
+  manualRule,
   mkey,
   notePlate,
   print,
@@ -193,7 +194,7 @@ function upmixer(ctx: Context, view: EndpointUpmixView): Child[] {
   return [
     h('h3', { id: `upmixer-${endpoint}-label`, class: 'pd-label' }, text.upmix.choiceLabel),
     row,
-    h('p', { class: 'pd-callout', id: bodyId, 'data-chosen': shown }, choiceBody(shown, built)),
+    h('p', { class: 'pd-callout pd-manual', id: bodyId, 'data-chosen': shown }, choiceBody(shown, built)),
     ...CHOICES.filter((choice) => choice !== shown).map((choice) => sr(choiceBody(choice, built), aboutId(choice))),
     // The key being sent blinks (법칙 3, 10); the word is only for a screen reader.
     sending === null ? null : sr(text.profile.applying, applyingId),
@@ -296,7 +297,7 @@ function plugin(ctx: Context, view: EndpointUpmixView): Child[] {
           ...(view.inputs.length > 0 ? [[text.upmix.pluginInputs, view.inputs.join(' ')] as [string, Child]] : []),
         ]),
     editor === null ? null : h('div', { class: 'pd-keys' }, editor),
-    editor !== null && !editorOpen(view) ? fine(text.upmix.editorHint, editorId) : null,
+    editor !== null && !editorOpen(view) ? manual(text.upmix.editorHint, editorId) : null,
   ];
 }
 
@@ -332,15 +333,20 @@ export function upmixFace(scope: Scope): Drawn {
     h(
       'div',
       { class: 'pd-upmix-head' },
-      group('pd-upmix-about', text.upmix.title, [
-        h('p', { class: 'pd-lead' }, text.upmix.intro),
-        hairline(),
-        // The standard screen's (i) line, printed outright: the box has no pop-ups.
-        h('p', { class: 'pd-fine pd-upmix-info', id: 'upmix-info' }, print(text.upmix.infoLabel, 'pd-label'), ' ', text.upmix.infoTip),
-      ]),
+      // The manual's page for this face, the standard screen's (i) line with it.
+      group(
+        'pd-upmix-about',
+        text.upmix.title,
+        [
+          h('p', { class: 'pd-lead' }, text.upmix.intro),
+          hairline(),
+          h('p', { class: 'pd-fine pd-upmix-info', id: 'upmix-info' }, print(text.upmix.infoLabel, 'pd-label'), ' ', text.upmix.infoTip),
+        ],
+        'pd-manual',
+      ),
       headphones === null || speakers === null
         ? null
-        : group('pd-upmix-apply', text.profile.upmixApply, [headphones, speakers, hairline(), fine(text.profile.upmixApplyHint, 'upmix-apply-hint')]),
+        : group('pd-upmix-apply', text.profile.upmixApply, [headphones, speakers, manualRule(), manual(text.profile.upmixApplyHint, 'upmix-apply-hint')]),
     ),
     h('div', { class: 'pd-upmix-inputs' }, ...inputs),
     plate.element,

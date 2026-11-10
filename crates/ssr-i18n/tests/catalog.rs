@@ -135,6 +135,13 @@ fn read_catalog(language: &str) -> Value {
     toml::from_str(&text).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
+fn read_playground_catalog(language: &str) -> Value {
+    let path = root().join(format!("i18n/playground/{language}.toml"));
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    toml::from_str(&text).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}
+
 fn check_or_bless_bytes(path: &Path, content: &[u8]) {
     if std::env::var_os(BLESS).is_some() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -308,18 +315,140 @@ fn validate_catalogs(ko: &Value, en: &Value) {
     validate_pair("catalog", ko, en);
     validate_endpoint_names(ko, "ko");
     validate_endpoint_names(en, "en");
-    let english = en.to_string();
-    assert!(
-        !english
-            .chars()
-            .any(|ch| matches!(ch as u32, 0xAC00..=0xD7A3 | 0x1100..=0x11FF | 0x3130..=0x318F)),
-        "English catalog contains Korean characters"
-    );
+    validate_no_hangul("English catalog", en);
     for table in RUST_TABLES {
         for (key, value) in sorted_table(&ko[table]) {
             validate_rust_key(key, &format!("catalog.{table}.{key}"));
             assert!(value.is_str(), "{table}.{key} must be a flat string");
         }
+    }
+}
+
+fn validate_no_hangul(path: &str, value: &Value) {
+    match value {
+        Value::String(text) => assert!(
+            !text
+                .chars()
+                .any(|ch| matches!(ch as u32, 0xAC00..=0xD7A3 | 0x1100..=0x11FF | 0x3130..=0x318F)),
+            "{path} contains Korean characters"
+        ),
+        Value::Table(table) => {
+            for (key, child) in table {
+                validate_no_hangul(&format!("{path}.{key}"), child);
+            }
+        }
+        Value::Array(values) => {
+            for (index, child) in values.iter().enumerate() {
+                validate_no_hangul(&format!("{path}[{index}]"), child);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn validate_playground_shape(path: &str, catalog: &Value) {
+    let table = catalog
+        .as_table()
+        .unwrap_or_else(|| panic!("{path}: playground catalog must be a table"));
+    let keys = table.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    assert_eq!(
+        keys,
+        BTreeSet::from(["over", "own"]),
+        "{path}: top-level keys must be exactly over and own"
+    );
+    let over = table["over"]
+        .as_table()
+        .unwrap_or_else(|| panic!("{path}.over: must be a table"));
+    for root in over.keys() {
+        assert!(
+            matches!(root.as_str(), "screen" | "common" | "names"),
+            "{path}.over.{root}: override root must be screen, common, or names"
+        );
+    }
+    let own = &table["own"];
+    own.as_table()
+        .unwrap_or_else(|| panic!("{path}.own: must be a table"));
+    validate_own_value(&format!("{path}.own"), own);
+}
+
+fn validate_own_value(path: &str, value: &Value) {
+    match value {
+        Value::String(text) => {
+            tokenize(text, path);
+        }
+        Value::Table(table) => {
+            for (key, child) in table {
+                validate_own_value(&format!("{path}.{key}"), child);
+            }
+        }
+        Value::Array(values) => {
+            for (index, child) in values.iter().enumerate() {
+                let child_path = format!("{path}[{index}]");
+                let text = child.as_str().unwrap_or_else(|| {
+                    panic!("{child_path}: own arrays must contain only strings")
+                });
+                tokenize(text, &child_path);
+            }
+        }
+        _ => panic!("{path}: own values must be strings, string arrays, or tables"),
+    }
+}
+
+fn validate_overrides(path: &str, overrides: &Value, main: &Value) {
+    match overrides {
+        Value::String(text) => {
+            let main_text = main.as_str().unwrap_or_else(|| {
+                panic!("{path}: override string does not match the main catalog's type")
+            });
+            let override_tokens = tokenize(text, path);
+            let main_tokens = tokenize(main_text, path);
+            assert_eq!(
+                placeholders(&override_tokens)
+                    .into_iter()
+                    .collect::<BTreeSet<_>>(),
+                placeholders(&main_tokens)
+                    .into_iter()
+                    .collect::<BTreeSet<_>>(),
+                "{path}: placeholder set differs from the main catalog"
+            );
+        }
+        Value::Table(table) => {
+            let main_table = main.as_table().unwrap_or_else(|| {
+                panic!("{path}: override table does not match the main catalog's type")
+            });
+            for (key, child) in table {
+                let child_path = format!("{path}.{key}");
+                let main_child = main_table.get(key).unwrap_or_else(|| {
+                    panic!("{child_path}: path is absent from the main catalog")
+                });
+                validate_overrides(&child_path, child, main_child);
+            }
+        }
+        _ => panic!("{path}: overrides must contain only strings and tables"),
+    }
+}
+
+fn validate_playground_catalogs(ko: &Value, en: &Value, main_ko: &Value, main_en: &Value) {
+    validate_pair("playground", ko, en);
+    validate_playground_shape("playground.ko", ko);
+    validate_playground_shape("playground.en", en);
+    validate_no_hangul("playground.en", en);
+    validate_overrides("playground.ko.over", &ko["over"], main_ko);
+    validate_overrides("playground.en.over", &en["over"], main_en);
+}
+
+fn validate_playground_tips(catalog: &Value, language: &str) {
+    let path = format!("playground.{language}.own.tips");
+    let tips = catalog["own"]["tips"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{path}: must be a string array"));
+    assert_eq!(tips.len(), 50, "{path}: must contain exactly 50 tips");
+    let mut unique = BTreeSet::new();
+    for (index, tip) in tips.iter().enumerate() {
+        let tip = tip
+            .as_str()
+            .unwrap_or_else(|| panic!("{path}[{index}]: must be a string"));
+        assert!(unique.insert(tip), "{path}[{index}]: duplicate tip {tip:?}");
     }
 }
 
@@ -454,6 +583,18 @@ fn ts_catalog(ko: &Value, en: &Value) -> String {
     write_ts_value(&mut output, ko, ko, 0, "catalog");
     output.push_str(";\n\nexport type Catalog = typeof ko;\n\nexport const en: Catalog = ");
     write_ts_value(&mut output, en, ko, 0, "catalog");
+    output.push_str(";\n");
+    output
+}
+
+fn playground_ts_catalog(ko: &Value, en: &Value) -> String {
+    let mut output = String::from(
+        "// Generated from i18n/playground/*.toml. Do not edit by hand.\n// Regenerate with `SSR_I18N_BLESS=1 cargo test -p ssr-i18n`.\n\n",
+    );
+    output.push_str("export const ko = ");
+    write_ts_value(&mut output, ko, ko, 0, "playground");
+    output.push_str(";\n\nexport type Catalog = typeof ko;\n\nexport const en: Catalog = ");
+    write_ts_value(&mut output, en, ko, 0, "playground");
     output.push_str(";\n");
     output
 }
@@ -729,6 +870,103 @@ fn typescript_object_keys_are_always_quoted() {
 }
 
 #[test]
+fn playground_pairs_reject_mismatched_keys_arrays_placeholders_and_empty_strings() {
+    let paired = |ko: &str, en: &str| {
+        let ko: Value = toml::from_str(ko).unwrap();
+        let en: Value = toml::from_str(en).unwrap();
+        validate_pair("sample", &ko, &en);
+    };
+    assert_rejected(
+        || paired("[own]\nvalue = '하나'", "[own]\nother = 'one'"),
+        "key tree differs",
+    );
+    assert_rejected(
+        || paired("[own]\nitems = ['하나']", "[own]\nitems = ['one', 'two']"),
+        "array length differs",
+    );
+    assert_rejected(
+        || paired("[own]\nvalue = '{name}'", "[own]\nvalue = '{count}'"),
+        "placeholder set differs",
+    );
+    assert_rejected(
+        || paired("[own]\nvalue = '   '", "[own]\nvalue = 'text'"),
+        "empty",
+    );
+
+    let missing_root: Value = toml::from_str("[own]\nvalue = 'text'").unwrap();
+    assert_rejected(
+        || validate_playground_shape("sample", &missing_root),
+        "top-level keys",
+    );
+
+    let unsupported: Value = toml::from_str("[over]\n[own]\nitems = [1]").unwrap();
+    assert_rejected(
+        || validate_playground_shape("sample", &unsupported),
+        "only strings",
+    );
+}
+
+#[test]
+fn playground_english_rejects_hangul() {
+    let english: Value = toml::from_str("[own]\nvalue = 'English 한글'").unwrap();
+    assert_rejected(
+        || validate_no_hangul("sample", &english),
+        "Korean characters",
+    );
+}
+
+#[test]
+fn playground_overrides_reject_bad_roots_missing_keys_types_and_placeholders() {
+    let main: Value = toml::from_str("[screen.skins]\nlabel = 'Skin {name}'").unwrap();
+    let bad_root: Value = toml::from_str("[over.shell]\nlabel = 'x'\n[own]").unwrap();
+    assert_rejected(
+        || validate_playground_shape("sample", &bad_root),
+        "override root",
+    );
+
+    let missing: Value = toml::from_str("[screen.skins]\nmissing = 'x'").unwrap();
+    assert_rejected(|| validate_overrides("sample", &missing, &main), "absent");
+
+    let wrong_type: Value = toml::from_str("[screen.skins.label]\nchild = 'x'").unwrap();
+    assert_rejected(
+        || validate_overrides("sample", &wrong_type, &main),
+        "does not match",
+    );
+
+    let wrong_placeholders: Value =
+        toml::from_str("[screen.skins]\nlabel = 'Skin without its argument'").unwrap();
+    assert_rejected(
+        || validate_overrides("sample", &wrong_placeholders, &main),
+        "placeholder set differs",
+    );
+}
+
+#[test]
+fn playground_tips_reject_wrong_counts_and_duplicates() {
+    let catalog_with = |tips: Vec<Value>| {
+        let mut catalog: Value = toml::from_str("[own]\ntips = []").unwrap();
+        catalog["own"]["tips"] = Value::Array(tips);
+        catalog
+    };
+    let short = catalog_with(
+        (0..49)
+            .map(|index| Value::String(format!("tip {index}")))
+            .collect(),
+    );
+    assert_rejected(|| validate_playground_tips(&short, "sample"), "exactly 50");
+
+    let mut tips = (0..50)
+        .map(|index| Value::String(format!("tip {index}")))
+        .collect::<Vec<_>>();
+    tips[49] = Value::String("tip 0".into());
+    let duplicate = catalog_with(tips);
+    assert_rejected(
+        || validate_playground_tips(&duplicate, "sample"),
+        "duplicate",
+    );
+}
+
+#[test]
 fn catalog_files_match_sources() {
     let ko = read_catalog("ko");
     let en = read_catalog("en");
@@ -745,6 +983,27 @@ fn catalog_files_match_sources() {
         &root().join("tools/testkit/strings.psd1"),
         &powershell_catalog(&ko, &en),
     );
+}
+
+#[test]
+fn playground_catalog_file_matches_sources() {
+    let main_ko = read_catalog("ko");
+    let main_en = read_catalog("en");
+    let ko = read_playground_catalog("ko");
+    let en = read_playground_catalog("en");
+    validate_playground_catalogs(&ko, &en, &main_ko, &main_en);
+    check_or_bless(
+        &root().join("apps/spatial-softreceiver/ui/src/skins/playground/catalog.ts"),
+        &playground_ts_catalog(&ko, &en),
+    );
+}
+
+#[test]
+fn playground_has_fifty_unique_tips_per_language() {
+    let ko = read_playground_catalog("ko");
+    let en = read_playground_catalog("en");
+    validate_playground_tips(&ko, "ko");
+    validate_playground_tips(&en, "en");
 }
 
 fn inf_strings(text: &str, section: &str) -> BTreeMap<String, String> {

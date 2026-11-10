@@ -24,6 +24,10 @@
     "value": "console"
   },
   {
+    "kind": "set_skin",
+    "value": "playground"
+  },
+  {
     "kind": "set_output_path",
     "value": "kernel_streaming"
   },

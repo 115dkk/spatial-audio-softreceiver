@@ -223,8 +223,11 @@ function listPage(root: HTMLElement, skin: Skin): void {
     ),
   );
   for (const group of scenesTable.groups) {
+    // A scene the skin has no state for (`skinSteps` of `null`) is not on its page.
+    const shown = scenes.filter((candidate) => candidate.group === group.id && candidate.skinSteps[skin] !== null);
+    if (shown.length === 0) continue;
     const section = h('section', { class: 'gallery-group' }, h('h2', null, group.title));
-    for (const scene of scenes.filter((candidate) => candidate.group === group.id)) {
+    for (const scene of shown) {
       const [width, height] = scene.size;
       section.append(
         h(

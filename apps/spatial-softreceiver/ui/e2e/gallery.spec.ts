@@ -63,6 +63,7 @@ const FONTS: Record<Skin, string[]> = {
   // The pedal prints nothing in Regular (ADR 0046, 법칙 6), so its lightest face is Medium.
   pedal: ['500 14px "IBM Plex Sans KR"'],
   console: ['500 14px "Pretendard"'],
+  playground: ['500 14px "Pretendard"'],
 };
 
 test.describe.configure({ mode: 'parallel' });

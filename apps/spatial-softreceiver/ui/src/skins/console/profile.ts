@@ -10,20 +10,7 @@ import { SPEAKER_LAYOUTS } from '../../guard';
 import { described } from '../../screens/common';
 import { GAIN_MAX, GAIN_MIN } from '../../screens/profile';
 import { text } from '../../text';
-import {
-  type Build,
-  act,
-  badge,
-  choose,
-  hint,
-  para,
-  pick,
-  range,
-  row,
-  section,
-  table,
-  toggle,
-} from './kit';
+import { act, badge, type Build, choose, copy, hint, para, pick, range, row, section, table, toggle } from './kit';
 import { sceneMap } from './map';
 import { laneTitle, lanesOf, type Page } from './overview';
 
@@ -32,7 +19,11 @@ const LAYOUTS = Object.keys(SPEAKER_LAYOUTS) as SpeakerLayout[];
 const FILE_HINT = 'profile-file-hint';
 const RUNNING_HINT = 'profile-running-hint';
 
-const path = (value: string | null) => h('span', { class: value === null ? 'cn-muted' : 'cn-path' }, value ?? text.profile.none);
+/** A chosen folder or file: its path, and a button that copies it. */
+const path = (b: Build, key: string, value: string | null) =>
+  value === null
+    ? h('span', { class: 'cn-muted' }, text.profile.none)
+    : h('span', { class: 'cn-pathline' }, h('span', { class: 'cn-path' }, value), copy(b, key, () => value, { name: text.console.copyPath }));
 
 /** profile.toml locks every change here; a running engine takes a few seconds for one. */
 function changeHints(b: Build): (string | false)[] {
@@ -151,7 +142,7 @@ function headphones(b: Build): Child[] {
   const send = (value: string) => ctx.send({ kind: 'import_brir', value });
   return [
     row(p.brir, [
-      path(profile.headphones.brir),
+      path(b, 'copy-brir', profile.headphones.brir),
       para(p.brirBody, 'cn-measure'),
       h(
         'div',
@@ -208,7 +199,7 @@ function correctionRow(b: Build): HTMLElement {
     h(
       'dl',
       { class: 'cn-facts' },
-      h('div', null, h('dt', null, p.correctionFile), h('dd', null, path(correction?.path ?? null))),
+      h('div', null, h('dt', null, p.correctionFile), h('dd', null, path(b, 'copy-correction', correction?.path ?? null))),
       correction === null ? null : h('div', null, h('dt', null, p.correctionName), h('dd', null, correction.title)),
     ),
     para(p.correctionBody, 'cn-measure'),

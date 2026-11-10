@@ -14,6 +14,8 @@ export function loadSkin(skin: Skin): Promise<SkinModule> {
       return import('./pedal');
     case 'console':
       return import('./console');
+    case 'playground':
+      return import('./playground');
     case 'standard':
       return import('./standard');
   }

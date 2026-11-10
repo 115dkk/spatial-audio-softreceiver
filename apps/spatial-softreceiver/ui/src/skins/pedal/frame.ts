@@ -249,6 +249,8 @@ export interface EnclosureInput {
   scroll: { held: ScrollHold | null; keep(hold: ScrollHold): void };
   /** Watching the face's size, replaced every frame. */
   watch(observer: ResizeObserver | null): void;
+  /** The manual's sentences are printed on the faces (법칙 5): seen only, off after a reload. */
+  manual: { open: boolean; toggle(): void };
 }
 
 /** What drags the face: never a part, only bare metal and print. */
@@ -352,7 +354,7 @@ export function enclosure(input: EnclosureInput): HTMLElement {
   const screws = ['tl', 'tr', 'bl', 'br'].map((corner) => h('span', { class: `pd-screw is-${corner}`, 'aria-hidden': 'true' }));
   return h(
     'div',
-    { class: 'pd-room', 'data-phase': ctx.snapshot.phase.kind },
+    { class: 'pd-room', 'data-phase': ctx.snapshot.phase.kind, 'data-manual': input.manual.open ? 'on' : 'off' },
     metalDefs(),
     h(
       'div',
@@ -370,7 +372,21 @@ export function enclosure(input: EnclosureInput): HTMLElement {
       h(
         'footer',
         { class: 'pd-foot' },
-        faceKeys(ctx, able),
+        h(
+          'div',
+          { class: 'pd-railkeys' },
+          faceKeys(ctx, able),
+          // The manual key: lit while the faces print what their parts are for.
+          ikey({
+            key: 'manual',
+            label: p.manual,
+            lit: input.manual.open,
+            chosen: input.manual.open,
+            off: ctx.snapshot.phase.kind === 'quit',
+            attrs: { 'aria-pressed': input.manual.open ? 'true' : 'false' },
+            onClick: input.manual.toggle,
+          }),
+        ),
         nameplate(),
         h('div', { class: 'pd-power' }, input.lamps.element, input.power),
       ),

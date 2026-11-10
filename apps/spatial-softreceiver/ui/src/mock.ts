@@ -245,6 +245,16 @@ const pickFile: Shell['pickFile'] = async (_title, filter) =>
       ? 'C:\\Program Files\\VSTPlugins\\Example Upmixer.dll'
       : 'C:\\Users\\me\\Documents\\SECS_export\\study\\configs\\secs_mixed.yml';
 
+const LINKS = {
+  repo: 'https://github.com/115dkk/spatial-audio-softreceiver',
+  sponsors: 'https://github.com/sponsors/115dkk',
+} as const;
+
+const openLink: Shell['openLink'] = async (link) => {
+  if (new URLSearchParams(location.search).has('gallery')) return;
+  window.open(LINKS[link], '_blank', 'noopener');
+};
+
 /** A plain browser's shell: no autostart, no updater. */
 const browserShell: Shell = {
   native: false,
@@ -252,6 +262,7 @@ const browserShell: Shell = {
   pickFile,
   autostartEnabled: async () => false,
   setAutostart: async () => {},
+  openLink,
   updateState: async () => ({ current: '0.0.0', ready: null }),
   applyUpdate: async () => {},
   onUpdate: async () => () => {},
@@ -269,6 +280,7 @@ function standInShell(given: GalleryShell): Shell {
     setAutostart: async (enabled) => {
       autostart = enabled;
     },
+    openLink,
     updateState: async () => structuredClone(update),
     // Applying would quit the app; the stand-in has nothing to quit.
     applyUpdate: async () => {},

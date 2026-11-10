@@ -35,6 +35,8 @@ pub enum Skin {
     Pedal,
     /// An operations console: health first, a pipeline map, commands.
     Console,
+    /// The console's renderer under overblown SaaS copy, a parody (ADR 0047).
+    Playground,
 }
 
 /// One of the driver's portable application entrances (ADR 0028).

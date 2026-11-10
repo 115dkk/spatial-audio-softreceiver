@@ -1,0 +1,238 @@
+# The dangerous playground skin's text (ADR 0047). It imitates overblown SaaS copy on purpose.
+# [over.*] replaces the same path of i18n/en.toml in this skin only; [own.*] exists only in this skin.
+# The replaced sentences still state the facts. The exaggeration is in the tone alone.
+
+[over.common]
+turn_on = "🚀 Start innovating"
+turn_off = "Take a breather"
+
+[over.screen.status]
+powerTurningOn = "Getting ready to innovate"
+powerTurningOff = "Catching our breath"
+entrances = "🎙️ All your sounds"
+output = "🎧 Output"
+
+[over.screen.profile]
+title = "🧩 Profile"
+mapTitle = "🌌 Immersive real-time sound positions"
+
+[over.screen.upmix]
+title = "🪄 Upmix"
+
+[over.screen.settings]
+title = "⚙️ Settings"
+platform = "💻 This PC (our one and only region)"
+
+[over.screen.skins]
+label = "✨ Skin"
+hint = "Changing the skin changes the appearance, not the features. Leave this one and the tips, the ratings and the begging leave with it. Are you sure you want to go? 🥺"
+
+[over.screen.banner]
+dismiss = "Got it!"
+notesLabel = "📣 What's new"
+
+[over.screen.console]
+overview = "✨ Overview"
+engine = "🔥 Engine"
+paletteOpen = "✨ Ask AI anything..."
+paletteTitle = "✨ AI command palette (no AI inside)"
+paletteInput = "Type anything. There is no AI, but search works"
+paletteEmpty = "Even AI doesn't know that one 🤔 (there is no AI)"
+current = "You're already here. Great choice!"
+busy = "Busy innovating. Try again in a moment"
+healthOff = "💤 Taking a short break — but innovation never stops"
+healthOn = "🚀 The engine has begun its great journey"
+healthGood = "🎉 All systems are working perfectly — leave the worrying to us!"
+healthPlan = "Just turn it on and {listen} sound will ring out on {device} more vividly than ever."
+healthPlaying = "At this very moment, {listen} sound is playing immersively on {device}."
+healthTurningOn = "🚀 Innovation is about to begin"
+healthTurningOff = "⏸️ Taking a moment to breathe"
+healthFaulted = "🙏 We stopped for just a moment (but don't worry!)"
+healthReconnecting = "🔌 Reuniting with your output device"
+checkBelow = "Check out a small growth opportunity below."
+moreIssues = "{n} more growth opportunities are waiting for you."
+issues = "{n} growth opportunities"
+kpiTitle = "📈 Key wins at a glance"
+traceLabel = "Last 60 seconds 🔥"
+traceNote = "The last 60 seconds since you opened this screen. Turn the engine off or reload the screen and the traces start over with a fresh mindset."
+flowTitle = "🔗 Intelligent pipeline"
+decode = "Next-gen decoding & upmix"
+render = "Powerful spatial rendering"
+receiving = "🔥 Receiving"
+waiting = "💤 Waiting"
+connected = "🤝 Connected"
+allMetrics = "🔭 Observability"
+metricsOff = "The engine is resting, so the readings are resting too. Work-life balance is one of our core values."
+historyTitle = "🟢 Real-time status"
+historyBasis = "Transparency is one of our core values. This shows the last 90 minutes since the app started, minute by minute, with nothing hidden. Time that was not recorded honestly stays as no record, and the history starts over when the app restarts."
+historyGood = "Everything is perfect ✨"
+historyIdle = "Nothing has happened yet. But something amazing is coming soon! ✨"
+historyEmpty = "Your history starts now. Because every moment matters."
+incidentsTitle = "📓 Our growth journal"
+incidentsNone = "🏆 Zero incidents in the last 90 minutes!"
+incidentClosed = "Overcome 💪"
+incidentOpen = "Overcoming"
+minuteGood = "Perfect"
+uptime = "Trust score"
+general = "🧩 General"
+maintenance = "🛠️ Updates & diagnostics"
+computer = "Region"
+version = "Version {version} · Unlimited Free"
+updateReady = "🎁 New version is here!"
+copyReport = "Copy diagnostic info (not AI-powered)"
+copied = "Copied successfully! 🎉"
+goTo = "✨ Take me to {name}"
+show = "Go see {page} →"
+
+[own]
+brandChip = "🚀 Unlimited Free"
+env = "Beta · Extra spicy"
+avatar = "Me"
+avatarLabel = "My account"
+pro = "PRO"
+tipBadge = "💡 Pro tip"
+tipLabel = "Pro tip of the day"
+tipNext = "Dismiss"
+tipCount = "{n}/{total}"
+footnote = "* The copy in this skin is bad on purpose. The features and the numbers are the same as in every other skin. The developer's hunger is real."
+toastsLabel = "Notifications"
+tips = [
+  "Press Ctrl+K to open the command palette. Press it again to close it. Press it twice and it is as if nothing ever happened.",
+  "This is one of 50 tips. The other 49 are about this good.",
+  "Sound travels through air at about 343 metres per second. You cannot change this in Settings.",
+  "48 kHz means 48,000 samples every second. You don't need to count them.",
+  "Headphones work best on your ears. Around your neck, the volume drops considerably.",
+  "Turning the engine off turns the engine off.",
+  "At 0 dB the volume is not changed. It is our most honest setting.",
+  "This screen scrolls. There is more below. Once you are down there, there is more above too.",
+  "7.1.4 is 12 channels. You can verify this by adding 7, 1 and 4 yourself.",
+  "Dismiss this tip and the next one appears. The only way out of the tips is another skin.",
+  "In dark mode, the screen is dark.",
+  "The decibel is a logarithmic unit. Adding 6 dB roughly doubles the amplitude. Relations with your neighbours are not measured in dB.",
+  "The Windows key opens the Start menu. That has nothing to do with this app.",
+  "Zero dropouts means it did not drop out.",
+  "This app has exactly one workspace. To invite a teammate, bring another chair.",
+  "In 12 ms of latency, sound travels about 4 metres through air. That sound is still inside your PC, though, so it goes nowhere.",
+  "BRIR stands for Binaural Room Impulse Response. Without the abbreviation, it is long.",
+  "Rolling the mouse wheel moves the screen. Rolling it the other way moves it the other way.",
+  "Today is yesterday's tomorrow. The uptime history shows the last 90 minutes of it.",
+  "Muting makes it quiet. This feature is not PRO.",
+  "Human ears usually hear from 20 Hz to 20 kHz. With age, the top goes first. No update can fix that.",
+  "If this tip took you 3 seconds to read, 144,000 samples went by at 48 kHz in the meantime.",
+  "Without an output device there is no sound. With an output device that is switched off, also no sound.",
+  "A clock correction of 37.5 ppm means 37.5 parts per million. Over a day, that is about 3.2 seconds.",
+  "PCM is uncompressed sound. It is big because it is not compressed.",
+  "Type \"breather\" in the command palette to find Take a breather. The button at the top right is faster.",
+  "Every number on this screen is real. The only exaggeration is this line's exclamation mark!",
+  "Restarting your PC fixes many problems. This tip fixes none.",
+  "An uptime of 100.0% may be 99.95% or more, rounded.",
+  "A subwoofer plays the bass. It is written as .1 of a channel, but it is not a tenth of a speaker.",
+  "Tab moves the focus to the next item. Shift+Tab moves it back. This is true in most apps.",
+  "Turn on \"Start at sign-in\" and the app starts at sign-in.",
+  "Stereo has 2 channels. You have 2 ears. This is not a coincidence.",
+  "This skin has the same features as the Legit Playground skin. Sentences like this one are the only difference.",
+  "Giving 5 stars adds no features. Giving 1 star removes none.",
+  "An unplugged cable does not connect. It is also the first thing customer support asks about.",
+  "A minute has 60 seconds. That is why the \"Last 60 seconds\" traces show exactly one minute.",
+  "Closing the window leaves the app in the tray. If you closed the window and still hear sound, that is why.",
+  "96 kHz is twice 48 kHz. Whether it sounds twice as good depends on who you ask.",
+  "Settings are saved the moment you change them. That is why there is no Save button.",
+  "Tips are picked at random. The same tip never comes twice in a row, so if you miss the last one, you will have to wait a little.",
+  "DD+ with 6 channels is 5.1. 5 plus 1 is 6.",
+  "Change the skin and these tips go away. We will not stop you.",
+  "Buying the developer a meal does not lower the latency. It only shortens the time the developer goes hungry.",
+  "On the sound map, up is front. Rotate your monitor and up on the map is still front.",
+  "Pink noise is not pink. White noise is not white either.",
+  "The ms beside a number is milliseconds, thousandths of a second. With a capital M it would be megaseconds, about 11.6 days.",
+  "ASIO buffer sizes must be powers of two: 64, 128, 256, 512, 1024, 2048. You don't need to memorise them.",
+  "This app has no subscription fee. That is why there is no Cancel subscription button.",
+  "When you turn off your computer, this app turns off too.",
+]
+
+[own.workspace]
+name = "My desk"
+kind = "Workspace"
+label = "Switch workspace"
+toastTitle = "🌍 There is only one workspace"
+toastBody = "This desk is the universe. (localhost)"
+
+[own.account]
+toastTitle = "🙋 There is no account"
+toastBody = "No sign-in, no team invites, no payment method. You are the account."
+
+[own.beg]
+title = "🍚 Buy the developer a meal"
+body = "23% of this month's food budget reached! The number is made up, but the hunger is real."
+meter = "This month's food budget"
+action = "💸 Go give alms"
+
+[own.modal]
+close = "Close"
+begTitle = "This developer is hungry..."
+begLead = "You just used {feature}, a ✨PRO✨ feature. But don't worry — we won't take your money. Instead, please hear us out for a moment."
+begStory = "The developer of this app is wrestling a kernel driver again tonight, surviving on cup noodles. The EV certificate needed to sign the driver costs far more than you would think. Your small gesture is a warm meal for someone. 🍜"
+give = "💸 Give alms"
+starve = "Let them starve"
+begFoot = "Whichever you press, we already took care of {feature} for you."
+yesnoTitle = "Did you enjoy {feature}?"
+yesnoBody = "If you did, please drop us a star! Every single star means the world to the developer. It really does. 🙏"
+yes = "Yes, I loved it!"
+no = "No"
+starsTitle = "How would you rate {feature}?"
+starsBody = "Please leave an honest rating. Your valuable feedback helps us build a better product. (It is not sent anywhere)"
+starsLabel = "Rating"
+star = "{n} stars, {grade}"
+grades = ["Not great", "So-so", "Fine", "Good", "The best!"]
+later = "Maybe later"
+
+[own.toast]
+giveTitle = "💖 Thank you for your warm heart!"
+giveBody = "The developer is adding an egg to tonight's ramen. 🥚"
+starveTitle = "😭 The developer goes hungry again today"
+starveBody = "We still took care of {feature} for you. That's just the kind of people we are."
+yesTitle = "🙌 We knew it!"
+yesBody = "Just press Star on the GitHub page that opened."
+noTitle = "😢 Please enjoy it next time"
+noBody = "The developer still believes in you."
+ratedTitle = "⭐ Thanks for {n} stars!"
+ratedBody = "A star is a star, however many. Please finish with a Star on GitHub."
+doneTitle = "🎉 Congratulations! You nailed {feature}"
+doneBody = "Experience a whole new dimension of sound."
+
+# Feature names the modals and toasts use. A key is an Intent kind; nav_* is moving to a page.
+[own.features]
+other = "that feature just now"
+enable = "turning the engine on"
+disable = "turning the engine off"
+choose_output = "choosing an output device"
+set_profile_kind = "switching the output type"
+import_brir = "importing a BRIR set"
+set_speaker_layout = "the speaker layout"
+import_correction = "importing a correction file"
+clear_correction = "clearing the correction"
+set_gain = "the output volume"
+test_direction = "the test signal"
+set_upmixer = "choosing an upmixer"
+choose_plugin = "choosing a plugin"
+open_plugin_editor = "the plugin editor"
+set_upmix_apply = "applying the upmix"
+set_language = "the language setting"
+set_output_path = "the output method"
+set_routing_enabled = "per-app inputs"
+set_app_rule = "a per-app input rule"
+remove_app_rule = "removing a rule"
+choose_entrance = "the input method"
+choose_discard = "the discard output"
+choose_capture_app = "the app to capture"
+set_app_capture_exclusive = "exclusive output"
+set_asio_enabled = "the ASIO input"
+set_asio_layout = "the DAW output layout"
+set_asio_system_attenuation = "lowering system sound"
+start_diagnostic_recording = "diagnostic recording"
+install_driver = "installing the driver"
+recheck = "checking again"
+begin_setup = "first setup"
+nav_status = "opening the Overview page"
+nav_profile = "opening the Profile page"
+nav_upmix = "opening the Upmix page"
+nav_settings = "opening the Settings page"

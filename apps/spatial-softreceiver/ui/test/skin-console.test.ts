@@ -307,3 +307,44 @@ describe('the computer and the status history (law 8)', () => {
     );
   });
 });
+
+describe('the details a console is expected to have', () => {
+  it('counts the errors on the overview item and says so to a screen reader', () => {
+    mounted(fixture('faulted'), 'profile');
+    const badge = $('[data-key="nav-status"] .cn-nav-count')!;
+    expect(badge.textContent).toContain('1');
+    expect(badge.textContent).toContain(ko.console.issues(1));
+    root.replaceChildren();
+    mounted(fixture('ready'), 'profile');
+    expect($('.cn-nav-count')).toBeNull();
+  });
+
+  it('has a skip link to the content and marks the section the page is at', async () => {
+    mounted(fixture('running'), 'status');
+    const skip = $<HTMLAnchorElement>('.cn-skip')!;
+    expect(skip.textContent).toBe(ko.console.skip);
+    skip.click();
+    expect(document.activeElement).toBe($('#main'));
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    expect($$('.cn-subnav-item[aria-current="location"]')).toHaveLength(1);
+  });
+
+  it('copies a path and the facts a bug report wants', async () => {
+    const copied: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (value: string) => void copied.push(value) } });
+    const start = fixture('running');
+    mounted(start, 'settings');
+    $<HTMLButtonElement>('[data-key="copy-report"]')!.click();
+    await tick();
+    expect(copied[0]).toContain(`${ko.facts.computerName}: ${start.platform!.computer_name}`);
+    expect(copied[0]).toContain(`${ko.facts.osBuild}: ${start.platform!.os_build}`);
+    expect($('[data-key="copy-report"]')!.textContent).toContain(ko.console.copied);
+
+    root.replaceChildren();
+    mounted(start, 'profile');
+    expect(start.profile.headphones.brir).not.toBeNull();
+    $<HTMLButtonElement>('[data-key="copy-brir"]')!.click();
+    await tick();
+    expect(copied[1]).toBe(start.profile.headphones.brir);
+  });
+});

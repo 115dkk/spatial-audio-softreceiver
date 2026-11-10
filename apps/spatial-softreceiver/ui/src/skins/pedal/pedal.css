@@ -1968,10 +1968,37 @@ html[data-skin="pedal"] #app {
   padding: 10px 32px 18px;
 }
 
+.pd-railkeys {
+  display: flex;
+  align-items: flex-end;
+  gap: 22px;
+}
+
+/* The manual key stands apart from the four faces' keys: a printed rule between. */
+.pd-railkeys > [data-key="manual"] {
+  margin-left: 6px;
+  padding-left: 22px;
+  border-left: 1.5px solid var(--pd-rule);
+}
+
 .pd-facekeys {
   display: flex;
   align-items: flex-end;
   gap: 22px;
+}
+
+/*
+ * The manual (법칙 5): what a part is for, in sentences. The faces print it
+ * only while the manual key is lit, and the leaders that run to a printed
+ * description leave with it.
+ */
+.pd-room:not([data-manual="on"]) .pd-manual {
+  display: none;
+}
+
+.pd-room:not([data-manual="on"]) .pd-leads > .is-chosen::before,
+.pd-room:not([data-manual="on"]) .pd-leads > .is-chosen::after {
+  content: none;
 }
 
 .pd-plate {
@@ -3225,8 +3252,14 @@ html[data-skin="pedal"] #app {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .pd-facekeys {
+  .pd-facekeys,
+  .pd-railkeys {
     gap: 12px;
+  }
+
+  .pd-railkeys > [data-key="manual"] {
+    margin-left: 0;
+    padding-left: 12px;
   }
 
   .pd-lamps {

@@ -200,7 +200,7 @@ function carrying<K extends string, V>(kind: K, inner: Guard<V>): Guard<{ kind: 
 
 // Unit enums: the keys are checked against the bindings' unions.
 export const LANGUAGES: Record<Language, true> = { ko: true, en: true };
-export const SKINS: Record<Skin, true> = { standard: true, pedal: true, console: true };
+export const SKINS: Record<Skin, true> = { standard: true, pedal: true, console: true, playground: true };
 export const HEALTH_PARTS: Record<HealthPart, true> = { driver: true, engine: true, output: true, plugins: true };
 export const MINUTE_STATES: Record<MinuteState, true> = {
   no_record: true,

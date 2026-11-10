@@ -4,7 +4,8 @@
 // the box: jacks, LEDs, knobs, switches, keys and print. What the parts do
 // is the controller every skin shares (src/skins/controller.ts); this file
 // only builds the box from a frame and keeps what is only seen (the
-// encoder's turn, the open app row, where the face was scrolled, the scale).
+// encoder's turn, the open app row, whether the manual is printed, where the
+// face was scrolled, the scale).
 
 import './pedal.css';
 import type { Api } from '../../api';
@@ -46,6 +47,7 @@ export function mount(root: HTMLElement, api: Api, options: AppOptions = {}): Ap
   const gainHold: KnobHold = { drag: null, wheel: null };
   const asioHold: KnobHold = { drag: null, wheel: null };
   let picking: number | null = null;
+  let manualOpen = false;
   let scrolled: ScrollHold | null = null;
   let watching: ResizeObserver | null = null;
 
@@ -134,6 +136,13 @@ export function mount(root: HTMLElement, api: Api, options: AppOptions = {}): Ap
       watch: (observer) => {
         watching?.disconnect();
         watching = observer;
+      },
+      manual: {
+        open: manualOpen,
+        toggle() {
+          manualOpen = !manualOpen;
+          ctx.setView({});
+        },
       },
     });
 

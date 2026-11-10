@@ -25,6 +25,14 @@ export const print = (words: Child, className = 'pd-label', id: string | null = 
 export const fine = (sentence: Child, id: string | null = null, className = '') =>
   h('p', { class: `pd-fine ${className}`.trim(), id }, sentence);
 
+/**
+ * A sentence of the manual (법칙 5): what a part is for, in words. The face
+ * prints it only while the manual key is lit; it describes its part for a
+ * screen reader either way.
+ */
+export const manual = (sentence: Child, id: string | null = null, className = '') =>
+  h('p', { class: `pd-fine pd-manual ${className}`.trim(), id }, sentence);
+
 /** Rows of printed facts: the name small, the value in the face's ink. */
 export function facts(rows: [string, Child][], className = ''): HTMLDListElement {
   const list = h('dl', { class: `pd-facts ${className}`.trim() });
@@ -47,6 +55,9 @@ export function spec(rows: [label: string, value: Child, long?: boolean][], clas
 
 /** A printed hairline between the sections of a group. */
 export const hairline = () => h('div', { class: 'pd-hair', 'aria-hidden': 'true' });
+
+/** The hairline over a manual sentence: it leaves the face with the sentence. */
+export const manualRule = () => h('div', { class: 'pd-hair pd-manual', 'aria-hidden': 'true' });
 
 /** A group of parts inside a printed frame, its name on a knocked-out tab. */
 export function group(id: string, title: string | null, children: Child[], className = ''): HTMLElement {
@@ -1201,7 +1212,7 @@ export function lockLamp(word: string, lit: boolean, mark: HTMLElement | null = 
 export function dipLegend(rows: { id: string | null; words: Child }[]): HTMLElement {
   return h(
     'ol',
-    { class: 'pd-dip-legend' },
+    { class: 'pd-dip-legend pd-manual' },
     ...rows.map((row, index) =>
       h('li', { class: 'pd-dip-legend-row' }, h('b', { class: 'pd-dip-n', 'aria-hidden': 'true' }, String(index + 1)), h('span', { class: 'pd-fine', id: row.id }, row.words)),
     ),

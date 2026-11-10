@@ -933,3 +933,53 @@ describe('an input\u2019s format is parts (법칙 1)', () => {
     expect(first.querySelector('[data-key]')?.textContent).toContain(name);
   });
 });
+
+describe('the manual key prints what the parts are for (법칙 5)', () => {
+  it('keeps every sentence of the manual off the faces until the key is lit, and still describes the parts', () => {
+    mounted(fixture('running'), 'settings');
+    const room = $('.pd-room')!;
+    const manualKey = $<HTMLButtonElement>('[data-key="manual"]')!;
+    expect(room.dataset.manual).toBe('off');
+    expect(manualKey.getAttribute('aria-pressed')).toBe('false');
+    expect(manualKey.classList.contains('is-lit')).toBe(false);
+    // The sentences are in the document for a screen reader, described from their parts.
+    const hint = $('#language-hint')!;
+    expect(hint.classList.contains('pd-manual')).toBe(true);
+    expect(hint.textContent).toBe(ko.settings.languageHint);
+    expect($('[aria-describedby~="language-hint"]')).not.toBeNull();
+
+    manualKey.click();
+    expect($('.pd-room')!.dataset.manual).toBe('on');
+    const lit = $<HTMLButtonElement>('[data-key="manual"]')!;
+    expect(lit.getAttribute('aria-pressed')).toBe('true');
+    expect(lit.classList.contains('is-lit')).toBe(true);
+    lit.click();
+    expect($('.pd-room')!.dataset.manual).toBe('off');
+  });
+
+  it('never puts a lock, a requirement or an error in the manual', () => {
+    for (const [name, tab] of [
+      ['running', 'settings'],
+      ['ready', 'profile'],
+      ['running-upmix', 'upmix'],
+      ['faulted', 'status'],
+    ] as const) {
+      mounted(fixture(name), tab);
+      // The legend plate and the bands are status: printed whatever the key says.
+      for (const part of $$('.pd-noteplate, [data-region="error-band"], #entrance-blocked')) {
+        expect(part.closest('.pd-manual'), `${name}: ${part.className}`).toBeNull();
+      }
+      root.replaceChildren();
+    }
+  });
+
+  it('stands on every face that has parts, and is off after quitting', () => {
+    for (const tab of TABS) {
+      mounted(fixture('ready'), tab);
+      expect($<HTMLButtonElement>('[data-key="manual"]')!.disabled, tab).toBe(false);
+      root.replaceChildren();
+    }
+    mounted(fixture('quit'));
+    expect($<HTMLButtonElement>('[data-key="manual"]')!.disabled).toBe(true);
+  });
+});

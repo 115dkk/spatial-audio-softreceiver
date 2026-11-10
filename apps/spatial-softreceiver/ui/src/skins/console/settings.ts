@@ -22,7 +22,7 @@ import {
 import { driverRows, platformRows } from '../../screens/facts';
 import { text } from '../../text';
 import { SKINS, skinOf } from '../names';
-import { type Build, act, choose, cls, hint, para, plain, range, row, section, table, toggle } from './kit';
+import { act, type Build, choose, cls, copy, hint, para, plain, range, row, section, table, toggle } from './kit';
 import type { Page } from './overview';
 import { discardList } from './setup';
 
@@ -466,11 +466,20 @@ function facts(rows: [string, Child][]): HTMLElement[] {
 export function settingsPage(b: Build): Page {
   const { snapshot } = b.ctx;
   const t = text.settings;
-  const s = (id: string, title: string, children: Child[]) => {
+  const s = (id: string, title: string, children: Child[], aside?: Child) => {
     b.group = title;
-    const element = section(b, id, title, children);
+    const element = section(b, id, title, children, aside === undefined ? {} : { aside });
     b.group = null;
     return element;
+  };
+  // What a bug report wants, as lines of "name: value": the version, this PC and the driver.
+  const report = (): string => {
+    const lines: [string, Child][] = [];
+    const version = b.ctx.view.update?.current;
+    if (version !== undefined) lines.push([text.product, version]);
+    if (snapshot.platform !== null) lines.push(...platformRows(snapshot.platform));
+    if (snapshot.driver !== null) lines.push(...driverRows(snapshot.driver));
+    return lines.map(([label, value]) => `${label}: ${typeof value === 'string' ? value : ((value as Node | null)?.textContent ?? '')}`).join('\n');
   };
   const element = h(
     'div',
@@ -494,9 +503,12 @@ export function settingsPage(b: Build): Page {
     h(
       'div',
       { class: 'cn-split' },
-      s('platform', t.platform, [
-        h('div', { class: cls('cn-rows', 'cn-rows-facts') }, ...(snapshot.platform === null ? [para(t.unknown, 'cn-muted')] : facts(platformRows(snapshot.platform)))),
-      ]),
+      s(
+        'platform',
+        t.platform,
+        [h('div', { class: cls('cn-rows', 'cn-rows-facts') }, ...(snapshot.platform === null ? [para(t.unknown, 'cn-muted')] : facts(platformRows(snapshot.platform))))],
+        snapshot.platform === null ? undefined : copy(b, 'copy-report', report, { label: text.console.copyReport }),
+      ),
       s('driver', t.driver, [
         h(
           'div',
