@@ -131,6 +131,44 @@ describe('the playground skin', () => {
     }
   });
 
+  it('holds on twice to a viewer who leaves, and sends nothing when they stay', async () => {
+    const { sent } = mounted(fixture('ready'), 'settings');
+    const leave = () => {
+      const select = $<HTMLSelectElement>('[data-key="skin"]')!;
+      select.value = 'console';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    const kind = () => $('.pg-modal')?.getAttribute('data-kind') ?? null;
+
+    leave();
+    await tick();
+    expect(kind()).toBe('stay');
+    expect($('.pg-modal')!.textContent).toContain(ko.own.stay.lead(plainKo.skins.console));
+    // Staying, by the button or by closing, sends nothing.
+    click('.pg-modal .is-hype');
+    await tick();
+    expect(kind()).toBeNull();
+    expect(sent).toEqual([]);
+    expect($('.pg-toasts')!.textContent).toContain(ko.own.stay.toastTitle);
+
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    leave();
+    await tick();
+    click('.pg-modal .is-leave');
+    expect(kind()).toBe('offer');
+    expect(sent).toEqual([]);
+    click('.pg-modal .is-leave');
+    await tick();
+    expect(kind()).toBeNull();
+    expect(sent).toEqual([{ kind: 'set_skin', value: 'console' }]);
+  });
+
+  it('prints no apology for itself', () => {
+    mounted(fixture('running'));
+    expect($('.pg-footnote')).toBeNull();
+    for (const own of [ko.own, en.own]) expect('footnote' in own).toBe(false);
+  });
+
   it('has the console handles the gallery and the other tests hold', () => {
     mounted(fixture('ready'), 'status');
     for (const key of ['power', 'outputs-toggle', 'nav-status', 'nav-profile', 'nav-upmix', 'nav-settings', 'cn-palette']) {

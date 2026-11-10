@@ -20,7 +20,7 @@
     { "id": "settings", "title": "설정" },
     { "id": "quit", "title": "종료" },
     { "id": "window", "title": "작은 창" },
-    { "id": "playground", "title": "위험한 놀이터의 모달" }
+    { "id": "playground", "title": "위험한 놀이터의 경고와 모달" }
   ],
   "scenarios": [
     { "name": "setup-welcome", "group": "wizard", "title": "환영(입구 고르기)", "fixture": "setup-welcome", "tab": null },
@@ -244,6 +244,41 @@
           { "click": ".pg-modal-x" },
           { "click": "[data-key=\"nav-settings\"]" },
           { "wait": ".pg-modal[data-kind=\"stars\"]" }
+        ]
+      }
+    },
+    {
+      "name": "playground-warning",
+      "group": "playground",
+      "title": "위험한 놀이터로 바꾸기 전의 경고",
+      "fixture": "running",
+      "tab": "settings",
+      "steps": [{ "choose": "#skin", "value": "playground" }, { "wait": "dialog.pgw[open]" }],
+      "skinSteps": { "playground": null, "pedal": [{ "click": "[data-key=\"skin-playground\"]" }, { "wait": "dialog.pgw[open]" }] }
+    },
+    {
+      "name": "playground-stay",
+      "group": "playground",
+      "title": "위험한 놀이터를 떠나려 할 때 붙잡는 모달",
+      "fixture": "running",
+      "tab": "settings",
+      "skinSteps": { "standard": null, "pedal": null, "console": null, "playground": [{ "choose": "#skin", "value": "console" }, { "wait": ".pg-modal[data-kind=\"stay\"]" }] }
+    },
+    {
+      "name": "playground-offer",
+      "group": "playground",
+      "title": "그래도 떠나려 할 때 한 번 더 붙잡는 모달",
+      "fixture": "running",
+      "tab": "settings",
+      "skinSteps": {
+        "standard": null,
+        "pedal": null,
+        "console": null,
+        "playground": [
+          { "choose": "#skin", "value": "console" },
+          { "wait": ".pg-modal[data-kind=\"stay\"]" },
+          { "click": ".pg-modal .is-leave" },
+          { "wait": ".pg-modal[data-kind=\"offer\"]" }
         ]
       }
     }

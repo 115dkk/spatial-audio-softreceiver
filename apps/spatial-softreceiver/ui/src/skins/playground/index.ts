@@ -23,6 +23,8 @@ export function mount(root: HTMLElement, api: Api, options: AppOptions = {}): Ap
   const watched: Api = {
     ...api,
     async dispatch(intent) {
+      // Leaving for another skin is held on to first; staying sends nothing.
+      if (intent.kind === 'set_skin' && intent.value !== 'playground' && !(await hype.leaving(intent.value))) return;
       await api.dispatch(intent);
       hype.used(intent);
     },

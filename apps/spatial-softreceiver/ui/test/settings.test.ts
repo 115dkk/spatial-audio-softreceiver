@@ -1,12 +1,13 @@
 // The settings screen's output path and per-app entrance panels (ADR 0028).
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Api } from '../src/api';
 import { mountApp } from '../src/app';
 import type { Intent, Language, Snapshot } from '../src/bindings';
 import { en as catalogEn, ko as catalogKo } from '../src/catalog';
 import { fixture } from '../src/fixtures';
 import { createMockApi } from '../src/mock';
+import { ko as playgroundKo } from '../src/skins/playground/catalog';
 import { en, ko } from '../src/text';
 
 let root: HTMLElement;
@@ -118,6 +119,30 @@ describe('the skin (ADR 0041)', () => {
       choose(select(), 'pedal');
       expect(sent, name).toEqual([{ kind: 'set_skin', value: 'pedal' }]);
     }
+  });
+
+  it('warns before the playground every time, and sends only after a yes (ADR 0047)', async () => {
+    const dialog = () => document.querySelector<HTMLDialogElement>('dialog.pgw');
+    const { sent } = mounted(fixture('ready'));
+    for (const round of [1, 2]) {
+      choose(select(), 'playground');
+      await vi.waitFor(() => expect(dialog(), `round ${round}`).not.toBeNull());
+      expect(dialog()!.textContent).toContain(playgroundKo.own.warning.body);
+      // A warning has no way to be turned off.
+      expect(dialog()!.querySelectorAll('input, [role="checkbox"]')).toHaveLength(0);
+      expect(dialog()!.querySelectorAll('button')).toHaveLength(2);
+      dialog()!.querySelector<HTMLElement>('[data-key="skin-warning-no"]')!.click();
+      await tick();
+      expect(dialog()).toBeNull();
+      expect(sent).toEqual([]);
+      // The selector is back on the skin that is on.
+      expect(chosen(select())).toBe('standard');
+    }
+    choose(select(), 'playground');
+    await vi.waitFor(() => expect(dialog()).not.toBeNull());
+    dialog()!.querySelector<HTMLElement>('[data-key="skin-warning-yes"]')!.click();
+    await tick();
+    expect(sent).toEqual([{ kind: 'set_skin', value: 'playground' }]);
   });
 });
 

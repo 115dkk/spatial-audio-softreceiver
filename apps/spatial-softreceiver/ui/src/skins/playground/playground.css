@@ -268,7 +268,7 @@
   background: color-mix(in srgb, currentColor 12%, transparent);
 }
 
-/* ---------- PRO chips, gradient heads, the footnote ---------- */
+/* ---------- PRO chips, gradient heads ---------- */
 
 .pg-pro {
   display: inline-flex;
@@ -296,12 +296,6 @@
 
 .pg-app .cn-subnav-item[aria-current="location"] {
   box-shadow: -11px 0 0 -9px var(--pg-hype-2);
-}
-
-.pg-footnote {
-  margin: 8px 0 0;
-  color: var(--cn-text-2);
-  font-size: 13px;
 }
 
 /* ---------- toasts ---------- */
@@ -390,6 +384,7 @@
 
 .pg-modal p {
   margin: 0;
+  word-break: keep-all;
   color: var(--cn-text-2);
   line-height: 1.6;
 }
@@ -461,6 +456,26 @@
 .pg-button.is-ghost {
   border-color: transparent;
   color: var(--cn-text-2);
+}
+
+.pg-losses {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--cn-raised);
+  font-weight: 700;
+  list-style: none;
+}
+
+/* Leaving is the small grey one under the big bright one, as on a cancel page. */
+.pg-button.is-leave {
+  min-height: 36px;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .pg-modal-foot {

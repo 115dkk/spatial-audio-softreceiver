@@ -28,7 +28,7 @@ import { SKINS, isSkin, loadSkin } from './skins';
 import table from '../e2e/gallery.json';
 
 type Scheme = 'light' | 'dark';
-type Step = { click: string } | { focus: string } | { wait: string };
+type Step = { click: string } | { focus: string } | { choose: string; value: string } | { wait: string };
 
 /** A scene as the table writes it; what it leaves out comes from `defaults`. */
 interface SceneEntry {
@@ -124,6 +124,12 @@ async function run(step: Step, scene: string): Promise<void> {
     const target = document.querySelector<HTMLElement>(step.click);
     if (target === null) throw new Error(`gallery scene ${scene}: nothing to click at ${step.click}`);
     target.click();
+  } else if ('choose' in step) {
+    // As picking an option of a select would.
+    const target = document.querySelector<HTMLSelectElement>(step.choose);
+    if (target === null) throw new Error(`gallery scene ${scene}: nothing to choose at ${step.choose}`);
+    target.value = step.value;
+    target.dispatchEvent(new Event('change', { bubbles: true }));
   } else if ('focus' in step) {
     // As the keyboard would: what opens on focus opens, with its focus ring.
     const target = document.querySelector<HTMLElement>(step.focus);

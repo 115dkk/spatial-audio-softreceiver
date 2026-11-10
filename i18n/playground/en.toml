@@ -94,7 +94,6 @@ tipBadge = "💡 Pro tip"
 tipLabel = "Pro tip of the day"
 tipNext = "Dismiss"
 tipCount = "{n}/{total}"
-footnote = "* The copy in this skin is bad on purpose. The features and the numbers are the same as in every other skin. The developer's hunger is real."
 toastsLabel = "Notifications"
 tips = [
   "Press Ctrl+K to open the command palette. Press it again to close it. Press it twice and it is as if nothing ever happened.",
@@ -123,14 +122,14 @@ tips = [
   "A clock correction of 37.5 ppm means 37.5 parts per million. Over a day, that is about 3.2 seconds.",
   "PCM is uncompressed sound. It is big because it is not compressed.",
   "Type \"breather\" in the command palette to find Take a breather. The button at the top right is faster.",
-  "Every number on this screen is real. The only exaggeration is this line's exclamation mark!",
+  "Turn the monitor off and you cannot see the screen. The sound keeps playing.",
   "Restarting your PC fixes many problems. This tip fixes none.",
   "An uptime of 100.0% may be 99.95% or more, rounded.",
   "A subwoofer plays the bass. It is written as .1 of a channel, but it is not a tenth of a speaker.",
   "Tab moves the focus to the next item. Shift+Tab moves it back. This is true in most apps.",
   "Turn on \"Start at sign-in\" and the app starts at sign-in.",
   "Stereo has 2 channels. You have 2 ears. This is not a coincidence.",
-  "This skin has the same features as the Legit Playground skin. Sentences like this one are the only difference.",
+  "Windows has a volume mixer too. It has no pro tips.",
   "Giving 5 stars adds no features. Giving 1 star removes none.",
   "An unplugged cable does not connect. It is also the first thing customer support asks about.",
   "A minute has 60 seconds. That is why the \"Last 60 seconds\" traces show exactly one minute.",
@@ -139,7 +138,7 @@ tips = [
   "Settings are saved the moment you change them. That is why there is no Save button.",
   "Tips are picked at random. The same tip never comes twice in a row, so if you miss the last one, you will have to wait a little.",
   "DD+ with 6 channels is 5.1. 5 plus 1 is 6.",
-  "Change the skin and these tips go away. We will not stop you.",
+  "Change the skin and these tips go away. We do not recommend switching, though.",
   "Buying the developer a meal does not lower the latency. It only shortens the time the developer goes hungry.",
   "On the sound map, up is front. Rotate your monitor and up on the map is still front.",
   "Pink noise is not pink. White noise is not white either.",
@@ -162,7 +161,7 @@ toastBody = "No sign-in, no team invites, no payment method. You are the account
 
 [own.beg]
 title = "🍚 Buy the developer a meal"
-body = "23% of this month's food budget reached! The number is made up, but the hunger is real."
+body = "23% of this month's food budget reached! The goal is just around the corner!"
 meter = "This month's food budget"
 action = "💸 Go give alms"
 
@@ -179,11 +178,32 @@ yesnoBody = "If you did, please drop us a star! Every single star means the worl
 yes = "Yes, I loved it!"
 no = "No"
 starsTitle = "How would you rate {feature}?"
-starsBody = "Please leave an honest rating. Your valuable feedback helps us build a better product. (It is not sent anywhere)"
+starsBody = "Please leave an honest rating. Your valuable feedback helps us build a better product."
 starsLabel = "Rating"
 star = "{n} stars, {grade}"
 grades = ["Not great", "So-so", "Fine", "Good", "The best!"]
 later = "Maybe later"
+
+# The warning shown every time before another skin changes to the Dangerous Playground. There is no "don't show again".
+[own.warning]
+title = "⚠️ Warning"
+body = "The usability of this skin was wrecked on purpose. Do you really want to use it?"
+yes = "Use it"
+no = "Never mind"
+
+# The modal that holds on when leaving the Dangerous Playground for another skin. It holds on twice, then lets go.
+[own.stay]
+title = "Please don't go T_T"
+lead = "Are you sure you want to leave for {name}? If you leave now, you lose every benefit below."
+losses = ["💡 50 pro tips", "✨ Unlimited free PRO features", "🥺 The developer's pleading eyes"]
+stay = "💖 Stay with us"
+leave = "Give up my benefits and leave"
+offerTitle = "Wait! Before you go..."
+offerBody = "Stay now and get 100% off the free plan, for life. This offer is for today only!"
+offerStay = "🎁 Take the discount and stay"
+offerLeave = "Leave anyway"
+toastTitle = "💖 We knew you would stay!"
+toastBody = "We never doubted you for a second."
 
 [own.toast]
 giveTitle = "💖 Thank you for your warm heart!"

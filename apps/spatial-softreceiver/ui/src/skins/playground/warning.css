@@ -1,0 +1,114 @@
+/*
+ * The warning before another skin changes to the playground (./warning.ts).
+ * It is drawn over a skin that is not the playground, so it uses none of any
+ * skin's tokens: its colours are its own, and the typeface is the one the
+ * page already has.
+ */
+
+.pgw {
+  --pgw-surface: #ffffff;
+  --pgw-text: #1a1a1a;
+  --pgw-text-2: #4a4a48;
+  --pgw-edge: #8a8a86;
+  --pgw-raised: #f0f0ef;
+  --pgw-black: #17181a;
+  --pgw-yellow: #ffd21f;
+  --pgw-go: linear-gradient(135deg, #f43f5e, #be185d);
+
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0 22px 20px;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 16px;
+  background: var(--pgw-surface);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  color: var(--pgw-text);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.pgw::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.pgw-stripe {
+  height: 14px;
+  margin: 0 -22px 18px;
+  background: repeating-linear-gradient(-45deg, var(--pgw-black) 0 14px, var(--pgw-yellow) 14px 28px);
+}
+
+.pgw h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.pgw p {
+  margin: 0;
+  word-break: keep-all;
+  text-wrap: pretty;
+  color: var(--pgw-text-2);
+}
+
+.pgw-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.pgw-button {
+  min-height: 44px;
+  padding: 4px 12px;
+  border: 1px solid var(--pgw-edge);
+  border-radius: 10px;
+  background: var(--pgw-surface);
+  color: var(--pgw-text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pgw-button:hover {
+  background: var(--pgw-raised);
+}
+
+.pgw-button:active {
+  transform: scale(0.96);
+}
+
+.pgw-button:focus-visible {
+  outline: 2px solid var(--pgw-text);
+  outline-offset: 2px;
+}
+
+.pgw-button.is-go {
+  border: 0;
+  background: var(--pgw-go);
+  color: #ffffff;
+}
+
+.pgw-button.is-go:hover {
+  filter: brightness(1.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  .pgw {
+    --pgw-surface: #1d1d1f;
+    --pgw-text: #f2f2f0;
+    --pgw-text-2: #c4c4c0;
+    --pgw-edge: #7c7c78;
+    --pgw-raised: #2a2a2c;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pgw-button:active {
+    transform: none;
+  }
+}

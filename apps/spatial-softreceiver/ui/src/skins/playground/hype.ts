@@ -1,15 +1,16 @@
 // The playground's own layer over the console's drawing (ADR 0047): the tip
 // strip, the workspace and account that do not exist, the PRO chips, the
 // begging card, the toasts and the three modals that ask for alms, a star or
-// a rating. Nothing here decides or keeps anything the product needs: every
+// a rating, and the two that hold on to a viewer who is leaving. Nothing here decides or keeps anything the product needs: every
 // intent has already gone to the supervisor by the time a modal opens, and
 // the only thing remembered is which features have asked once (per viewer,
 // in localStorage, so a missing store only means being asked again).
 
 import type { Api } from '../../api';
-import type { Intent } from '../../bindings';
+import type { Intent, Skin } from '../../bindings';
 import { type Child, h } from '../../dom';
 import type { Tab } from '../../screens/common';
+import { text } from '../../text';
 import type { Frame } from '../controller';
 import { type Catalog, en, ko } from './catalog';
 
@@ -34,7 +35,7 @@ const SILENT: ReadonlySet<Intent['kind']> = new Set<Intent['kind']>(['set_skin',
 const ASKED_KEY = 'ssr.playground.asked';
 const TOAST_MS = 3600;
 
-type ModalKind = 'beg' | 'yesno' | 'stars';
+type ModalKind = 'beg' | 'yesno' | 'stars' | 'stay' | 'offer';
 interface Asking {
   kind: ModalKind;
   feature: string;
@@ -43,6 +44,12 @@ interface Asking {
 export interface Hype {
   /** An intent the supervisor took: a toast, and once per feature a modal. */
   used(intent: Intent): void;
+  /**
+   * Leaving for another skin: the playground holds on twice, as a
+   * subscription's cancel page does, and then lets go. Resolves true when the
+   * viewer still leaves; closing either modal any other way means staying.
+   */
+  leaving(skin: Skin): Promise<boolean>;
   /** Adds the playground's parts to a frame the console drew. */
   decorate(element: HTMLElement, frame: Frame): void;
 }
@@ -86,6 +93,7 @@ export function createHype(root: HTMLElement, api: Api): Hype {
   let asks = 0;
   let asking: Asking | null = null;
   let returnTo: HTMLElement | null = null;
+  let leave: ((go: boolean) => void) | null = null;
   let tip = Math.floor(random() * ko.own.tips.length);
   let lastTab: Tab | null = null;
   let redraw: (() => void) | null = null;
@@ -113,7 +121,17 @@ export function createHype(root: HTMLElement, api: Api): Hype {
     tip = (tip + 1 + Math.floor(random() * (total - 1))) % total;
   }
 
+  /** Ends a leaving that is being asked about; staying is thanked. */
+  function settle(go: boolean): void {
+    const done = leave;
+    leave = null;
+    if (done === null) return;
+    if (!go) toast(own.stay.toastTitle, own.stay.toastBody);
+    done(go);
+  }
+
   function closeModal(): void {
+    settle(false);
     asking = null;
     modalHost.replaceChildren();
     const back = returnTo;
@@ -160,6 +178,33 @@ export function createHype(root: HTMLElement, api: Api): Hype {
           ),
         ),
         h('p', { class: 'pg-modal-foot' }, m.begFoot(feature)),
+      ];
+    } else if (kind === 'stay' || kind === 'offer') {
+      const s = own.stay;
+      const first = kind === 'stay';
+      const onward = first
+        ? () => {
+            asking = { kind: 'offer', feature };
+            drawModal();
+            focusModal();
+          }
+        : () => {
+            const done = leave;
+            leave = null;
+            closeModal();
+            done?.(true);
+          };
+      body = [
+        h('div', { class: 'pg-modal-emoji', 'aria-hidden': 'true' }, first ? '😭' : '🎁'),
+        h('h2', { id: 'pg-modal-title' }, first ? s.title : s.offerTitle),
+        h('p', null, first ? s.lead(feature) : s.offerBody),
+        first ? h('ul', { class: 'pg-losses' }, ...s.losses.map((loss) => h('li', null, loss))) : null,
+        h(
+          'div',
+          { class: 'pg-modal-actions is-one' },
+          button(first ? s.stay : s.offerStay, 'is-hype', closeModal),
+          button(first ? s.leave : s.offerLeave, 'is-ghost is-leave', onward),
+        ),
       ];
     } else if (kind === 'yesno') {
       body = [
@@ -250,6 +295,21 @@ export function createHype(root: HTMLElement, api: Api): Hype {
     modalHost.replaceChildren(h('div', { class: 'pg-scrim', onClick: closeModal }), dialog);
   }
 
+  const focusModal = () => modalHost.querySelector<HTMLElement>('.pg-modal-actions button')?.focus();
+
+  function leaving(skin: Skin): Promise<boolean> {
+    // Whatever was being asked gives way.
+    if (asking !== null) closeModal();
+    return new Promise((resolve) => {
+      leave = resolve;
+      asking = { kind: 'stay', feature: text.skins[skin] };
+      const active = document.activeElement;
+      returnTo = active instanceof HTMLElement && active !== document.body ? active : null;
+      drawModal();
+      focusModal();
+    });
+  }
+
   /** Asks once per feature, one modal at a time; PRO features beg, the others take turns asking for a star and a rating. */
   function ask(key: string, feature: string, pro: boolean): void {
     if (asking !== null || asked.has(key)) return;
@@ -260,7 +320,7 @@ export function createHype(root: HTMLElement, api: Api): Hype {
     const active = document.activeElement;
     returnTo = active instanceof HTMLElement && active !== document.body ? active : null;
     drawModal();
-    modalHost.querySelector<HTMLElement>('.pg-modal-actions button')?.focus();
+    focusModal();
   }
 
   const featureName = (key: string): string => (key in own.features ? own.features[key as FeatureKey] : own.features.other);
@@ -363,8 +423,7 @@ export function createHype(root: HTMLElement, api: Api): Hype {
     for (const selector of PRO_PARTS) {
       element.querySelector(selector)?.append(h('span', { class: 'pg-pro' }, own.pro));
     }
-    element.querySelector('.cn-content')?.append(h('p', { class: 'pg-footnote' }, own.footnote));
   }
 
-  return { used, decorate };
+  return { used, leaving, decorate };
 }
