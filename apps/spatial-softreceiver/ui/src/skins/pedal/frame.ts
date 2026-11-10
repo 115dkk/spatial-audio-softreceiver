@@ -382,7 +382,8 @@ export function enclosure(input: EnclosureInput): HTMLElement {
             label: p.manual,
             lit: input.manual.open,
             chosen: input.manual.open,
-            off: ctx.snapshot.phase.kind === 'quit',
+            // Setup's faces print everything they have, and the closing face has no parts.
+            off: !able,
             attrs: { 'aria-pressed': input.manual.open ? 'true' : 'false' },
             onClick: input.manual.toggle,
           }),

@@ -202,7 +202,7 @@ export function notePlate(title: string, id: string): NotePlate {
   const element = group(id, title, [list], 'pd-noteplate');
   element.setAttribute('aria-hidden', 'true');
   element.hidden = true;
-  const notes: { shown: boolean; numbers: HTMLElement[] }[] = [];
+  const notes: { shown: boolean; numbers: HTMLElement[]; row: HTMLElement; same: string; repeat: boolean }[] = [];
   let order = '';
   const plate: NotePlate = {
     element,
@@ -223,7 +223,7 @@ export function notePlate(title: string, id: string): NotePlate {
         h('span', { class: 'pd-noterow-text' }, options.source === undefined ? null : h('b', { class: 'pd-noterow-src' }, options.source), words),
       );
       list.append(row);
-      const entry = { shown: false, numbers: [markNumber, rowNumber] };
+      const entry = { shown: false, numbers: [markNumber, rowNumber], row, same: '', repeat: false };
       notes.push(entry);
       let tint = tone;
       return {
@@ -232,7 +232,8 @@ export function notePlate(title: string, id: string): NotePlate {
           const shown = sentence !== null;
           entry.shown = shown;
           if (mark.hidden === shown) mark.hidden = !shown;
-          if (row.hidden === shown) row.hidden = !shown;
+          const rowHidden = !shown || entry.repeat;
+          if (row.hidden !== rowHidden) row.hidden = rowHidden;
           if (sentence !== null) {
             if (said.textContent !== sentence) said.textContent = sentence;
             if (words.textContent !== sentence) words.textContent = sentence;
@@ -242,18 +243,29 @@ export function notePlate(title: string, id: string): NotePlate {
             markLight?.set(glow, to);
             rowLight.set(glow, to);
           }
+          entry.same = sentence === null ? '' : `${tint}
+${options.source ?? ''}
+${sentence}`;
         },
       };
     },
     renumber() {
-      const now = notes.map((entry) => (entry.shown ? '1' : '0')).join('');
+      const now = notes.map((entry) => (entry.shown ? entry.same : '')).join(' ');
       if (now === order) return;
       order = now;
+      // Two parts with the same note share one number and one row of the legend.
+      const numbered = new Map<string, number>();
       let at = 0;
       for (const entry of notes) {
         if (!entry.shown) continue;
-        at += 1;
-        for (const number of entry.numbers) number.textContent = String(at);
+        const earlier = numbered.get(entry.same);
+        entry.repeat = earlier !== undefined;
+        if (earlier === undefined) {
+          at += 1;
+          numbered.set(entry.same, at);
+        }
+        if (entry.row.hidden !== entry.repeat) entry.row.hidden = entry.repeat;
+        for (const number of entry.numbers) number.textContent = String(earlier ?? at);
       }
       element.hidden = at === 0;
     },

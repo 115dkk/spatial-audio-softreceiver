@@ -59,13 +59,13 @@ import {
   fine,
   flowArrow,
   group,
-  hairline,
   ikey,
   keyRow,
   ladder,
   led,
   lockLamp,
   manual,
+  manualRule,
   notePlate,
   print,
   readout,
@@ -378,11 +378,13 @@ function passLane(): HTMLElement {
  * lit in the box, its number pointing at the sentence on the legend plate.
  */
 function laneHints(lock: HTMLElement | null): HTMLElement {
-  return group('pd-lane-hints', text.entrance.appsTitle, [
-    lock === null ? null : h('div', { class: 'pd-lockline' }, lock),
-    lock === null ? null : hairline(),
-    fine(text.entrance.closedApp, 'capture-closed'),
-  ]);
+  // Without a lock the box holds only the manual's sentence, so it leaves the face with it.
+  return group(
+    'pd-lane-hints',
+    text.entrance.appsTitle,
+    [lock === null ? null : h('div', { class: 'pd-lockline' }, lock), lock === null ? null : manualRule(), manual(text.entrance.closedApp, 'capture-closed')],
+    lock === null ? 'pd-manual' : '',
+  );
 }
 
 /** A segment readout in the meters row: its printed name, the digits and the unit. */

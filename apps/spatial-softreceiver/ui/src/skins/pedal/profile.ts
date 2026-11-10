@@ -328,7 +328,8 @@ function tests(ctx: Context): HTMLElement {
       const key = mkey({
         key: `direction-${direction.id}`,
         label: direction.name,
-        detail: dense ? `${Math.round(direction.azimuth_deg)}° / ${Math.round(direction.elevation_deg)}°` : angles,
+        // The angles are the manual's; the key prints the direction's name alone.
+        detail: h('span', { class: 'pd-manual' }, dense ? `${Math.round(direction.azimuth_deg)}° / ${Math.round(direction.elevation_deg)}°` : angles),
         off: !running,
         locked: ctx.busy,
         busy: ctx.sending?.kind === 'test_direction' && ctx.sending.value === direction.id,
@@ -336,10 +337,8 @@ function tests(ctx: Context): HTMLElement {
         describedBy: running ? null : 'test-hint',
         onClick: () => ctx.send({ kind: 'test_direction', value: direction.id }),
       });
-      if (dense) {
-        key.setAttribute('aria-label', `${direction.name}, ${angles}`);
-        key.title = angles;
-      }
+      key.setAttribute('aria-label', `${direction.name}, ${angles}`);
+      key.title = angles;
       return key;
     }),
   );

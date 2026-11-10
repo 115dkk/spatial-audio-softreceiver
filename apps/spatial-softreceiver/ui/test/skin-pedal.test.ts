@@ -981,5 +981,21 @@ describe('the manual key prints what the parts are for (법칙 5)', () => {
     }
     mounted(fixture('quit'));
     expect($<HTMLButtonElement>('[data-key="manual"]')!.disabled).toBe(true);
+    // Setup's faces print all they have: nothing there is the manual's.
+    root.replaceChildren();
+    mounted(fixture('setup-welcome'));
+    expect($<HTMLButtonElement>('[data-key="manual"]')!.disabled).toBe(true);
+    expect($('.pd-manual')).toBeNull();
+  });
+
+  it('gives two parts with the same note one number and one row of the legend', () => {
+    // With the app-sound entrance running, the output path and the discard output are locked by the same sentence.
+    mounted(fixture('running-apps'), 'settings');
+    const rows = $$('.pd-noteplate .pd-noterow').filter((row) => !row.hidden);
+    const sentences = rows.map((row) => row.querySelector('.pd-noterow-text')!.textContent);
+    expect(new Set(sentences).size).toBe(sentences.length);
+    expect(rows.map((row) => row.querySelector('.pd-mark-n')!.textContent)).toEqual(rows.map((_, index) => String(index + 1)));
+    const numberAt = (group: string) => $(`[data-group="${group}"] .pd-lockline .pd-mark-n`)!.textContent;
+    expect(numberAt('pd-discard')).toBe(numberAt('pd-output-path'));
   });
 });

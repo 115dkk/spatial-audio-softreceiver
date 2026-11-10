@@ -214,11 +214,18 @@ describe('the layouts to choose from', () => {
     expect(row.querySelector('.pd-key-label')?.textContent).toBe('Rsc');
     expect(row.querySelector('.pd-key-detail')?.textContent).toBe('-10° / 0°');
     expect(row.getAttribute('aria-label')).toBe(`Rsc, ${ko.profile.angles(-10, 0)}`);
-    // A layout of a few directions keeps its rows as they were.
+    // The angles are the manual's (법칙 5): off the face until its key is lit, said to a screen reader always.
+    expect(row.querySelector('.pd-key-detail .pd-manual')).not.toBeNull();
+    // A layout of a few directions has roomier keys, their angles the manual's as well.
     root.replaceChildren();
-    mounted(SKINS[1]!, fixture('running'));
+    const few = fixture('running');
+    mounted(SKINS[1]!, few);
     expect($('.pd-tests[role="group"]')!.classList.contains('is-dense')).toBe(false);
-    expect($('[data-key="direction-0"]')!.hasAttribute('aria-label')).toBe(false);
+    const first = few.profile.directions[0]!;
+    const key = $(`[data-key="direction-${first.id}"]`)!;
+    const angles = ko.profile.angles(first.azimuth_deg, first.elevation_deg);
+    expect(key.getAttribute('aria-label')).toBe(`${first.name}, ${angles}`);
+    expect(key.querySelector('.pd-key-detail .pd-manual')?.textContent).toBe(angles);
   });
 
   it('the pedal draws the buttons and names of a dense map smaller', () => {

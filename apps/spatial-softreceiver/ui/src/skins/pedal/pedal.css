@@ -1996,6 +1996,15 @@ html[data-skin="pedal"] #app {
   display: none;
 }
 
+/* A lever's number points at its line of the legend: without the legend it points at nothing. */
+.pd-room:not([data-manual="on"]) .pd-dip-row {
+  grid-template-columns: 42px auto;
+}
+
+.pd-room:not([data-manual="on"]) .pd-dip-row > .pd-dip-n {
+  display: none;
+}
+
 .pd-room:not([data-manual="on"]) .pd-leads > .is-chosen::before,
 .pd-room:not([data-manual="on"]) .pd-leads > .is-chosen::after {
   content: none;
@@ -2724,7 +2733,9 @@ html[data-skin="pedal"] #app {
 }
 
 .pd-upout-label {
+  flex: none;
   padding-top: 1px;
+  white-space: nowrap;
 }
 
 /* The three upmixers in even columns, so each key's leader drops from its own centre. */
@@ -3260,6 +3271,12 @@ html[data-skin="pedal"] #app {
   .pd-railkeys > [data-key="manual"] {
     margin-left: 0;
     padding-left: 12px;
+  }
+
+  /* A narrow input column: the name above its channel line, so the ten bed channels stay on one line. */
+  .pd-upout {
+    flex-direction: column;
+    gap: 6px;
   }
 
   .pd-lamps {
