@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*", "apps/*"]
 
 [workspace.package]
-version = "0.30.2"
+version = "0.30.4"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
@@ -34,10 +34,10 @@ streamring = { path = "crates/streamring" }
 # links vst-audio's application side, the engine only vst-audio-ring, and
 # ssr-plughost is vst-audio's worker. vst-audio pins its own crates exactly,
 # so they all resolve to the one version Cargo.lock records.
-vst-audio = "0.7.0"
-vst-audio-protocol = "0.7.0"
-vst-audio-ring = "0.7.0"
-vst-audio-worker-runtime = "0.7.0"
+vst-audio = "0.11.2"
+vst-audio-protocol = "0.11.2"
+vst-audio-ring = "0.11.2"
+vst-audio-worker-runtime = "0.11.2"
 asio-proto = { path = "crates/asio-proto" }
 asio-sys = { path = "crates/asio-sys" }
 decode = { path = "crates/decode" }
