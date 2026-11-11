@@ -159,6 +159,16 @@ body {
   background: var(--cn-surface);
 }
 
+/* In a short window the pages' list gives way and scrolls, so the brand above
+   it and the engine card below it are never cut. */
+.cn-side-nav {
+  flex: 0 1 auto;
+  min-height: 96px;
+  margin: -3px;
+  padding: 3px;
+  overflow-y: auto;
+}
+
 .cn-brand {
   display: flex;
   align-items: center;

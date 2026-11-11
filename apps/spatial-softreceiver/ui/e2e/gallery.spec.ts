@@ -125,6 +125,18 @@ async function check(page: Page, language: Language, skin: Skin, problems: strin
     clientWidth: document.documentElement.clientWidth,
     text: document.body.innerText,
   }));
+  // The console's sidebar is as tall as the window: nothing in it may be cut
+  // off, and in a window of the usual height its list does not scroll either.
+  const side = await page.evaluate(() => {
+    const cut = (el: HTMLElement | null) => (el === null ? 0 : el.scrollHeight - el.clientHeight);
+    const bar = document.querySelector<HTMLElement>('.cn-side');
+    const shown = bar !== null && getComputedStyle(bar).position === 'sticky';
+    return { shown, bar: cut(bar), list: cut(document.querySelector<HTMLElement>('.cn-side-nav')), tall: innerHeight >= 800 };
+  });
+  if (side.shown) {
+    expect(side.bar, 'the sidebar is cut off').toBeLessThanOrEqual(1);
+    if (side.tall) expect(side.list, 'the sidebar list scrolls in a window of the usual height').toBeLessThanOrEqual(1);
+  }
   expect(facts.lang, '<html lang>').toBe(language);
   expect(facts.scrollWidth, 'no horizontal overflow').toBeLessThanOrEqual(facts.clientWidth);
   if (language === 'en') {

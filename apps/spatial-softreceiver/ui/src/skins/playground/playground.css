@@ -120,6 +120,33 @@
   margin-top: 0;
 }
 
+/* A window under 900 px tall has no room for the whole card beside the
+   settings' list: the card keeps its button and the sidebar closes up, so
+   the engine card under it is never cut. */
+@media (max-height: 899px) {
+  .pg-app .cn-side {
+    gap: 8px;
+  }
+
+  .pg-app .cn-subnav {
+    margin-bottom: 2px;
+  }
+
+  .pg-ws {
+    padding: 4px 8px;
+  }
+
+  .pg-beg {
+    padding: 6px;
+  }
+
+  .pg-beg > b,
+  .pg-beg > p,
+  .pg-beg-meter {
+    display: none;
+  }
+}
+
 .pg-beg b {
   font-size: 14px;
 }
