@@ -132,6 +132,15 @@
     margin-bottom: 2px;
   }
 
+  .pg-app .cn-nav-item {
+    min-height: 32px;
+    padding-block: 4px;
+  }
+
+  .pg-app .cn-brand .pg-chip {
+    display: none;
+  }
+
   .pg-ws {
     padding: 4px 8px;
   }
