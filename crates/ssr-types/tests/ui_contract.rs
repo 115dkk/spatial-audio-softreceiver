@@ -92,6 +92,7 @@ fn asio_snapshot_contract_keeps_settings_separate_from_client_status() {
         let mut old = serde_json::to_value(&snapshot).unwrap();
         old.as_object_mut().unwrap().remove("asio");
         old.as_object_mut().unwrap().remove("health");
+        old.as_object_mut().unwrap().remove("driver_unsupported");
         assert_eq!(serde_json::from_value::<Snapshot>(old).unwrap(), snapshot);
         for layout in AsioLayout::ALL {
             snapshot.asio.layout = layout;
@@ -498,6 +499,7 @@ fn blank(language: Language, phase: Phase) -> Snapshot {
         chosen_output: None,
         driver: None,
         platform: None,
+        driver_unsupported: None,
         roles_taken: false,
         error: None,
         notes: Vec::new(),
@@ -1020,7 +1022,7 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
     let asio_reason = "ASIO transport failed: owner_exists";
     let asio_unavailable = match language {
         Language::Ko => {
-            format!("ASIO 입구를 시작하지 못했습니다. 시스템 소리는 계속 재생합니다: {asio_reason}")
+            format!("ASIO 입력을 시작하지 못했습니다. 시스템 소리는 계속 재생합니다: {asio_reason}")
         }
         Language::En => {
             format!("The ASIO input could not start. System audio continues: {asio_reason}")
@@ -1046,8 +1048,38 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
                 }),
                 error: Some(error(
                     text(
-                        "앱 소리 입구는 Windows 빌드 20348 이상이 필요합니다. 이 PC는 그보다 이전 버전이므로 드라이버 입구만 쓸 수 있습니다.",
+                        "앱 소리 입력은 Windows 빌드 20348 이상이 필요합니다. 이 PC는 그보다 이전 버전이므로 드라이버 입력만 사용할 수 있습니다.",
                         "The app-sound entrance requires Windows build 20348 or newer. This PC has an older version, so only the driver entrance is available.",
+                    ),
+                    NextAction::None,
+                )),
+                ..blank(language, Phase::Setup(SetupStep::Unsupported))
+            },
+        ),
+        (
+            "setup-apps-unsupported-old",
+            Snapshot {
+                entrance: EntranceKind::AppSound,
+                app_capture: AppCaptureView {
+                    supported: false,
+                    min_build: 20_348,
+                    ..AppCaptureView::default()
+                },
+                platform: Some(Platform {
+                    os_build: 18_363,
+                    ..platform(false, SecureBoot::Enabled)
+                }),
+                driver_unsupported: Some(
+                    text(
+                        "Windows 10 2004(빌드 19041) 이상이 필요합니다.",
+                        "Windows 10 version 2004 (build 19041) or newer is required.",
+                    )
+                    .into(),
+                ),
+                error: Some(error(
+                    text(
+                        "Windows 10 2004(빌드 19041) 이상이 필요합니다.",
+                        "Windows 10 version 2004 (build 19041) or newer is required.",
                     ),
                     NextAction::None,
                 )),
@@ -1079,7 +1111,7 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
                 platform: Some(platform(true, SecureBoot::Disabled)),
                 error: Some(error(
                     text(
-                        "고른 출력 외에는 앱의 원래 소리를 보낼 장치가 없습니다. 쓰지 않는 HDMI 출력이나 가상 케이블을 연결하거나 켠 뒤 다시 확인하십시오.",
+                        "선택한 출력 외에는 앱의 원래 소리를 보낼 장치가 없습니다. 사용하지 않는 HDMI 출력이나 가상 케이블을 연결하거나 켠 뒤 다시 확인하십시오.",
                         "There is no device other than the selected output to receive the apps' original sound. Connect or enable an unused HDMI output or a virtual cable, then check again.",
                     ),
                     NextAction::Retry,
@@ -1116,7 +1148,7 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
                 platform: Some(platform(true, SecureBoot::Disabled)),
                 error: Some(error(
                     text(
-                        "켜기 전에 소리를 받을 앱을 고르십시오.",
+                        "켜기 전에 소리를 받을 앱을 선택하십시오.",
                         "Choose an app to capture before turning it on.",
                     ),
                     NextAction::None,
@@ -1209,6 +1241,13 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
                     os_build: 18_363,
                     ..platform(false, SecureBoot::Enabled)
                 }),
+                driver_unsupported: Some(
+                    text(
+                        "Windows 10 2004(빌드 19041) 이상이 필요합니다.",
+                        "Windows 10 version 2004 (build 19041) or newer is required.",
+                    )
+                    .into(),
+                ),
                 error: Some(error(
                     text(
                         "Windows 10 2004(빌드 19041) 이상이 필요합니다.",
@@ -1404,7 +1443,7 @@ fn snapshots(language: Language) -> Vec<(&'static str, Snapshot)> {
                 profile: speaker_layout_profile(language),
                 error: Some(error(
                     text(
-                        "고른 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 고르십시오.",
+                        "선택한 출력 장치가 독점 모드에서 7.1.4 배치(12채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 선택하십시오.",
                         "The selected output device does not support the 7.1.4 layout (12 channels) in exclusive mode. Choose another layout or output device.",
                     ),
                     NextAction::None,
@@ -1693,8 +1732,9 @@ fn intents() -> Vec<Intent> {
         Intent::SetLanguage(Some(Language::Ko)),
         Intent::SetLanguage(Some(Language::En)),
         Intent::SetSkin(Skin::Standard),
-        Intent::SetSkin(Skin::Panel),
+        Intent::SetSkin(Skin::Pedal),
         Intent::SetSkin(Skin::Console),
+        Intent::SetSkin(Skin::Playground),
         Intent::SetOutputPath(ssr_types::app::OutputPath::KernelStreaming),
         Intent::SetOutputPath(ssr_types::app::OutputPath::Wasapi),
         Intent::SetRoutingEnabled(false),

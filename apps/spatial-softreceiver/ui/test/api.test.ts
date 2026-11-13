@@ -52,9 +52,9 @@ describe('the mock bridge', () => {
   it('keeps a failed intent in the snapshot, as the supervisor does', async () => {
     const api = createMockApi(fixture('running'));
     await expect(api.dispatch({ kind: 'choose_output', value: 'x' })).rejects.toMatchObject({
-      message: '먼저 끈 뒤 출력을 바꾸십시오.',
+      message: '공간 소프트리시버를 끈 뒤 출력을 바꾸십시오.',
     });
-    expect((await api.snapshot()).error?.message).toBe('먼저 끈 뒤 출력을 바꾸십시오.');
+    expect((await api.snapshot()).error?.message).toBe('공간 소프트리시버를 끈 뒤 출력을 바꾸십시오.');
   });
 });
 
@@ -230,6 +230,28 @@ describe('the mock shell and held intents', () => {
     stop();
   });
 
+  it('opens only the two fixed links and stays still in the gallery', async () => {
+    const opened = vi.spyOn(window, 'open').mockImplementation(() => null);
+    window.history.replaceState({}, '', '/');
+    const { shell } = createMockApi(fixture('ready'));
+
+    await shell.openLink('repo');
+    await shell.openLink('sponsors');
+    expect(opened).toHaveBeenNthCalledWith(
+      1,
+      'https://github.com/115dkk/spatial-audio-softreceiver',
+      '_blank',
+      'noopener',
+    );
+    expect(opened).toHaveBeenNthCalledWith(2, 'https://github.com/sponsors/115dkk', '_blank', 'noopener');
+
+    window.history.replaceState({}, '', '/?gallery=1');
+    await shell.openLink('repo');
+    expect(opened).toHaveBeenCalledTimes(2);
+    window.history.replaceState({}, '', '/');
+    opened.mockRestore();
+  });
+
   it('keeps every intent in flight when held, and changes nothing', async () => {
     const api = createMockApi(fixture('ready'), { hold: true });
     let settled = false;
@@ -265,6 +287,18 @@ describe('the Tauri bridge', () => {
       message: '앱과 연결하지 못했습니다: command dispatch not found',
       next: 'none',
     });
+  });
+
+  it('asks the shell command to open either fixed link', async () => {
+    const core = await import('@tauri-apps/api/core');
+    const invoke = vi.mocked(core.invoke);
+    const { tauriApi } = await import('../src/api');
+
+    invoke.mockResolvedValue(null);
+    await tauriApi.shell.openLink('repo');
+    await tauriApi.shell.openLink('sponsors');
+    expect(invoke).toHaveBeenNthCalledWith(1, 'open_link', { link: 'repo' });
+    expect(invoke).toHaveBeenNthCalledWith(2, 'open_link', { link: 'sponsors' });
   });
 
   it('checks the snapshot it receives', async () => {

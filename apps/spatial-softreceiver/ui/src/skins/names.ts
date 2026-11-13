@@ -3,7 +3,7 @@
 
 import type { Skin, Snapshot } from '../bindings';
 
-export const SKINS: readonly Skin[] = ['standard', 'panel', 'console'];
+export const SKINS: readonly Skin[] = ['standard', 'pedal', 'console', 'playground'];
 
 export function isSkin(value: string | null | undefined): value is Skin {
   return SKINS.includes(value as Skin);

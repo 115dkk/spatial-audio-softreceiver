@@ -17,11 +17,15 @@
   },
   {
     "kind": "set_skin",
-    "value": "panel"
+    "value": "pedal"
   },
   {
     "kind": "set_skin",
     "value": "console"
+  },
+  {
+    "kind": "set_skin",
+    "value": "playground"
   },
   {
     "kind": "set_output_path",

@@ -159,6 +159,7 @@
   "chosen_output": null,
   "driver": null,
   "platform": null,
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": null,
   "notes": []

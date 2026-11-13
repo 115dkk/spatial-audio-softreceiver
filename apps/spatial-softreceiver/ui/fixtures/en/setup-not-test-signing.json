@@ -165,6 +165,7 @@
     "test_signing": false,
     "secure_boot": "enabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "Test-signing mode is off. Turn off Secure Boot, run bcdedit /set testsigning on as administrator, and restart Windows. Secure Boot is on and must be turned off first.",

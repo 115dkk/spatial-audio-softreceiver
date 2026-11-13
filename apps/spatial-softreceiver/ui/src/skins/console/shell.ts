@@ -25,6 +25,9 @@ import { upmixPage } from './upmix';
 
 const TABS: readonly Tab[] = ['status', 'profile', 'upmix', 'settings'];
 
+/** Words only a screen reader hears. */
+const SR = 'cn-visually-hidden';
+
 const pageName = (tab: Tab): string =>
   tab === 'status' ? text.console.overview : tab === 'profile' ? text.profile.title : tab === 'upmix' ? text.upmix.title : text.settings.title;
 
@@ -80,6 +83,39 @@ export function createConsole(root: HTMLElement): ConsoleSkin {
   let last: { frame: Frame } | null = null;
 
   const redraw = () => last?.frame.ctx.setView({});
+
+  // The section the page is scrolled to, marked in the sidebar without a redraw.
+  let spying = false;
+  function spy() {
+    spying = false;
+    const items = root.querySelectorAll<HTMLElement>('.cn-subnav-item');
+    if (items.length === 0) return;
+    let current: string | null = null;
+    for (const item of items) {
+      const id = item.getAttribute('href')?.slice(1) ?? '';
+      const top = document.getElementById(id)?.getBoundingClientRect().top;
+      if (top !== undefined && top <= 120) current = id;
+    }
+    // At the page's foot the last section is the one in view, however short it is.
+    const foot = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2 && window.scrollY > 0;
+    if (foot) current = items[items.length - 1]?.getAttribute('href')?.slice(1) ?? current;
+    const first = items[0]?.getAttribute('href')?.slice(1) ?? null;
+    for (const item of items) {
+      const here = item.getAttribute('href') === `#${current ?? first}`;
+      if (here) item.setAttribute('aria-current', 'location');
+      else item.removeAttribute('aria-current');
+    }
+  }
+  function onScroll() {
+    if (!root.isConnected) {
+      window.removeEventListener('scroll', onScroll);
+      return;
+    }
+    if (spying) return;
+    spying = true;
+    requestAnimationFrame(spy);
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
   const focusKey = (key: string) => root.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`)?.focus();
 
   function setMenu(open: boolean, focus: boolean) {
@@ -196,6 +232,7 @@ export function createConsole(root: HTMLElement): ConsoleSkin {
               },
               icon(PAGE_ICONS[tab]),
               h('span', null, pageName(tab)),
+              navBadge(frame, tab),
             ),
             current ? subnav() : null,
           ),
@@ -204,6 +241,7 @@ export function createConsole(root: HTMLElement): ConsoleSkin {
     }
     const power = powerState(snapshot, ctx.pending);
     const tone = toneOfPower[power.tone];
+    const update = view.update;
     return h(
       'aside',
       { class: 'cn-side', id: 'cn-side' },
@@ -222,7 +260,29 @@ export function createConsole(root: HTMLElement): ConsoleSkin {
           h('span', { class: 'cn-ellipsis' }, snapshot.platform?.computer_name || text.settings.platform),
         ),
       ),
+      // The running version, as a console's sidebar foot has it; a downloaded update is said beside it.
+      update === null
+        ? null
+        : h(
+            'p',
+            { class: 'cn-version', 'data-region': 'version' },
+            h('span', { class: 'cn-num' }, text.console.version(update.current)),
+            update.ready === null ? null : h('span', { class: 'cn-version-new' }, text.console.updateReady),
+          ),
     );
+  }
+
+  /** What waits on a page, on its sidebar item: the errors on the overview, a downloaded update on settings. */
+  function navBadge(frame: Frame, tab: Tab): HTMLElement | null {
+    const c = text.console;
+    if (tab === 'status' && frame.errors.length > 0) {
+      const n = frame.errors.length;
+      return h('span', { class: 'cn-nav-count tone-crit', title: c.issues(n) }, h('span', { 'aria-hidden': 'true' }, String(n)), h('span', { class: SR }, c.issues(n)));
+    }
+    if (tab === 'settings' && frame.ctx.view.update?.ready != null) {
+      return h('span', { class: 'cn-nav-dot', title: c.updateReady }, h('span', { class: SR }, c.updateReady));
+    }
+    return null;
   }
 
   function powerButton(b: Build): HTMLButtonElement {
@@ -418,7 +478,7 @@ export function createConsole(root: HTMLElement): ConsoleSkin {
 
     const content = h(
       'main',
-      { class: 'cn-content', id: 'main' },
+      { class: 'cn-content', id: 'main', tabindex: -1 },
       healthElement,
       bandElement,
       notes(snapshot.notes),
@@ -427,6 +487,19 @@ export function createConsole(root: HTMLElement): ConsoleSkin {
     const element = h(
       'div',
       { class: cls('cn-app', menuOpen && 'is-menu-open'), 'data-phase': phase.kind, 'data-tab': phase.kind === 'setup' || phase.kind === 'quit' ? null : view.tab },
+      // Past the sidebar and the top bar in one step, for a keyboard.
+      h(
+        'a',
+        {
+          class: 'cn-skip',
+          href: '#main',
+          onClick: (event: Event) => {
+            event.preventDefault();
+            root.querySelector<HTMLElement>('#main')?.focus();
+          },
+        },
+        text.console.skip,
+      ),
       sidebar(frame, sections),
       h('div', { class: 'cn-scrim', 'aria-hidden': 'true', onClick: () => setMenu(false, true) }),
       h('div', { class: 'cn-main' }, topbar(frame, title, power), content),
@@ -444,6 +517,7 @@ export function createConsole(root: HTMLElement): ConsoleSkin {
     wasOutputsOpen = outputsOpen;
 
     last = { frame };
+    requestAnimationFrame(spy);
     if (phase.kind !== 'running' || page === null) return { element };
     const shown = page;
     const live: Live = {

@@ -65,6 +65,7 @@ describe('app-capture contract wiring', () => {
     const value = structuredClone(rawFixture('ready-apps')) as Record<string, unknown>;
     delete value.entrance;
     delete value.app_capture;
+    delete value.driver_unsupported;
     expect(assertSnapshot(value)).toEqual(value);
     value.entrance = null;
     expect(() => assertSnapshot(value)).toThrow('snapshot.entrance');
@@ -73,6 +74,17 @@ describe('app-capture contract wiring', () => {
     expect(() => assertSnapshot(value)).toThrow('snapshot.app_capture');
     value.app_capture = {};
     expect(() => assertSnapshot(value)).toThrow('snapshot.app_capture.supported');
+  });
+
+  it('accepts a nullable driver restriction but rejects other value types', () => {
+    const value = structuredClone(rawFixture('setup-unsupported')) as Record<string, unknown>;
+    expect(assertSnapshot(value).driver_unsupported).toBe(value.driver_unsupported);
+    value.driver_unsupported = null;
+    expect(assertSnapshot(value).driver_unsupported).toBeNull();
+    for (const invalid of [false, 19041, {}]) {
+      value.driver_unsupported = invalid;
+      expect(() => assertSnapshot(value)).toThrow('snapshot.driver_unsupported');
+    }
   });
 
   it('checks every capture state and the nested app fields', () => {

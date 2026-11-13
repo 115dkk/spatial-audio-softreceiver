@@ -1,4 +1,4 @@
-// The skins and how one is loaded (ADR 0041). Each skin is its own chunk with
+// The skins and how one is loaded (ADR 0041, 0046). Each skin is its own chunk with
 // its own stylesheet, so a page holds exactly one skin's CSS; changing the
 // skin reloads the page (src/main.ts).
 
@@ -10,10 +10,12 @@ export { SKINS, isSkin, skinOf } from './names';
 
 export function loadSkin(skin: Skin): Promise<SkinModule> {
   switch (skin) {
-    case 'panel':
-      return import('./panel');
+    case 'pedal':
+      return import('./pedal');
     case 'console':
       return import('./console');
+    case 'playground':
+      return import('./playground');
     case 'standard':
       return import('./standard');
   }

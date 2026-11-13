@@ -112,14 +112,14 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "앱 소리 입구는 Windows 빌드 {min_build} 이상이 필요합니다. 이 PC는 그보다 이전 버전이므로 드라이버 입구만 쓸 수 있습니다."]
+    #[doc = "앱 소리 입력은 Windows 빌드 {min_build} 이상이 필요합니다. 이 PC는 그보다 이전 버전이므로 드라이버 입력만 사용할 수 있습니다."]
     pub fn app_capture_os_requirement(
         language: Language,
         min_build: impl core::fmt::Display,
     ) -> String {
         match language {
             Language::Ko => format!(
-                "앱 소리 입구는 Windows 빌드 {min_build} 이상이 필요합니다. 이 PC는 그보다 이전 버전이므로 드라이버 입구만 쓸 수 있습니다."
+                "앱 소리 입력은 Windows 빌드 {min_build} 이상이 필요합니다. 이 PC는 그보다 이전 버전이므로 드라이버 입력만 사용할 수 있습니다."
             ),
             Language::En => format!(
                 "The app-sound entrance requires Windows build {min_build} or newer. This PC has an older version, so only the driver entrance is available."
@@ -251,11 +251,11 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "ASIO 입구를 시작하지 못했습니다. 시스템 소리는 계속 재생합니다: {detail}"]
+    #[doc = "ASIO 입력을 시작하지 못했습니다. 시스템 소리는 계속 재생합니다: {detail}"]
     pub fn asio_unavailable(language: Language, detail: impl core::fmt::Display) -> String {
         match language {
             Language::Ko => {
-                format!("ASIO 입구를 시작하지 못했습니다. 시스템 소리는 계속 재생합니다: {detail}")
+                format!("ASIO 입력을 시작하지 못했습니다. 시스템 소리는 계속 재생합니다: {detail}")
             }
             Language::En => {
                 format!("The ASIO input could not start. System audio continues: {detail}")
@@ -283,10 +283,10 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "켜기 전에 소리를 받을 앱을 고르십시오."]
+    #[doc = "켜기 전에 소리를 받을 앱을 선택하십시오."]
     pub fn capture_app_first(language: Language) -> &'static str {
         match language {
-            Language::Ko => "켜기 전에 소리를 받을 앱을 고르십시오.",
+            Language::Ko => "켜기 전에 소리를 받을 앱을 선택하십시오.",
             Language::En => "Choose an app to capture before turning it on.",
         }
     }
@@ -311,34 +311,34 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "주 차선과 음악 차선에는 서로 다른 앱을 골라야 합니다."]
+    #[doc = "주 입력과 음악 입력에는 서로 다른 앱을 선택해야 합니다."]
     pub fn capture_same_app(language: Language) -> &'static str {
         match language {
-            Language::Ko => "주 차선과 음악 차선에는 서로 다른 앱을 골라야 합니다.",
+            Language::Ko => "주 입력과 음악 입력에는 서로 다른 앱을 선택해야 합니다.",
             Language::En => "Choose different apps for the main and music lanes.",
         }
     }
 
-    #[doc = "먼저 업믹스 플러그인을 고르십시오."]
+    #[doc = "먼저 업믹스 플러그인을 선택하십시오."]
     pub fn choose_plugin_first(language: Language) -> &'static str {
         match language {
-            Language::Ko => "먼저 업믹스 플러그인을 고르십시오.",
+            Language::Ko => "먼저 업믹스 플러그인을 선택하십시오.",
             Language::En => "Choose an upmixer plugin first.",
         }
     }
 
-    #[doc = "고른 출력 장치가 꺼져 있거나 연결되어 있지 않습니다."]
+    #[doc = "선택한 출력 장치가 꺼져 있거나 연결되어 있지 않습니다."]
     pub fn chosen_output_inactive(language: Language) -> &'static str {
         match language {
-            Language::Ko => "고른 출력 장치가 꺼져 있거나 연결되어 있지 않습니다.",
+            Language::Ko => "선택한 출력 장치가 꺼져 있거나 연결되어 있지 않습니다.",
             Language::En => "The selected output device is disabled or disconnected.",
         }
     }
 
-    #[doc = "고른 출력 장치를 찾을 수 없습니다."]
+    #[doc = "선택한 출력 장치를 찾을 수 없습니다."]
     pub fn chosen_output_missing(language: Language) -> &'static str {
         match language {
-            Language::Ko => "고른 출력 장치를 찾을 수 없습니다.",
+            Language::Ko => "선택한 출력 장치를 찾을 수 없습니다.",
             Language::En => "The selected output device could not be found.",
         }
     }
@@ -351,11 +351,11 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "고른 출력 장치가 독점 모드에서 보정 파일에 지정된 {channels}채널 출력을 지원하지 않습니다. 다른 출력 장치를 고르십시오."]
+    #[doc = "선택한 출력 장치가 독점 모드에서 보정 파일에 지정된 {channels}채널 출력을 지원하지 않습니다. 다른 출력 장치를 선택하십시오."]
     pub fn correction_unsupported(language: Language, channels: impl core::fmt::Display) -> String {
         match language {
             Language::Ko => format!(
-                "고른 출력 장치가 독점 모드에서 보정 파일에 지정된 {channels}채널 출력을 지원하지 않습니다. 다른 출력 장치를 고르십시오."
+                "선택한 출력 장치가 독점 모드에서 보정 파일에 지정된 {channels}채널 출력을 지원하지 않습니다. 다른 출력 장치를 선택하십시오."
             ),
             Language::En => format!(
                 "The selected output device does not support the {channels}-channel output specified in the correction file in exclusive mode. Choose another output device."
@@ -379,34 +379,34 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "먼저 끈 뒤 소리를 받을 앱을 바꾸십시오."]
+    #[doc = "공간 소프트리시버를 끈 뒤 소리를 받을 앱을 바꾸십시오."]
     pub fn disable_before_changing_apps(language: Language) -> &'static str {
         match language {
-            Language::Ko => "먼저 끈 뒤 소리를 받을 앱을 바꾸십시오.",
+            Language::Ko => "공간 소프트리시버를 끈 뒤 소리를 받을 앱을 바꾸십시오.",
             Language::En => "Turn it off before changing the apps to capture.",
         }
     }
 
-    #[doc = "먼저 끈 뒤 입구를 바꾸십시오."]
+    #[doc = "공간 소프트리시버를 끈 뒤 입력 방식을 바꾸십시오."]
     pub fn disable_before_changing_entrance(language: Language) -> &'static str {
         match language {
-            Language::Ko => "먼저 끈 뒤 입구를 바꾸십시오.",
+            Language::Ko => "공간 소프트리시버를 끈 뒤 입력 방식을 바꾸십시오.",
             Language::En => "Turn it off before changing the entrance.",
         }
     }
 
-    #[doc = "먼저 끈 뒤 출력을 바꾸십시오."]
+    #[doc = "공간 소프트리시버를 끈 뒤 출력을 바꾸십시오."]
     pub fn disable_before_changing_output(language: Language) -> &'static str {
         match language {
-            Language::Ko => "먼저 끈 뒤 출력을 바꾸십시오.",
+            Language::Ko => "공간 소프트리시버를 끈 뒤 출력을 바꾸십시오.",
             Language::En => "Turn it off before changing the output.",
         }
     }
 
-    #[doc = "소리를 듣는 장치는 버리는 출력으로 고를 수 없습니다."]
+    #[doc = "소리를 듣는 장치는 버리는 출력으로 선택할 수 없습니다."]
     pub fn discard_is_output(language: Language) -> &'static str {
         match language {
-            Language::Ko => "소리를 듣는 장치는 버리는 출력으로 고를 수 없습니다.",
+            Language::Ko => "소리를 듣는 장치는 버리는 출력으로 선택할 수 없습니다.",
             Language::En => "The discard output cannot be the device you listen on.",
         }
     }
@@ -499,11 +499,11 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "이 PC에서는 앱의 출력을 자동으로 정할 수 없습니다. Windows 소리 설정을 열고 앱 볼륨 설정에서 출력을 고르십시오."]
+    #[doc = "이 PC에서는 앱의 출력을 자동으로 정할 수 없습니다. Windows 소리 설정을 열고 앱 볼륨 설정에서 출력을 선택하십시오."]
     pub fn entrance_routing_unavailable(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "이 PC에서는 앱의 출력을 자동으로 정할 수 없습니다. Windows 소리 설정을 열고 앱 볼륨 설정에서 출력을 고르십시오."
+                "이 PC에서는 앱의 출력을 자동으로 정할 수 없습니다. Windows 소리 설정을 열고 앱 볼륨 설정에서 출력을 선택하십시오."
             }
             Language::En => {
                 "Automatic app output selection is unavailable on this PC. Open Windows sound settings and choose an output under app volume settings."
@@ -551,11 +551,11 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "hesuvi.wav, hrir.wav, Impulcifer의 배치별 BRIR 파일 또는 방향별 WAV 폴더를 고르십시오."]
+    #[doc = "hesuvi.wav, hrir.wav, Impulcifer의 배치별 BRIR 파일 또는 방향별 WAV 폴더를 선택하십시오."]
     pub fn invalid_brir_source(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "hesuvi.wav, hrir.wav, Impulcifer의 배치별 BRIR 파일 또는 방향별 WAV 폴더를 고르십시오."
+                "hesuvi.wav, hrir.wav, Impulcifer의 배치별 BRIR 파일 또는 방향별 WAV 폴더를 선택하십시오."
             }
             Language::En => {
                 "Choose hesuvi.wav, hrir.wav, an Impulcifer layout BRIR file, or a folder of per-direction WAVs."
@@ -575,29 +575,29 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "앱 소리 입구에서는 커널 스트리밍 대신 일반 방식으로 출력을 엽니다."]
+    #[doc = "앱 소리 입력에서는 커널 스트리밍 대신 일반 방식으로 출력을 엽니다."]
     pub fn ks_not_for_app_capture(language: Language) -> &'static str {
         match language {
-            Language::Ko => "앱 소리 입구에서는 커널 스트리밍 대신 일반 방식으로 출력을 엽니다.",
+            Language::Ko => "앱 소리 입력에서는 커널 스트리밍 대신 일반 방식으로 출력을 엽니다.",
             Language::En => {
                 "The app-sound entrance opens the output in the usual way instead of using kernel streaming."
             }
         }
     }
 
-    #[doc = "Kernel Streaming으로 출력을 열지 못해 WASAPI 독점 모드를 씁니다: {detail}"]
+    #[doc = "Kernel Streaming으로 출력을 열지 못해 WASAPI 독점 모드를 사용합니다: {detail}"]
     pub fn ks_unavailable(language: Language, detail: impl core::fmt::Display) -> String {
         match language {
-            Language::Ko => {
-                format!("Kernel Streaming으로 출력을 열지 못해 WASAPI 독점 모드를 씁니다: {detail}")
-            }
+            Language::Ko => format!(
+                "Kernel Streaming으로 출력을 열지 못해 WASAPI 독점 모드를 사용합니다: {detail}"
+            ),
             Language::En => format!(
                 "Could not open the output through Kernel Streaming. Using WASAPI exclusive instead: {detail}"
             ),
         }
     }
 
-    #[doc = "고른 출력 장치가 독점 모드에서 {layout} 배치({channels}채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 고르십시오."]
+    #[doc = "선택한 출력 장치가 독점 모드에서 {layout} 배치({channels}채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 선택하십시오."]
     pub fn layout_unsupported(
         language: Language,
         layout: impl core::fmt::Display,
@@ -605,7 +605,7 @@ pub mod supervisor {
     ) -> String {
         match language {
             Language::Ko => format!(
-                "고른 출력 장치가 독점 모드에서 {layout} 배치({channels}채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 고르십시오."
+                "선택한 출력 장치가 독점 모드에서 {layout} 배치({channels}채널)를 지원하지 않습니다. 다른 배치나 출력 장치를 선택하십시오."
             ),
             Language::En => format!(
                 "The selected output device does not support the {layout} layout ({channels} channels) in exclusive mode. Choose another layout or output device."
@@ -625,11 +625,11 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "고른 출력 외에는 앱의 원래 소리를 보낼 장치가 없습니다. 쓰지 않는 HDMI 출력이나 가상 케이블을 연결하거나 켠 뒤 다시 확인하십시오."]
+    #[doc = "선택한 출력 외에는 앱의 원래 소리를 보낼 장치가 없습니다. 사용하지 않는 HDMI 출력이나 가상 케이블을 연결하거나 켠 뒤 다시 확인하십시오."]
     pub fn no_discard_output(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "고른 출력 외에는 앱의 원래 소리를 보낼 장치가 없습니다. 쓰지 않는 HDMI 출력이나 가상 케이블을 연결하거나 켠 뒤 다시 확인하십시오."
+                "선택한 출력 외에는 앱의 원래 소리를 보낼 장치가 없습니다. 사용하지 않는 HDMI 출력이나 가상 케이블을 연결하거나 켠 뒤 다시 확인하십시오."
             }
             Language::En => {
                 "There is no device other than the selected output to receive the apps' original sound. Connect or enable an unused HDMI output or a virtual cable, then check again."
@@ -679,11 +679,11 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "이 장치는 버리는 출력으로 쓰고 있습니다. 다른 출력 장치를 고르거나 버리는 출력을 먼저 바꾸십시오."]
+    #[doc = "이 장치는 버리는 출력으로 사용 중입니다. 다른 출력 장치를 선택하거나 버리는 출력을 먼저 바꾸십시오."]
     pub fn output_is_discard(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "이 장치는 버리는 출력으로 쓰고 있습니다. 다른 출력 장치를 고르거나 버리는 출력을 먼저 바꾸십시오."
+                "이 장치는 버리는 출력으로 사용 중입니다. 다른 출력 장치를 선택하거나 버리는 출력을 먼저 바꾸십시오."
             }
             Language::En => {
                 "This device is the discard output. Choose another output device or change the discard output first."
@@ -691,10 +691,10 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "Spatial SoftReceiver 자신을 출력으로 고를 수 없습니다."]
+    #[doc = "Spatial SoftReceiver 자신을 출력으로 선택할 수 없습니다."]
     pub fn own_output_chosen(language: Language) -> &'static str {
         match language {
-            Language::Ko => "Spatial SoftReceiver 자신을 출력으로 고를 수 없습니다.",
+            Language::Ko => "Spatial SoftReceiver 자신을 출력으로 선택할 수 없습니다.",
             Language::En => "Spatial SoftReceiver cannot use itself as its output.",
         }
     }
@@ -798,27 +798,27 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "이전 기본 장치({role})를 찾을 수 없어 고른 출력으로 되돌렸습니다: {name}"]
+    #[doc = "이전 기본 장치({role})를 찾을 수 없어 선택한 출력으로 되돌렸습니다: {name}"]
     pub fn restore_fallback(
         language: Language,
         role: impl core::fmt::Display,
         name: impl core::fmt::Display,
     ) -> String {
         match language {
-            Language::Ko => {
-                format!("이전 기본 장치({role})를 찾을 수 없어 고른 출력으로 되돌렸습니다: {name}")
-            }
+            Language::Ko => format!(
+                "이전 기본 장치({role})를 찾을 수 없어 선택한 출력으로 되돌렸습니다: {name}"
+            ),
             Language::En => format!(
                 "The previous default {role} device could not be found, so the selected output was restored: {name}"
             ),
         }
     }
 
-    #[doc = "이전 기본 장치({role})를 찾을 수 없어 Windows가 고르게 둡니다."]
+    #[doc = "이전 기본 장치({role})를 찾을 수 없어 Windows가 선택하게 둡니다."]
     pub fn restore_left_to_windows(language: Language, role: impl core::fmt::Display) -> String {
         match language {
             Language::Ko => {
-                format!("이전 기본 장치({role})를 찾을 수 없어 Windows가 고르게 둡니다.")
+                format!("이전 기본 장치({role})를 찾을 수 없어 Windows가 선택하게 둡니다.")
             }
             Language::En => format!(
                 "The previous default {role} device could not be found, so Windows will choose one."
@@ -893,11 +893,11 @@ pub mod supervisor {
         }
     }
 
-    #[doc = "저장한 버리는 출력을 찾지 못했습니다({name}). 다른 장치를 고르십시오."]
+    #[doc = "저장한 버리는 출력을 찾지 못했습니다({name}). 다른 장치를 선택하십시오."]
     pub fn stored_discard_missing(language: Language, name: impl core::fmt::Display) -> String {
         match language {
             Language::Ko => {
-                format!("저장한 버리는 출력을 찾지 못했습니다({name}). 다른 장치를 고르십시오.")
+                format!("저장한 버리는 출력을 찾지 못했습니다({name}). 다른 장치를 선택하십시오.")
             }
             Language::En => format!(
                 "The saved discard output could not be found ({name}). Choose another device."
@@ -1154,10 +1154,10 @@ pub mod cli {
         }
     }
 
-    #[doc = "이 도움말이나 고른 명령의 도움말을 출력합니다."]
+    #[doc = "이 도움말이나 선택한 명령의 도움말을 출력합니다."]
     pub fn help_subcommand_about(language: Language) -> &'static str {
         match language {
-            Language::Ko => "이 도움말이나 고른 명령의 도움말을 출력합니다.",
+            Language::Ko => "이 도움말이나 선택한 명령의 도움말을 출력합니다.",
             Language::En => "Print this message or the help of the given subcommand(s)",
         }
     }
@@ -1202,11 +1202,11 @@ pub mod cli {
         }
     }
 
-    #[doc = "입구마다의 소리 배치와 지금 재생 중인 소리를 이 JSON Lines 파일에 기록합니다."]
+    #[doc = "입력마다 소리 배치와 지금 재생 중인 소리를 이 JSON Lines 파일에 기록합니다."]
     pub fn scene_log_help(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "입구마다의 소리 배치와 지금 재생 중인 소리를 이 JSON Lines 파일에 기록합니다."
+                "입력마다 소리 배치와 지금 재생 중인 소리를 이 JSON Lines 파일에 기록합니다."
             }
             Language::En => {
                 "Write the entrances' scene layouts and active objects to this JSON Lines file"
@@ -1242,10 +1242,10 @@ pub mod cli {
 pub mod live {
     use super::Language;
 
-    #[doc = "SAL 개발 PC에서 쓰는 공간 소프트리시버 실시간 도구"]
+    #[doc = "SAL 개발 PC에서 사용하는 공간 소프트리시버 실시간 도구"]
     pub fn about(language: Language) -> &'static str {
         match language {
-            Language::Ko => "SAL 개발 PC에서 쓰는 공간 소프트리시버 실시간 도구",
+            Language::Ko => "SAL 개발 PC에서 사용하는 공간 소프트리시버 실시간 도구",
             Language::En => "Spatial SoftReceiver live tool for the SAL development PC",
         }
     }
@@ -1302,19 +1302,19 @@ pub mod live {
         }
     }
 
-    #[doc = "앱 소리 캡처는 play에서만 쓸 수 있습니다."]
+    #[doc = "앱 소리 캡처는 play에서만 사용할 수 있습니다."]
     pub fn app_source_play_only(language: Language) -> &'static str {
         match language {
-            Language::Ko => "앱 소리 캡처는 play에서만 쓸 수 있습니다.",
+            Language::Ko => "앱 소리 캡처는 play에서만 사용할 수 있습니다.",
             Language::En => "The app capture source is available only with play.",
         }
     }
 
-    #[doc = "앱 지정값 {target}에는 0이 아닌 프로세스 식별자나 실행 파일 이름을 써야 합니다."]
+    #[doc = "앱 지정값 {target}에는 0이 아닌 프로세스 식별자나 실행 파일 이름을 지정해야 합니다."]
     pub fn app_target_invalid(language: Language, target: impl core::fmt::Display) -> String {
         match language {
             Language::Ko => format!(
-                "앱 지정값 {target}에는 0이 아닌 프로세스 식별자나 실행 파일 이름을 써야 합니다."
+                "앱 지정값 {target}에는 0이 아닌 프로세스 식별자나 실행 파일 이름을 지정해야 합니다."
             ),
             Language::En => {
                 format!("App target {target} is not a nonzero process ID or image name.")
@@ -1338,10 +1338,10 @@ pub mod live {
         }
     }
 
-    #[doc = "--source app을 쓰려면 --app을 지정해야 합니다."]
+    #[doc = "--source app을 사용하려면 --app을 지정해야 합니다."]
     pub fn app_target_required(language: Language) -> &'static str {
         match language {
-            Language::Ko => "--source app을 쓰려면 --app을 지정해야 합니다.",
+            Language::Ko => "--source app을 사용하려면 --app을 지정해야 합니다.",
             Language::En => "--source app requires --app.",
         }
     }
@@ -1362,10 +1362,10 @@ pub mod live {
         }
     }
 
-    #[doc = "다른 앱이 ASIO 입구를 사용 중입니다."]
+    #[doc = "다른 앱이 ASIO 입력을 사용 중입니다."]
     pub fn asio_driver_lease_busy(language: Language) -> &'static str {
         match language {
-            Language::Ko => "다른 앱이 ASIO 입구를 사용 중입니다.",
+            Language::Ko => "다른 앱이 ASIO 입력을 사용 중입니다.",
             Language::En => "Another app is using the ASIO input.",
         }
     }
@@ -1428,10 +1428,10 @@ pub mod live {
         }
     }
 
-    #[doc = "시험 결과를 이 JSON 파일에 씁니다."]
+    #[doc = "시험 결과를 이 JSON 파일에 기록합니다."]
     pub fn asio_probe_json_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "시험 결과를 이 JSON 파일에 씁니다.",
+            Language::Ko => "시험 결과를 이 JSON 파일에 기록합니다.",
             Language::En => "Write the probe's JSON report to this file",
         }
     }
@@ -1444,10 +1444,10 @@ pub mod live {
         }
     }
 
-    #[doc = "시험할 시간(초)입니다. 1~3600 사이의 정수를 씁니다."]
+    #[doc = "시험할 시간(초)입니다. 1~3600 사이의 정수를 지정합니다."]
     pub fn asio_probe_seconds_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "시험할 시간(초)입니다. 1~3600 사이의 정수를 씁니다.",
+            Language::Ko => "시험할 시간(초)입니다. 1~3600 사이의 정수를 지정합니다.",
             Language::En => "Whole seconds to run the probe (1-3600)",
         }
     }
@@ -1688,10 +1688,10 @@ pub mod live {
         }
     }
 
-    #[doc = "--endpoint-mask는 set-formats에만 쓸 수 있습니다"]
+    #[doc = "--endpoint-mask는 set-formats에만 사용할 수 있습니다"]
     pub fn endpoint_mask_only(language: Language) -> &'static str {
         match language {
-            Language::Ko => "--endpoint-mask는 set-formats에만 쓸 수 있습니다",
+            Language::Ko => "--endpoint-mask는 set-formats에만 사용할 수 있습니다",
             Language::En => "--endpoint-mask belongs to set-formats only",
         }
     }
@@ -1827,11 +1827,11 @@ pub mod live {
         }
     }
 
-    #[doc = "set-formats에서 쓰는 드라이버 EndpointMask입니다. n번 비트가 n번 엔드포인트를 켭니다(1~15)."]
+    #[doc = "set-formats에서 사용하는 드라이버 EndpointMask입니다. n번 비트가 n번 엔드포인트를 켭니다(1~15)."]
     pub fn host_endpoint_mask_help(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "set-formats에서 쓰는 드라이버 EndpointMask입니다. n번 비트가 n번 엔드포인트를 켭니다(1~15)."
+                "set-formats에서 사용하는 드라이버 EndpointMask입니다. n번 비트가 n번 엔드포인트를 켭니다(1~15)."
             }
             Language::En => {
                 "With set-formats: the driver's EndpointMask, bit n enables endpoint n (1-15)"
@@ -1907,11 +1907,11 @@ pub mod live {
         }
     }
 
-    #[doc = "관리자 권한으로 ssr-setup 작업 하나를 실행합니다(UAC 확인 한 번).\n\n--package-dir 폴더에 ssr-setup.exe가 있으면 그것을, 없으면 ssr-live.exe 옆의 것을 실행합니다. install과 repair는 실행하는 ssr-setup.exe와 같은 폴더의 spatialsoftreceiver.inf와 spatialsoftreceiver-test.cer를 씁니다. ssr-live는 아무것도 복사하지 않으므로 ssr-setup.exe를 먼저 묶음 폴더에 넣으십시오(CI 단계는 이 명령을 부르기 전에 실행 파일을 묶음 폴더에 복사합니다)."]
+    #[doc = "관리자 권한으로 ssr-setup 작업 하나를 실행합니다(UAC 확인 한 번).\n\n--package-dir 폴더에 ssr-setup.exe가 있으면 그것을, 없으면 ssr-live.exe 옆의 것을 실행합니다. install과 repair는 실행하는 ssr-setup.exe와 같은 폴더의 spatialsoftreceiver.inf와 spatialsoftreceiver-test.cer를 사용합니다. ssr-live는 아무것도 복사하지 않으므로 ssr-setup.exe를 먼저 묶음 폴더에 넣으십시오(CI 단계는 이 명령을 부르기 전에 실행 파일을 묶음 폴더에 복사합니다)."]
     pub fn host_setup_long_about(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "관리자 권한으로 ssr-setup 작업 하나를 실행합니다(UAC 확인 한 번).\n\n--package-dir 폴더에 ssr-setup.exe가 있으면 그것을, 없으면 ssr-live.exe 옆의 것을 실행합니다. install과 repair는 실행하는 ssr-setup.exe와 같은 폴더의 spatialsoftreceiver.inf와 spatialsoftreceiver-test.cer를 씁니다. ssr-live는 아무것도 복사하지 않으므로 ssr-setup.exe를 먼저 묶음 폴더에 넣으십시오(CI 단계는 이 명령을 부르기 전에 실행 파일을 묶음 폴더에 복사합니다)."
+                "관리자 권한으로 ssr-setup 작업 하나를 실행합니다(UAC 확인 한 번).\n\n--package-dir 폴더에 ssr-setup.exe가 있으면 그것을, 없으면 ssr-live.exe 옆의 것을 실행합니다. install과 repair는 실행하는 ssr-setup.exe와 같은 폴더의 spatialsoftreceiver.inf와 spatialsoftreceiver-test.cer를 사용합니다. ssr-live는 아무것도 복사하지 않으므로 ssr-setup.exe를 먼저 묶음 폴더에 넣으십시오(CI 단계는 이 명령을 부르기 전에 실행 파일을 묶음 폴더에 복사합니다)."
             }
             Language::En => {
                 "Run one administrator task through an elevated ssr-setup (one UAC prompt).\n\nssr-setup.exe runs from --package-dir when that directory holds one, and otherwise from beside ssr-live.exe; install and repair take spatialsoftreceiver.inf and spatialsoftreceiver-test.cer from the directory of the ssr-setup.exe that runs. ssr-live copies nothing: put ssr-setup.exe into the package directory first (the CI step copies the binaries into the kit directory before it calls this)."
@@ -2025,10 +2025,10 @@ pub mod live {
         }
     }
 
-    #[doc = "실패한 경우를 포함하여 결과를 이 JSON 파일에 씁니다."]
+    #[doc = "실패한 경우를 포함하여 결과를 이 JSON 파일에 기록합니다."]
     pub fn ks_probe_json_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "실패한 경우를 포함하여 결과를 이 JSON 파일에 씁니다.",
+            Language::Ko => "실패한 경우를 포함하여 결과를 이 JSON 파일에 기록합니다.",
             Language::En => "Write the result as JSON to this file, including failures",
         }
     }
@@ -2081,10 +2081,10 @@ pub mod live {
         }
     }
 
-    #[doc = "    KS를 쓸 수 없습니다: {detail}"]
+    #[doc = "    KS를 사용할 수 없습니다: {detail}"]
     pub fn ks_target_failed(language: Language, detail: impl core::fmt::Display) -> String {
         match language {
-            Language::Ko => format!("    KS를 쓸 수 없습니다: {detail}"),
+            Language::Ko => format!("    KS를 사용할 수 없습니다: {detail}"),
             Language::En => format!("    KS unavailable: {detail}"),
         }
     }
@@ -2248,11 +2248,11 @@ pub mod live {
         }
     }
 
-    #[doc = "같은 이름에 맞는 장치가 여럿입니다. 정확한 엔드포인트 식별자로 하나를 고르십시오: {name}"]
+    #[doc = "같은 이름에 맞는 장치가 여럿입니다. 정확한 엔드포인트 식별자로 하나를 선택하십시오: {name}"]
     pub fn output_not_unique(language: Language, name: impl core::fmt::Display) -> String {
         match language {
             Language::Ko => format!(
-                "같은 이름에 맞는 장치가 여럿입니다. 정확한 엔드포인트 식별자로 하나를 고르십시오: {name}"
+                "같은 이름에 맞는 장치가 여럿입니다. 정확한 엔드포인트 식별자로 하나를 선택하십시오: {name}"
             ),
             Language::En => format!(
                 "Choose one output device by its exact endpoint id; the name matches more than one device: {name}"
@@ -2336,11 +2336,11 @@ pub mod live {
         }
     }
 
-    #[doc = "주 입구로 소리를 받을 앱의 프로세스 식별자나 실행 파일 이름입니다. --source app을 쓰면 반드시 지정해야 합니다."]
+    #[doc = "주 입력으로 소리를 받을 앱의 프로세스 식별자나 실행 파일 이름입니다. --source app을 사용하면 반드시 지정해야 합니다."]
     pub fn play_app_help(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "주 입구로 소리를 받을 앱의 프로세스 식별자나 실행 파일 이름입니다. --source app을 쓰면 반드시 지정해야 합니다."
+                "주 입력으로 소리를 받을 앱의 프로세스 식별자나 실행 파일 이름입니다. --source app을 사용하면 반드시 지정해야 합니다."
             }
             Language::En => {
                 "Process ID or image name captured into lane 0 (required with --source app)"
@@ -2348,10 +2348,10 @@ pub mod live {
         }
     }
 
-    #[doc = "캡처 원본과 함께 ASIO 입구를 켭니다."]
+    #[doc = "캡처 원본과 함께 ASIO 입력을 켭니다."]
     pub fn play_asio_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "캡처 원본과 함께 ASIO 입구를 켭니다.",
+            Language::Ko => "캡처 원본과 함께 ASIO 입력을 켭니다.",
             Language::En => "Enable the ASIO input alongside the capture source",
         }
     }
@@ -2364,11 +2364,11 @@ pub mod live {
         }
     }
 
-    #[doc = "마스크가 0인 PCM 순서를 CHANNELS=PRESET 또는 CHANNELS=SPEAKER,SPEAKER,... 형식으로 덮어씁니다."]
+    #[doc = "마스크가 0인 PCM 순서를 CHANNELS=PRESET 또는 CHANNELS=SPEAKER,SPEAKER,... 형식으로 지정해 변경합니다."]
     pub fn play_direct_layout_help(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "마스크가 0인 PCM 순서를 CHANNELS=PRESET 또는 CHANNELS=SPEAKER,SPEAKER,... 형식으로 덮어씁니다."
+                "마스크가 0인 PCM 순서를 CHANNELS=PRESET 또는 CHANNELS=SPEAKER,SPEAKER,... 형식으로 지정해 변경합니다."
             }
             Language::En => {
                 "Override a zero-mask PCM order, as CHANNELS=PRESET or CHANNELS=SPEAKER,SPEAKER,..."
@@ -2376,21 +2376,21 @@ pub mod live {
         }
     }
 
-    #[doc = "버리는 출력으로 쓸 장치입니다. 앱 소리는 이 장치의 공유 모드 채널 배치에 맞춰 받습니다."]
+    #[doc = "버리는 출력으로 사용할 장치입니다. 앱 소리는 이 장치의 공유 모드 채널 배치에 맞춰 받습니다."]
     pub fn play_discard_output_help(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "버리는 출력으로 쓸 장치입니다. 앱 소리는 이 장치의 공유 모드 채널 배치에 맞춰 받습니다."
+                "버리는 출력으로 사용할 장치입니다. 앱 소리는 이 장치의 공유 모드 채널 배치에 맞춰 받습니다."
             }
             Language::En => "Render endpoint whose shared mix layout is used for process capture",
         }
     }
 
-    #[doc = "쓸 엔드포인트입니다. 공개된 엔드포인트 전부 또는 쉼표로 나눈 일부를 고릅니다."]
+    #[doc = "사용할 엔드포인트입니다. 공개된 엔드포인트 전부 또는 쉼표로 나눈 일부를 선택합니다."]
     pub fn play_endpoints_help(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "쓸 엔드포인트입니다. 공개된 엔드포인트 전부 또는 쉼표로 나눈 일부를 고릅니다."
+                "사용할 엔드포인트입니다. 공개된 엔드포인트 전부 또는 쉼표로 나눈 일부를 선택합니다."
             }
             Language::En => {
                 "Endpoints to consume: all exposed endpoints, or a comma-separated subset"
@@ -2410,11 +2410,11 @@ pub mod live {
         }
     }
 
-    #[doc = "엔드포인트를 끄고 Kernel Streaming을 씁니다. 실패하면 WASAPI 독점 모드로 대체합니다."]
+    #[doc = "엔드포인트를 끄고 Kernel Streaming을 사용합니다. 실패하면 WASAPI 독점 모드로 대체합니다."]
     pub fn play_kernel_streaming_help(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "엔드포인트를 끄고 Kernel Streaming을 씁니다. 실패하면 WASAPI 독점 모드로 대체합니다."
+                "엔드포인트를 끄고 Kernel Streaming을 사용합니다. 실패하면 WASAPI 독점 모드로 대체합니다."
             }
             Language::En => {
                 "Use Kernel Streaming with the endpoint disabled; fall back to WASAPI exclusive"
@@ -2434,10 +2434,12 @@ pub mod live {
         }
     }
 
-    #[doc = "음악 입구로 소리를 받을 앱의 프로세스 식별자나 실행 파일 이름입니다."]
+    #[doc = "음악 입력으로 소리를 받을 앱의 프로세스 식별자나 실행 파일 이름입니다."]
     pub fn play_music_app_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "음악 입구로 소리를 받을 앱의 프로세스 식별자나 실행 파일 이름입니다.",
+            Language::Ko => {
+                "음악 입력으로 소리를 받을 앱의 프로세스 식별자나 실행 파일 이름입니다."
+            }
             Language::En => "Process ID or image name captured into lane 1",
         }
     }
@@ -2450,18 +2452,18 @@ pub mod live {
         }
     }
 
-    #[doc = "출력 장치 이름의 일부입니다. 생략하면 기본 장치를 씁니다."]
+    #[doc = "출력 장치 이름의 일부입니다. 생략하면 기본 장치를 사용합니다."]
     pub fn play_output_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "출력 장치 이름의 일부입니다. 생략하면 기본 장치를 씁니다.",
+            Language::Ko => "출력 장치 이름의 일부입니다. 생략하면 기본 장치를 사용합니다.",
             Language::En => "Part of the output device's name; the default device when omitted",
         }
     }
 
-    #[doc = "장치 주기(ms)입니다. 생략하면 장치의 최솟값을 씁니다."]
+    #[doc = "장치 주기(ms)입니다. 생략하면 장치의 최솟값을 사용합니다."]
     pub fn play_period_ms_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "장치 주기(ms)입니다. 생략하면 장치의 최솟값을 씁니다.",
+            Language::Ko => "장치 주기(ms)입니다. 생략하면 장치의 최솟값을 사용합니다.",
             Language::En => "Device period in milliseconds; the device's minimum when omitted",
         }
     }
@@ -2482,19 +2484,19 @@ pub mod live {
         }
     }
 
-    #[doc = "캡처한 기록 스트림을 이 덤프 파일에도 씁니다."]
+    #[doc = "캡처한 기록 스트림을 이 덤프 파일에도 기록합니다."]
     pub fn play_record_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "캡처한 기록 스트림을 이 덤프 파일에도 씁니다.",
+            Language::Ko => "캡처한 기록 스트림을 이 덤프 파일에도 기록합니다.",
             Language::En => "Also write the captured record stream to this dump file",
         }
     }
 
-    #[doc = "멈출 때 실행 수치(끊김, 재시작, 결함, 지연, 링 최저 수위, 클럭)를 JSON 파일에 씁니다."]
+    #[doc = "멈출 때 실행 수치(끊김, 재시작, 결함, 지연, 링 최저 수위, 클럭)를 JSON 파일에 기록합니다."]
     pub fn play_report_help(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "멈출 때 실행 수치(끊김, 재시작, 결함, 지연, 링 최저 수위, 클럭)를 JSON 파일에 씁니다."
+                "멈출 때 실행 수치(끊김, 재시작, 결함, 지연, 링 최저 수위, 클럭)를 JSON 파일에 기록합니다."
             }
             Language::En => {
                 "Write the run's figures (underruns, restarts, faults, latency, ring trough, clock) as JSON to this file when it stops"
@@ -2510,10 +2512,10 @@ pub mod live {
         }
     }
 
-    #[doc = "독점 모드 대신 WASAPI 공유 모드를 씁니다."]
+    #[doc = "독점 모드 대신 WASAPI 공유 모드를 사용합니다."]
     pub fn play_shared_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "독점 모드 대신 WASAPI 공유 모드를 씁니다.",
+            Language::Ko => "독점 모드 대신 WASAPI 공유 모드를 사용합니다.",
             Language::En => "Use WASAPI shared mode instead of exclusive",
         }
     }
@@ -2528,10 +2530,10 @@ pub mod live {
         }
     }
 
-    #[doc = "캡처 원본입니다. --from-dump를 쓰면 무시합니다."]
+    #[doc = "캡처 원본입니다. --from-dump를 사용하면 무시합니다."]
     pub fn play_source_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "캡처 원본입니다. --from-dump를 쓰면 무시합니다.",
+            Language::Ko => "캡처 원본입니다. --from-dump를 사용하면 무시합니다.",
             Language::En => "Capture source; ignored when --from-dump supplies the source",
         }
     }
@@ -2592,7 +2594,7 @@ pub mod live {
         }
     }
 
-    #[doc = "{path}에 레코드 {bytes}바이트를 썼습니다(페이로드 {data}바이트, 기록기 손실 {recorder_lost}바이트)"]
+    #[doc = "{path}에 레코드 {bytes}바이트를 기록했습니다(페이로드 {data}바이트, 기록기 손실 {recorder_lost}바이트)"]
     pub fn record_finished(
         language: Language,
         path: impl core::fmt::Display,
@@ -2602,7 +2604,7 @@ pub mod live {
     ) -> String {
         match language {
             Language::Ko => format!(
-                "{path}에 레코드 {bytes}바이트를 썼습니다(페이로드 {data}바이트, 기록기 손실 {recorder_lost}바이트)"
+                "{path}에 레코드 {bytes}바이트를 기록했습니다(페이로드 {data}바이트, 기록기 손실 {recorder_lost}바이트)"
             ),
             Language::En => format!(
                 "wrote {bytes} bytes of records ({data} payload bytes, {recorder_lost} recorder bytes lost) to {path}"
@@ -2645,10 +2647,10 @@ pub mod live {
         }
     }
 
-    #[doc = "캡처 원본입니다. 보통 공간 소프트리시버 드라이버를 씁니다."]
+    #[doc = "캡처 원본입니다. 보통 공간 소프트리시버 드라이버를 사용합니다."]
     pub fn record_source_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "캡처 원본입니다. 보통 공간 소프트리시버 드라이버를 씁니다.",
+            Language::Ko => "캡처 원본입니다. 보통 공간 소프트리시버 드라이버를 사용합니다.",
             Language::En => "Capture source; the Spatial SoftReceiver driver is the normal source",
         }
     }
@@ -2858,10 +2860,10 @@ pub mod replay {
         }
     }
 
-    #[doc = "늦게 도착한 입구 데이터를 기다리며 끝난 구간을 보관할 시간입니다."]
+    #[doc = "늦게 도착한 입력 데이터를 기다리며 끝난 구간을 보관할 시간입니다."]
     pub fn arrival_slack_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "늦게 도착한 입구 데이터를 기다리며 끝난 구간을 보관할 시간입니다.",
+            Language::Ko => "늦게 도착한 입력 데이터를 기다리며 끝난 구간을 보관할 시간입니다.",
             Language::En => "Time to retain a completed interval for late entrance data",
         }
     }
@@ -2914,11 +2916,11 @@ pub mod replay {
         }
     }
 
-    #[doc = "마스크가 0인 PCM 순서를 CHANNELS=PRESET 또는 CHANNELS=SPEAKER,SPEAKER,... 형식으로 덮어씁니다."]
+    #[doc = "마스크가 0인 PCM 순서를 CHANNELS=PRESET 또는 CHANNELS=SPEAKER,SPEAKER,... 형식으로 지정해 변경합니다."]
     pub fn direct_layout_help(language: Language) -> &'static str {
         match language {
             Language::Ko => {
-                "마스크가 0인 PCM 순서를 CHANNELS=PRESET 또는 CHANNELS=SPEAKER,SPEAKER,... 형식으로 덮어씁니다."
+                "마스크가 0인 PCM 순서를 CHANNELS=PRESET 또는 CHANNELS=SPEAKER,SPEAKER,... 형식으로 지정해 변경합니다."
             }
             Language::En => {
                 "Override a zero-mask PCM order, as CHANNELS=PRESET or CHANNELS=SPEAKER,SPEAKER,..."
@@ -3137,10 +3139,10 @@ pub mod replay {
         }
     }
 
-    #[doc = "기계가 읽는 JSON 렌더 보고서를 이 파일에 씁니다."]
+    #[doc = "기계가 읽는 JSON 렌더 보고서를 이 파일에 기록합니다."]
     pub fn report_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "기계가 읽는 JSON 렌더 보고서를 이 파일에 씁니다.",
+            Language::Ko => "기계가 읽는 JSON 렌더 보고서를 이 파일에 기록합니다.",
             Language::En => "Write a machine-readable JSON render report to this file",
         }
     }
@@ -3177,7 +3179,7 @@ pub mod replay {
         }
     }
 
-    #[doc = "ssr-replay: {blocks}개 블록, {frames}개 프레임을 {path}에 썼습니다 (sha256 {sha256})"]
+    #[doc = "ssr-replay: {blocks}개 블록, {frames}개 프레임을 {path}에 기록했습니다 (sha256 {sha256})"]
     pub fn wrote(
         language: Language,
         blocks: impl core::fmt::Display,
@@ -3187,7 +3189,7 @@ pub mod replay {
     ) -> String {
         match language {
             Language::Ko => format!(
-                "ssr-replay: {blocks}개 블록, {frames}개 프레임을 {path}에 썼습니다 (sha256 {sha256})"
+                "ssr-replay: {blocks}개 블록, {frames}개 프레임을 {path}에 기록했습니다 (sha256 {sha256})"
             ),
             Language::En => format!(
                 "ssr-replay: wrote {blocks} blocks, {frames} frames to {path} (sha256 {sha256})"
@@ -3263,10 +3265,10 @@ pub mod setup {
         }
     }
 
-    #[doc = "결과 줄을 쓸 파일입니다."]
+    #[doc = "결과 줄을 기록할 파일입니다."]
     pub fn result_help(language: Language) -> &'static str {
         match language {
-            Language::Ko => "결과 줄을 쓸 파일입니다.",
+            Language::Ko => "결과 줄을 기록할 파일입니다.",
             Language::En => "Where to write the result line",
         }
     }
@@ -3353,10 +3355,10 @@ pub mod testkit {
         }
     }
 
-    #[doc = "collect.ps1: {path} 파일을 쓰지 못했습니다."]
+    #[doc = "collect.ps1: {path} 파일을 기록하지 못했습니다."]
     pub fn collect_failed(language: Language, path: impl core::fmt::Display) -> String {
         match language {
-            Language::Ko => format!("collect.ps1: {path} 파일을 쓰지 못했습니다."),
+            Language::Ko => format!("collect.ps1: {path} 파일을 기록하지 못했습니다."),
             Language::En => format!("collect.ps1: {path} was not written"),
         }
     }

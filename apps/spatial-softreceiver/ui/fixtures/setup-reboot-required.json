@@ -167,6 +167,7 @@
     "test_signing": true,
     "secure_boot": "disabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "드라이버 설치를 마치려면 다시 시작해야 합니다.",

@@ -27,7 +27,8 @@ interface SceneEntry {
   tab: Tab | null;
   size?: [number, number];
   schemes?: Scheme[];
-  skinSteps?: Partial<Record<string, unknown[]>>;
+  /** A skin's own steps for the scene, or `null` where the skin has no such state and is not photographed. */
+  skinSteps?: Partial<Record<string, unknown[] | null>>;
 }
 
 interface Table {
@@ -59,8 +60,10 @@ const READY = 'html[data-gallery-ready="true"]';
 /** The faces each skin must have in place before its picture (ADR 0041). */
 const FONTS: Record<Skin, string[]> = {
   standard: ['400 14px "IBM Plex Sans KR"'],
-  panel: ['400 15px "Galmuri14"', '400 14px "IBM Plex Sans KR"'],
+  // The pedal prints nothing in Regular (ADR 0046, 법칙 6), so its lightest face is Medium.
+  pedal: ['500 14px "IBM Plex Sans KR"'],
   console: ['500 14px "Pretendard"'],
+  playground: ['500 14px "Pretendard"'],
 };
 
 test.describe.configure({ mode: 'parallel' });
@@ -122,6 +125,18 @@ async function check(page: Page, language: Language, skin: Skin, problems: strin
     clientWidth: document.documentElement.clientWidth,
     text: document.body.innerText,
   }));
+  // The console's sidebar is as tall as the window: nothing in it may be cut
+  // off, and in a window of the usual height its list does not scroll either.
+  const side = await page.evaluate(() => {
+    const cut = (el: HTMLElement | null) => (el === null ? 0 : el.scrollHeight - el.clientHeight);
+    const bar = document.querySelector<HTMLElement>('.cn-side');
+    const shown = bar !== null && getComputedStyle(bar).position === 'sticky';
+    return { shown, bar: cut(bar), list: cut(document.querySelector<HTMLElement>('.cn-side-nav')), tall: innerHeight >= 800 };
+  });
+  if (side.shown) {
+    expect(side.bar, 'the sidebar is cut off').toBeLessThanOrEqual(1);
+    if (side.tall) expect(side.list, 'the sidebar list scrolls in a window of the usual height').toBeLessThanOrEqual(1);
+  }
   expect(facts.lang, '<html lang>').toBe(language);
   expect(facts.scrollWidth, 'no horizontal overflow').toBeLessThanOrEqual(facts.clientWidth);
   if (language === 'en') {
@@ -134,6 +149,7 @@ async function check(page: Page, language: Language, skin: Skin, problems: strin
 
 for (const skin of table.skins) {
   for (const scene of scenes) {
+    if (scene.skinSteps?.[skin] === null) continue;
     for (const language of table.languages) {
       for (const scheme of scene.schemes) {
         const file = `${scene.name}.${language}.${scheme}.png`;

@@ -28,7 +28,7 @@ import { SKINS, isSkin, loadSkin } from './skins';
 import table from '../e2e/gallery.json';
 
 type Scheme = 'light' | 'dark';
-type Step = { click: string } | { focus: string } | { wait: string };
+type Step = { click: string } | { focus: string } | { choose: string; value: string } | { wait: string };
 
 /** A scene as the table writes it; what it leaves out comes from `defaults`. */
 interface SceneEntry {
@@ -40,8 +40,8 @@ interface SceneEntry {
   shell?: GalleryShell;
   hold?: boolean;
   steps?: Step[];
-  /** A skin whose controls differ gives its own steps for the same state. */
-  skinSteps?: Partial<Record<Skin, Step[]>>;
+  /** A skin whose controls differ gives its own steps for the same state; `null` where the skin has no such state. */
+  skinSteps?: Partial<Record<Skin, Step[] | null>>;
   size?: [number, number];
   schemes?: Scheme[];
 }
@@ -64,7 +64,7 @@ export interface Scene {
   shell: GalleryShell;
   hold: boolean;
   steps: Step[];
-  skinSteps: Partial<Record<Skin, Step[]>>;
+  skinSteps: Partial<Record<Skin, Step[] | null>>;
   size: [width: number, height: number];
   schemes: Scheme[];
 }
@@ -124,6 +124,12 @@ async function run(step: Step, scene: string): Promise<void> {
     const target = document.querySelector<HTMLElement>(step.click);
     if (target === null) throw new Error(`gallery scene ${scene}: nothing to click at ${step.click}`);
     target.click();
+  } else if ('choose' in step) {
+    // As picking an option of a select would.
+    const target = document.querySelector<HTMLSelectElement>(step.choose);
+    if (target === null) throw new Error(`gallery scene ${scene}: nothing to choose at ${step.choose}`);
+    target.value = step.value;
+    target.dispatchEvent(new Event('change', { bubbles: true }));
   } else if ('focus' in step) {
     // As the keyboard would: what opens on focus opens, with its focus ring.
     const target = document.querySelector<HTMLElement>(step.focus);
@@ -175,7 +181,9 @@ async function scenePage(root: HTMLElement, name: string, lang: Language, skin: 
   await drawWindow(root, scene.fixture, lang, skin, scene.tab, { shell: scene.shell, hold: scene.hold });
   // The shell's autostart and updater answers land before the first step.
   await new Promise((resolve) => setTimeout(resolve, 0));
-  for (const step of scene.skinSteps[skin] ?? scene.steps) await run(step, scene.name);
+  const steps = scene.skinSteps[skin];
+  if (steps === null) throw new Error(`scene ${scene.name} has no state on the ${skin} skin`);
+  for (const step of steps ?? scene.steps) await run(step, scene.name);
   await ready();
 }
 
@@ -221,8 +229,11 @@ function listPage(root: HTMLElement, skin: Skin): void {
     ),
   );
   for (const group of scenesTable.groups) {
+    // A scene the skin has no state for (`skinSteps` of `null`) is not on its page.
+    const shown = scenes.filter((candidate) => candidate.group === group.id && candidate.skinSteps[skin] !== null);
+    if (shown.length === 0) continue;
     const section = h('section', { class: 'gallery-group' }, h('h2', null, group.title));
-    for (const scene of scenes.filter((candidate) => candidate.group === group.id)) {
+    for (const scene of shown) {
       const [width, height] = scene.size;
       section.append(
         h(

@@ -1,0 +1,5 @@
+# 한국어 문장 훅(korean_judge.py)이 판정하지 않을 파일. 문법은 .gitignore와 같습니다.
+# 위험한 놀이터 스킨(ADR 0047)의 문구는 과장된 SaaS 문장을 일부러 흉내 내므로 판정에서 뺍니다.
+/i18n/playground/
+/apps/spatial-softreceiver/ui/src/skins/playground/
+/apps/spatial-softreceiver/ui/test/skin-playground.test.ts

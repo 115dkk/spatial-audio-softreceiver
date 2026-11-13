@@ -91,10 +91,47 @@ function project(catalog: Catalog): Text {
 export const ko = project(catalogKo);
 export const en = project(catalogEn);
 
+type DeepPartial<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends readonly unknown[]
+    ? T
+    : T extends object
+      ? { [K in keyof T]?: DeepPartial<T[K]> }
+      : T;
+
+/**
+ * A skin's own words over the catalog's: the same paths with other text
+ * (the playground, ADR 0047). `i18n/playground/*.toml` is its source and the
+ * catalog test holds every path and placeholder to the catalog's.
+ */
+export type Overlay = DeepPartial<Pick<Catalog, 'screen' | 'common' | 'names'>>;
+
+function merged<T>(base: T, over: unknown): T {
+  if (over === undefined) return base;
+  if (typeof base !== 'object' || base === null || Array.isArray(base)) return over as T;
+  const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+  for (const [key, value] of Object.entries(over as Record<string, unknown>)) out[key] = merged(out[key], value);
+  return out as T;
+}
+
+let language: Language = 'ko';
+let overlaid: { ko: Text; en: Text } | null = null;
+
 /** Korean remains the default for the gallery and callers without a snapshot. */
 export let text: Text = ko;
 
+function resolve(): void {
+  text = (overlaid ?? { ko, en })[language];
+}
+
 /** Called with the supervisor's resolved language, never the user's override. */
-export function setLanguage(language: Language): void {
-  text = language === 'en' ? en : ko;
+export function setLanguage(next: Language): void {
+  language = next === 'en' ? 'en' : 'ko';
+  resolve();
+}
+
+/** Lays a skin's words over the catalog for this page; `null` takes them off. */
+export function setOverlay(overlay: { ko: Overlay; en: Overlay } | null): void {
+  overlaid = overlay === null ? null : { ko: project(merged(catalogKo, overlay.ko)), en: project(merged(catalogEn, overlay.en)) };
+  resolve();
 }

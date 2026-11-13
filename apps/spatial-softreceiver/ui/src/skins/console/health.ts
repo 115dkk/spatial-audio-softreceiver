@@ -9,7 +9,7 @@ import { describeOutputMode, describeUnsupported } from '../../format';
 import { ASIO_DEFAULTS } from '../../guard';
 import { bannerAction } from '../../screens/banner';
 import type { Tab } from '../../screens/common';
-import { CAPTURE_LANES, appLabel, appMode, captureStateWord, laneName, laneView } from '../../screens/entrance';
+import { CAPTURE_LANES, appLabel, appMode, captureStateWord, laneName, laneView, switchTarget } from '../../screens/entrance';
 import { text } from '../../text';
 import type { Frame } from '../controller';
 import { type Tone, basename, entrance } from './kit';
@@ -144,7 +144,7 @@ function setupHealth(frame: Frame): Health {
     case 'welcome':
       return { tone: 'off', title: c.setupWelcome, detail: c.setupWelcomeDetail, action: null };
     case 'unsupported':
-      return { tone: 'crit', title: appMode(snapshot) ? w.appUnsupportedTitle : w.unsupportedTitle, detail: null, action: null };
+      return { tone: 'crit', title: switchTarget(snapshot) === 'driver' ? w.appUnsupportedTitle : w.unsupportedTitle, detail: null, action: null };
     case 'not_test_signing':
       return { tone: 'crit', title: w.testSigningTitle, detail: null, action: null };
     case 'driver':

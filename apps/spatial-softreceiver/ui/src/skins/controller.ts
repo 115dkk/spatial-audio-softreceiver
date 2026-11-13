@@ -10,6 +10,7 @@ import type { EngineStatus, Intent, Snapshot, UserError } from '../bindings';
 import { setLanguage, text } from '../text';
 import type { Band } from '../screens/banner';
 import type { Context, Drawn, Live, ViewState } from '../screens/common';
+import { skinOf } from './names';
 import type { App, AppOptions } from './types';
 
 export interface Frame {
@@ -104,8 +105,34 @@ export function mountWith(root: HTMLElement, api: Api, options: AppOptions, rend
     });
   }
 
+  /**
+   * Another skin changing to the playground is warned first, every time
+   * (ADR 0047). The warning is the playground's, loaded when it is needed.
+   */
+  let warning = false;
+  const warns = (intent: Intent) =>
+    intent.kind === 'set_skin' && intent.value === 'playground' && snapshot !== null && skinOf(snapshot) !== 'playground';
+  async function warned(): Promise<boolean> {
+    if (snapshot === null || warning) return false;
+    warning = true;
+    try {
+      const { warn } = await import('./playground/warning');
+      return await warn(snapshot.language, root.parentElement ?? document.body);
+    } finally {
+      warning = false;
+    }
+  }
+
   async function send(intent: Intent, after?: (ok: boolean) => void): Promise<void> {
     if (pending !== null) return;
+    if (warns(intent)) {
+      if (!(await warned())) {
+        // The control goes back to the skin that is on.
+        render();
+        return;
+      }
+      if (pending !== null) return;
+    }
     pending = intent.kind;
     sending = intent;
     transient = null;

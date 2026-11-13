@@ -115,6 +115,8 @@ function scenes(table, fixtures) {
 }
 
 const file = (scene, language, scheme) => `${scene.name}.${language}.${scheme}.png`;
+/** Whether a skin is photographed in a scene: `skinSteps` of `null` says the skin has no such state. */
+const shown = (scene, skin) => scene.skinSteps?.[skin] !== null;
 
 /** Text from outside (a branch name) shown as code: escaped, so it cannot close the element or mention anyone. */
 const code = (value) =>
@@ -143,7 +145,7 @@ function pictures(dir) {
 function checkShots(dir, table, list) {
   const expected = new Set();
   for (const skin of table.skins) {
-    for (const scene of list) {
+    for (const scene of list.filter((scene) => shown(scene, skin))) {
       for (const language of table.languages) {
         for (const scheme of scene.schemes) expected.add(`${skin}/${file(scene, language, scheme)}`);
       }
@@ -172,7 +174,8 @@ function parts(options, table, list) {
   const base = `${options.base.replace(/\/$/, '')}/${skin}`;
   const tree = `${options.tree.replace(/\/$/, '')}/${skin}`;
   const short = options.commit.slice(0, 7);
-  const count = list.reduce((sum, scene) => sum + scene.schemes.length * table.languages.length, 0);
+  const own = list.filter((scene) => shown(scene, skin));
+  const count = own.reduce((sum, scene) => sum + scene.schemes.length * table.languages.length, 0);
   const others = table.skins.filter((other) => other !== skin).map((other) => table.skinNames[other]);
   const run = `실행 [#${options['run-number']}](${options.run})`;
   const head = (total) => [
@@ -181,7 +184,7 @@ function parts(options, table, list) {
     '',
     `앱의 모든 화면 상태를 ${table.skinNames[skin]} 스킨으로, 한국어와 영어, 밝은 팔레트와 어두운 팔레트에서 찍었습니다. 앱을 띄우지 않고, 실제 화면 코드를 Rust가 만든 시험 자료와 모의 감독자 위에 올려 찍은 것입니다. 장면을 펼쳐 보고, 사진을 누르면 원래 크기로 열립니다. 다른 스킨(${others.join(', ')})은 제목 끝에 그 스킨 이름이 붙은 이슈에 있습니다.`,
     '',
-    `장면 ${list.length}개, 사진 ${count}장 · [원본 PNG](${tree}) · 실행의 \`ui-gallery\` 아티팩트에도 같은 사진이 있습니다.${total > 1 ? ` 본문 하나에 다 들어가지 않아 ${total}부분으로 나눴고, 나머지 부분은 이 이슈의 댓글에 있습니다.` : ''}`,
+    `장면 ${own.length}개, 사진 ${count}장 · [원본 PNG](${tree}) · 실행의 \`ui-gallery\` 아티팩트에도 같은 사진이 있습니다.${total > 1 ? ` 본문 하나에 다 들어가지 않아 ${total}부분으로 나눴고, 나머지 부분은 이 이슈의 댓글에 있습니다.` : ''}`,
     '',
     '장면 표는 `apps/spatial-softreceiver/ui/e2e/gallery.json`입니다. 새 화면 상태가 생기면 그 표에 장면을 더하고, Rust 쪽 상태라면 `crates/ssr-types/tests/ui_contract.rs`에 시험 자료를 더합니다.',
   ];
@@ -191,7 +194,7 @@ function parts(options, table, list) {
   ];
   const blocks = [];
   for (const group of table.groups) {
-    for (const scene of list.filter((candidate) => candidate.group === group.id)) {
+    for (const scene of own.filter((candidate) => candidate.group === group.id)) {
       const [width, height] = scene.size;
       const where = scene.tab === null ? scene.fixture : `${scene.fixture}, ${scene.tab}`;
       const lines = [

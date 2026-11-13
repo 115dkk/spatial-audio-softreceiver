@@ -179,9 +179,10 @@
     "test_signing": true,
     "secure_boot": "disabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
-    "message": "고른 출력 외에는 앱의 원래 소리를 보낼 장치가 없습니다. 쓰지 않는 HDMI 출력이나 가상 케이블을 연결하거나 켠 뒤 다시 확인하십시오.",
+    "message": "선택한 출력 외에는 앱의 원래 소리를 보낼 장치가 없습니다. 사용하지 않는 HDMI 출력이나 가상 케이블을 연결하거나 켠 뒤 다시 확인하십시오.",
     "next": "retry"
   },
   "notes": []

@@ -11,6 +11,7 @@ use supervisor::text::Message;
 const NAMES: &[&str] = &[
     "setup-welcome",
     "setup-apps-unsupported",
+    "setup-apps-unsupported-old",
     "setup-choose-discard",
     "setup-choose-discard-empty",
     "ready-apps",
@@ -62,6 +63,7 @@ const NAMES: &[&str] = &[
 
 struct Expected {
     error: Option<(Message, NextAction)>,
+    driver_unsupported: Option<Message>,
     notes: Vec<Message>,
     default_profile: bool,
     /// The endpoint whose upmixer failed, and the sentence it shows.
@@ -75,6 +77,7 @@ fn fixtures_dir() -> PathBuf {
 fn expected(name: &str, output_name: &str) -> Expected {
     let none = || Expected {
         error: None,
+        driver_unsupported: None,
         notes: Vec::new(),
         default_profile: true,
         upmix_failed: None,
@@ -103,6 +106,18 @@ fn expected(name: &str, output_name: &str) -> Expected {
             )),
             ..none()
         },
+        "setup-apps-unsupported-old" => Expected {
+            error: Some((
+                Message::OsRequirement {
+                    min_build: Config::MIN_OS_BUILD,
+                },
+                NextAction::None,
+            )),
+            driver_unsupported: Some(Message::OsRequirement {
+                min_build: Config::MIN_OS_BUILD,
+            }),
+            ..none()
+        },
         "setup-choose-discard-empty" => Expected {
             error: Some((Message::NoDiscardOutput, NextAction::Retry)),
             ..none()
@@ -129,6 +144,9 @@ fn expected(name: &str, output_name: &str) -> Expected {
                 },
                 NextAction::None,
             )),
+            driver_unsupported: Some(Message::OsRequirement {
+                min_build: Config::MIN_OS_BUILD,
+            }),
             ..none()
         },
         "setup-not-test-signing" => Expected {
@@ -297,6 +315,13 @@ fn every_fixture_sentence_is_the_supervisors() {
                 .or_else(|| snapshot.outputs.get(1).map(|output| output.name.as_str()))
                 .unwrap_or("DENON AVR (NVIDIA High Definition Audio)");
             let expected = expected(name, output_name);
+            assert_eq!(
+                snapshot.driver_unsupported,
+                expected
+                    .driver_unsupported
+                    .map(|message| message.render(language)),
+                "{name}"
+            );
             match (snapshot.error, expected.error) {
                 (None, None) => {}
                 (Some(actual), Some((message, next))) => {

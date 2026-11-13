@@ -179,6 +179,7 @@
     "test_signing": true,
     "secure_boot": "disabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "There is no device other than the selected output to receive the apps' original sound. Connect or enable an unused HDMI output or a virtual cable, then check again.",

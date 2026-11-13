@@ -462,6 +462,69 @@ export function table(o: {
 }
 
 /** The last part of a path, for a set or a file named by its folder. */
+/** The copy that was just made: seen only, so the mark survives the redraw a snapshot brings. */
+let copied: { key: string; until: number } | null = null;
+
+const COPY_GLYPH = 'M5.5 5.5V3.25c0-.4.35-.75.75-.75h6.5c.4 0 .75.35.75.75v6.5c0 .4-.35.75-.75.75H10.5M3.25 5.5h6.5c.4 0 .75.35.75.75v6.5c0 .4-.35.75-.75.75h-6.5a.75.75 0 0 1-.75-.75v-6.5c0-.4.35-.75.75-.75Z';
+const DONE_GLYPH = 'M3.5 8.5l3 3 6-7';
+
+/**
+ * A button that copies `value()` to the clipboard, for what people paste
+ * elsewhere (a path, the facts a bug report wants). With `label` it is a
+ * worded button; without, a glyph named by `name`. It says "copied" for a
+ * moment, to a screen reader as well.
+ */
+export function copy(b: Build, key: string, value: () => string, o: { label?: string; name?: string } = {}): HTMLButtonElement {
+  const c = text.console;
+  const words = o.label ?? null;
+  const glyph = (d: string) =>
+    svg(
+      'svg',
+      { class: 'cn-icon', viewBox: '0 0 16 16', width: 14, height: 14, 'aria-hidden': 'true', focusable: 'false' },
+      svg('path', { d, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
+    );
+  const said = h('span', { class: 'cn-visually-hidden', role: 'status' });
+  const button = h('button', { type: 'button', class: cls('cn-copy', words === null && 'is-glyph'), 'data-key': key });
+  const show = (done: boolean) => {
+    button.classList.toggle('is-done', done);
+    button.replaceChildren(glyph(done ? DONE_GLYPH : COPY_GLYPH), ...(words === null ? [] : [h('span', null, done ? c.copied : words)]), said);
+    if (words === null) {
+      button.setAttribute('aria-label', o.name ?? c.copy);
+      button.title = done ? c.copied : (o.name ?? c.copy);
+    }
+    said.textContent = done ? c.copied : '';
+  };
+  const rest = (ms: number) =>
+    setTimeout(() => {
+      if (copied?.key === key) copied = null;
+      if (button.isConnected) show(false);
+    }, ms);
+  button.addEventListener('click', () => {
+    const write = navigator.clipboard?.writeText(value());
+    if (write === undefined) return;
+    write.then(
+      () => {
+        copied = { key, until: Date.now() + 1600 };
+        // The button may have been redrawn meanwhile: mark the one on the page.
+        const live = document.querySelector<HTMLButtonElement>(`[data-key="${CSS.escape(key)}"]`);
+        if (live !== null && live !== button) live.dispatchEvent(new CustomEvent('cn-copied'));
+        show(true);
+        rest(1600);
+      },
+      () => undefined,
+    );
+  });
+  button.addEventListener('cn-copied', () => {
+    show(true);
+    rest(Math.max(0, (copied?.until ?? 0) - Date.now()));
+  });
+  const left = copied !== null && copied.key === key ? copied.until - Date.now() : 0;
+  show(left > 0);
+  if (left > 0) rest(left);
+  command(b, { id: key, label: words ?? o.name ?? c.copy, reason: null, run: () => button.click() });
+  return button;
+}
+
 export function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter((part) => part.length > 0);
   return parts.at(-1) ?? path;

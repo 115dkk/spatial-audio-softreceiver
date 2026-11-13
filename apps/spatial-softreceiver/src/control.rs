@@ -659,6 +659,7 @@ fn quit_snapshot(language: Language) -> Snapshot {
         output_path: ssr_types::app::OutputPath::Wasapi,
         driver: None,
         platform: None,
+        driver_unsupported: None,
         roles_taken: false,
         error: None,
         notes: Vec::new(),

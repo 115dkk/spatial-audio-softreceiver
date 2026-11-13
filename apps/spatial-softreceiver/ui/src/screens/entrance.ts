@@ -75,13 +75,21 @@ export function entranceNeeds(kind: EntranceKind, snapshot: Snapshot): string[] 
 export function appSoundBlocked(snapshot: Snapshot): string | null {
   const view = captureOf(snapshot);
   if (view.supported || snapshot.platform === null || view.min_build <= 0) return null;
-  return text.entrance.osRequirement(view.min_build);
+  return (snapshot.driver_unsupported ?? null) !== null
+    ? text.entrance.appSoundBuild(view.min_build)
+    : text.entrance.osRequirement(view.min_build);
 }
 
 /** Why an entrance cannot be chosen now: the engine is running, or the PC cannot run it. */
 export function entranceBlocked(snapshot: Snapshot, kind: EntranceKind): string | null {
   if (snapshot.phase.kind === 'running') return text.entrance.locked;
-  return kind === 'app_sound' ? appSoundBlocked(snapshot) : null;
+  return kind === 'app_sound' ? appSoundBlocked(snapshot) : snapshot.driver_unsupported ?? null;
+}
+
+/** The other entrance the wizard may offer, only when the PC can run it. */
+export function switchTarget(snapshot: Snapshot): EntranceKind | null {
+  const other = entranceOf(snapshot) === 'driver' ? 'app_sound' : 'driver';
+  return entranceBlocked(snapshot, other) === null ? other : null;
 }
 
 /** The wizard's step names for the entrance chosen. */

@@ -937,6 +937,7 @@
     "test_signing": true,
     "secure_boot": "disabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "The BRIR set could not be read: C:\\Users\\me\\BRIR\\studio\\hesuvi.wav has 2 tracks, which matches no HeSuVi layout",

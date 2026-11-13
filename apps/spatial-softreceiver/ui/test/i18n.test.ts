@@ -123,6 +123,8 @@ describe('i18n catalog contract', () => {
       'entrance.appSoundBuild': [[20348]],
       'entrance.osRequirement': [[20348]],
       'console.goTo': [['Profile']],
+      'console.version': [['0.31.0']],
+      'console.issues': [[1], [3]],
       'console.healthPlan': [['Headphones (BRIR living-room)', 'DENON AVR']],
       'console.healthPlaying': [['Speakers 7.1', 'DENON AVR']],
       'console.issueUnsupported': [['Spatial SoftReceiver PASS']],

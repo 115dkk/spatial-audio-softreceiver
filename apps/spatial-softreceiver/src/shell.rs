@@ -48,6 +48,7 @@ use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter as _, Manager as _, RunEvent, WindowEvent, Wry};
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_opener::OpenerExt as _;
 
 use crate::control::{self, Bridge, ControlConfig, Note};
 use crate::launcher::WindowsLauncher;
@@ -64,6 +65,24 @@ const TRAY: &str = "main";
 const MENU_OPEN: &str = "open";
 const MENU_TOGGLE: &str = "toggle";
 const MENU_QUIT: &str = "quit";
+const REPO_URL: &str = "https://github.com/115dkk/spatial-audio-softreceiver";
+const SPONSORS_URL: &str = "https://github.com/sponsors/115dkk";
+
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Link {
+    Repo,
+    Sponsors,
+}
+
+impl Link {
+    fn url(self) -> &'static str {
+        match self {
+            Self::Repo => REPO_URL,
+            Self::Sponsors => SPONSORS_URL,
+        }
+    }
+}
 
 /// The event that carries a [`Snapshot`].
 pub const SNAPSHOT_EVENT: &str = "snapshot";
@@ -104,6 +123,7 @@ pub fn run(args: Args) -> Result<(), String> {
             show_main(handle);
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
@@ -112,6 +132,7 @@ pub fn run(args: Args) -> Result<(), String> {
         .invoke_handler(tauri::generate_handler![
             dispatch,
             snapshot,
+            open_link,
             update_state,
             apply_update
         ])
@@ -167,6 +188,14 @@ fn snapshot(bridge: tauri::State<'_, Bridge>, smoke: tauri::State<'_, SmokeFlag>
     let snapshot = bridge.snapshot();
     smoke.0.store(true, Ordering::SeqCst);
     snapshot
+}
+
+/// Opens one of the app's two fixed web links in the default browser.
+#[tauri::command(async)]
+fn open_link(link: Link, handle: AppHandle) {
+    if let Err(error) = handle.opener().open_url(link.url(), None::<&str>) {
+        log::line(&format!("shell: the link could not be opened: {error}"));
+    }
 }
 
 /// The screen asks what the updater holds: the running version and a

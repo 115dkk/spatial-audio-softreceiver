@@ -172,6 +172,7 @@
     "test_signing": true,
     "secure_boot": "disabled"
   },
+  "driver_unsupported": null,
   "roles_taken": false,
   "error": {
     "message": "Windows could not verify the driver signature (problem code 52). Check test-signing mode, then reinstall the driver.",

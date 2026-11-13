@@ -761,7 +761,7 @@ function metrics(b: Build, running: boolean): Page {
   const c = text.console;
   const { snapshot } = b.ctx;
   if (!running) {
-    return { element: section(b, 'metrics', text.status.meters, [para(c.metricsOff, 'cn-muted')]), fill: () => undefined };
+    return { element: section(b, 'metrics', c.allMetrics, [para(c.metricsOff, 'cn-muted')]), fill: () => undefined };
   }
   const setters: ((engine: EngineStatus) => void)[] = [];
   const rows: HTMLTableRowElement[] = [];
@@ -787,7 +787,7 @@ function metrics(b: Build, running: boolean): Page {
       ),
     );
   }
-  const element = section(b, 'metrics', text.status.meters, [
+  const element = section(b, 'metrics', c.allMetrics, [
     table({ labelledBy: 'cn-sec-metrics-title', head: [c.metric, c.value, c.unit], rows, className: 'cn-metric-table' }),
   ]);
   return { element, fill: (engine) => setters.forEach((set) => set(engine)) };

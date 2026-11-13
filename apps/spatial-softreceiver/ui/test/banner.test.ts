@@ -35,7 +35,7 @@ describe('bannerAction', () => {
 
   it('open_settings opens the output list', () => {
     expect(sends({ kind: 'ready' }, 'open_settings')).toBe('choose_output');
-    expect(bannerAction({ kind: 'ready' }, 'open_settings')).toMatchObject({ label: '출력 고르기' });
+    expect(bannerAction({ kind: 'ready' }, 'open_settings')).toMatchObject({ label: '출력 선택' });
     expect(sends(setup('choose_output'), 'open_settings')).toBe('choose_output');
   });
 
@@ -80,11 +80,11 @@ describe('the band on screen', () => {
     expect(root.querySelector('.banner button')?.getAttribute('data-intent')).toBe('recheck');
   });
 
-  it('moves to the wizard output list from 출력 고르기 when the saved output is gone', () => {
+  it('moves to the wizard output list from 출력 선택 when the saved output is gone', () => {
     // The supervisor's open_settings band (StoredOutputMissing) comes with
     // the choose-output step: resume_output and enable both stop there.
     const { root } = mount(fixture('setup-output-missing'));
-    expect(bandButtons(root)).toEqual(['출력 고르기']);
+    expect(bandButtons(root)).toEqual(['출력 선택']);
     root.querySelector<HTMLButtonElement>('.banner button')?.click();
     const first = root.querySelector('.output-list button');
     expect(first).not.toBeNull();
@@ -92,7 +92,7 @@ describe('the band on screen', () => {
     expect(root.querySelectorAll('.output-list .output-row')).toHaveLength(2);
   });
 
-  it('opens the status output list from 출력 고르기 on the main screen', () => {
+  it('opens the status output list from 출력 선택 on the main screen', () => {
     // The band maps open_settings the same way in every phase.
     const snapshot = fixture('ready');
     snapshot.error = { message: '저장된 출력 장치를 찾을 수 없습니다: DENON AVR', next: 'open_settings' };
