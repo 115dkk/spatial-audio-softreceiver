@@ -182,7 +182,7 @@ class FixtureTests(unittest.TestCase):
     def test_packaged_fixture_is_preferred_and_validated(self):
         _, data, _ = check.load_fixture()
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()  # load_fixture resolves; a runner's temp is an 8.3 path
             script = root / "tools" / "ci" / "bitstream_check.py"
             packaged = script.parent / "fixtures" / check.FIXTURE_RELATIVE.name
             checkout = root / check.FIXTURE_RELATIVE
@@ -199,7 +199,7 @@ class FixtureTests(unittest.TestCase):
     def test_fixture_in_kit_root_layout(self):
         _, data, frames = check.load_fixture()
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()  # load_fixture resolves; a runner's temp is an 8.3 path
             packaged = root / "fixtures" / "tones-5.1.eac3"
             packaged.parent.mkdir()
             packaged.write_bytes(data)
@@ -209,7 +209,7 @@ class FixtureTests(unittest.TestCase):
     def test_checkout_fixture_is_fallback_and_missing_is_reported(self):
         _, data, _ = check.load_fixture()
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()  # load_fixture resolves; a runner's temp is an 8.3 path
             script = root / "tools" / "ci" / "bitstream_check.py"
             checkout = root / check.FIXTURE_RELATIVE
             checkout.parent.mkdir(parents=True)
