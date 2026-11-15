@@ -29,6 +29,13 @@ function Save-Text([string] $Name, [scriptblock] $Command) {
     try { & $Command 2>&1 | Out-String -Width 4096 | Set-Content -Encoding UTF8 $path } catch { $_ | Out-String | Set-Content -Encoding UTF8 $path }
     $collected.Add($Name)
 }
+# A file list as a JSON array, also when it is empty or has one entry: piping
+# nothing to ConvertTo-Json writes no file, and one object is not an array.
+function Save-FileList([string] $Name, [object[]] $Files) {
+    $rows = @($Files | Select-Object Name, Length, LastWriteTime)
+    ConvertTo-Json -InputObject $rows | Set-Content -Encoding UTF8 (Join-Path $work $Name)
+    $collected.Add($Name)
+}
 
 $os = Get-CimInstance Win32_OperatingSystem
 $ubr = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue).UBR
@@ -39,6 +46,31 @@ Save-Text 'bcdedit-current.txt' { bcdedit.exe /enum '{current}' }
 Save-Text 'secure-boot.txt' { try { Confirm-SecureBootUEFI -ErrorAction Stop } catch { $_.Exception.Message } }
 Save-Text 'device-guard.txt' { Get-CimInstance -Namespace 'root\Microsoft\Windows\DeviceGuard' -ClassName Win32_DeviceGuard | Select-Object SecurityServicesRunning, VirtualizationBasedSecurityStatus | Format-List }
 Save-Text 'verifier-query.txt' { verifier.exe /query }
+# The Python the checks run on. Every check after install.ps1 is a Python
+# script, so when none of them left a summary the cause is usually here: no
+# launcher, a Python the pinned packages have no wheel for, or a failed install.
+$probe = @'
+import sys, platform, importlib.metadata as metadata
+print(sys.version)
+print(sys.executable)
+print(platform.machine())
+for name in ('numpy', 'soundcard', 'cffi'):
+    try:
+        print(name, metadata.version(name))
+    except metadata.PackageNotFoundError:
+        print(name, 'not installed')
+'@
+Save-Text 'python.txt' {
+    foreach ($launcher in 'py', 'python') {
+        $command = Get-Command $launcher -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $command) { "${launcher}: not found"; continue }
+        "${launcher}: $($command.Source)"
+        if ($launcher -eq 'py') { & py -0p }
+        & $launcher -c $probe
+        & $launcher -m pip list --disable-pip-version-check
+        ''
+    }
+}
 
 Save-Text 'devices.txt' {
     Get-PnpDevice -ErrorAction SilentlyContinue | Where-Object { $_.HardwareID -contains 'Root\SpatialSoftReceiver' } | ForEach-Object {
@@ -67,14 +99,20 @@ if (Test-Path $parameterPath) {
 }
 
 Save-Text 'endpoints.json' {
-    $endpoints = @(Get-SpatialEndpoints)
-    foreach ($endpoint in $endpoints) {
+    # New objects, not Add-Member on the helper's: a note property added to a
+    # .NET object held in an array is gone by the time ConvertTo-Json reads it.
+    $endpoints = @(foreach ($endpoint in @(Get-SpatialEndpoints)) {
         $guid = $endpoint.id.Substring($endpoint.id.LastIndexOf('.') + 1)
-        $props = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render\$guid\Properties" -ErrorAction Stop
-        $deviceFormat = $props.'{f19f064d-082c-4e27-bc73-6882a1bb8e4c},0'
-        $format = if ($deviceFormat) { [BitConverter]::ToString([byte[]]$deviceFormat).Replace('-', '') } else { $null }
-        $endpoint | Add-Member -NotePropertyName PKEY_AudioEngine_DeviceFormat -NotePropertyValue $format
-    }
+        $format = $null
+        $formatError = $null
+        try {
+            $props = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render\$guid\Properties" -ErrorAction Stop
+            $deviceFormat = $props.'{f19f064d-082c-4e27-bc73-6882a1bb8e4c},0'
+            if ($deviceFormat) { $format = [BitConverter]::ToString([byte[]]$deviceFormat).Replace('-', '') }
+        } catch { $formatError = $_.Exception.Message }
+        [pscustomobject][ordered]@{ endpoint = $endpoint.endpoint; id = $endpoint.id; name = $endpoint.name; state = $endpoint.state
+            PKEY_AudioEngine_DeviceFormat = $format; device_format_error = $formatError }
+    })
     ConvertTo-Json -InputObject $endpoints -Depth 4
 }
 Save-Text 'endpoint-policy.json' {
@@ -116,25 +154,27 @@ if (Test-Path $installResult) {
     $collected.Add('install-result.json')
 }
 $minidumps = @(Get-ChildItem 'C:\Windows\Minidump\*.dmp', 'C:\Windows\MEMORY.DMP' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
-$minidumps | Select-Object Name, Length, LastWriteTime | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $work 'minidumps.json')
-$collected.Add('minidumps.json')
+Save-FileList 'minidumps.json' $minidumps
 # Minidumps only: a full MEMORY.DMP is gigabytes and stays in the list above.
 $eligibleDumps = if ($installed) { @($minidumps | Where-Object { $_.LastWriteTime -ge $installed -and $_.Name -ne 'MEMORY.DMP' }) } else { @() }
 foreach ($dump in @($eligibleDumps | Select-Object -First 3)) {
     Copy-Item $dump.FullName $work
     $collected.Add($dump.Name)
 }
-# The kit's own results and the M2 runs moved into this folder (play-*.json
-# from ssr-live play --report).
-foreach ($pattern in '*-summary.json', 'driver-flow*.json', 'play-*.json') {
+# Every result in this folder: the checks' summaries under whatever name the
+# guide gave them (driver-flow-basic.json, bitstream.json, endpoint-format.json,
+# ...), the M2 runs moved here (play-*.json from ssr-live play --report), the
+# scene logs, kit.json, and the output of the package install when the guide's
+# command saved it.
+foreach ($pattern in '*.json', '*.jsonl', 'pip-install.txt') {
     foreach ($file in Get-ChildItem (Join-Path $PSScriptRoot $pattern) -File -ErrorAction SilentlyContinue) {
+        if ($collected.Contains($file.Name)) { continue }
         Copy-Item $file.FullName $work
         $collected.Add($file.Name)
     }
 }
 $ssrdumps = @(Get-ChildItem (Join-Path $PSScriptRoot '*.ssrdump') -File -ErrorAction SilentlyContinue)
-$ssrdumps | Select-Object Name, Length, LastWriteTime | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $work 'ssrdumps.json')
-$collected.Add('ssrdumps.json')
+Save-FileList 'ssrdumps.json' $ssrdumps
 $total = ($ssrdumps | Measure-Object Length -Sum).Sum
 if (-not $total) { $total = 0 }
 if ($total -le 200MB) {
@@ -143,8 +183,7 @@ if ($total -le 200MB) {
 
 # Recordings (M2 builder loopback WAVs) and screenshots, up to 300 MB together.
 $media = @(Get-ChildItem (Join-Path $PSScriptRoot '*') -Include '*.wav', '*.png', '*.jpg' -File -ErrorAction SilentlyContinue)
-$media | Select-Object Name, Length, LastWriteTime | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $work 'media.json')
-$collected.Add('media.json')
+Save-FileList 'media.json' $media
 $mediaTotal = ($media | Measure-Object Length -Sum).Sum
 if (-not $mediaTotal) { $mediaTotal = 0 }
 if ($mediaTotal -le 300MB) {

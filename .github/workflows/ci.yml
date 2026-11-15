@@ -46,6 +46,11 @@ name: CI
 #   fuzz      every cargo-fuzz target for two minutes
 #   coverage  llvm-cov line coverage, summarised on the run page
 #   deny      cargo-deny: advisories, licenses, bans, sources
+#   kit-python  the driver test kit's Python side on every Python a tester may
+#             have (3.10 up to the newest release): the packages installed with
+#             the guide's own command, wheels only, every script the kit ships
+#             imported from a folder holding only the kit's files, and the
+#             kit scripts' unit tests
 # The engine and everything below it build without Windows, which is why the
 # Linux legs can run the replay tests at all.
 
@@ -1186,3 +1191,40 @@ jobs:
           sha=$(python3 -I -c 'import ast, sys; tree = ast.parse(open(sys.argv[1], encoding="utf-8").read()); print(next(node.value.value for node in tree.body if isinstance(node, ast.Assign) and node.targets[0].id == "SHA256"))' tools/ci/check-asio-sdk.py)
           curl --fail --location --retry 4 --retry-delay 5 --max-filesize 33554432 -o "$sdk/sdk.zip" "$url"
           python3 -I tools/ci/check-asio-sdk.py --archive "$sdk/sdk.zip" --sha256 "$sha"
+
+  # A tester installs whatever Python python.org offers that day and then the
+  # kit's requirements (docs/testing/test-signed-pc.md). The other jobs use
+  # one Python, so a pin with no wheel for a newer or older one stopped a
+  # tester at pip before any check could run (2026-11-15: numpy 2.3.4 has no
+  # wheel for 3.15, nor for 3.10, which the guide allowed). "3.x" is the newest
+  # release: when a new Python comes out this leg fails until
+  # tools/ci/requirements-kit.txt has a pin for it.
+  kit-python:
+    name: test kit on Python ${{ matrix.python }}
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15", "3.x"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+
+      # The guide's command, from the file the kit ships as requirements.txt.
+      - name: Install the kit's packages (wheels only)
+        run: |
+          python -m pip install --only-binary :all: -r tools/ci/requirements-kit.txt soundcard==0.4.5
+
+      - name: Import every script the kit ships (tools/ci/kit_runtime_check.py)
+        run: python tools/ci/kit_runtime_check.py
+
+      - name: Unit tests of the kit's scripts
+        working-directory: tools/ci
+        run: >
+          python -m unittest -v
+          test_driver_flow_check test_endpoints test_ring_record test_ring_stats
+          test_ssr_abi test_volume_check test_ioctl_fuzz test_report_check
+          test_bitstream_check test_endpoint_name_check test_kit_runtime_check

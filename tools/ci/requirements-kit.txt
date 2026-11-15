@@ -1,4 +1,12 @@
 # The driver test kit's runtime, shipped in the kit as requirements.txt
 # (tools/ci/driver-test-kit.ps1). soundcard is installed with it where a step
 # plays or records (docs/testing/test-signed-pc.md).
-numpy==2.3.4
+#
+# One pin per Python, because no numpy release has wheels for every Python the
+# guide allows (3.10 and later): a tester takes whatever python.org offers that
+# day, and a pin without a wheel for it makes pip build numpy from source,
+# which fails on a PC without a compiler. ci.yml installs this file and runs
+# the kit's tests on each of these Pythons; a new Python needs a line here.
+numpy==2.2.6; python_version < "3.11"
+numpy==2.3.4; python_version >= "3.11" and python_version < "3.15"
+numpy==2.5.4; python_version >= "3.15"

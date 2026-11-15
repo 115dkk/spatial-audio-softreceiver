@@ -805,12 +805,13 @@ def main(argv=None):
         message = str(error) or type(error).__name__
         if message not in result["errors"] and message != "probe validation failed":
             result["errors"].append(message)
-    finally:
-        try:
-            _write_summary(summary_path, result)
-        except OSError as error:
-            print(f"cannot write summary {summary_path}: {error}", file=sys.stderr)
-            return 1
+    # Outside a finally block: a return there is a SyntaxWarning from Python
+    # 3.14 on, and it would also swallow a KeyboardInterrupt.
+    try:
+        _write_summary(summary_path, result)
+    except OSError as error:
+        print(f"cannot write summary {summary_path}: {error}", file=sys.stderr)
+        return 1
     for error in result["errors"]:
         print(error, file=sys.stderr)
     return 0 if result["passed"] else 1
