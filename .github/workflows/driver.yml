@@ -613,6 +613,31 @@ jobs:
           $zip = Get-ChildItem $out -Filter 'spatial-softreceiver-test-report-*.zip' | Select-Object -First 1
           if (-not $zip) { throw 'collect.ps1 wrote no report zip' }
           Write-Host "report: $($zip.Name), $($zip.Length) bytes"
+          # What the report must hold to be of use. The report of 2026-11-15
+          # listed files it did not carry, had no endpoint format, and nothing
+          # about the Python whose package install had stopped the tester.
+          $open = Join-Path $out 'open'
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $open
+          $folder = (Get-ChildItem $open -Directory | Select-Object -First 1).FullName
+          $listed = @(Get-Content (Join-Path $folder 'CONTENTS.txt') | Where-Object { $_ })
+          $missing = @($listed | Where-Object { -not (Test-Path -LiteralPath (Join-Path $folder $_)) })
+          if ($missing.Count) { throw "the report lists files it does not carry: $($missing -join ', ')" }
+          foreach ($name in 'minidumps.json', 'ssrdumps.json', 'media.json', 'endpoints.json', 'kit.json', 'python.txt') {
+              if ($listed -notcontains $name) { throw "the report has no $name" }
+          }
+          foreach ($name in 'minidumps.json', 'ssrdumps.json', 'media.json') {
+              $text = (Get-Content -Raw (Join-Path $folder $name)).Trim()
+              if (-not $text.StartsWith('[')) { throw "$name is not a JSON array: $text" }
+          }
+          if ('${{ steps.install.outputs.loaded }}' -eq 'true') {
+              $rows = @(Get-Content -Raw (Join-Path $folder 'endpoints.json') | ConvertFrom-Json)
+              if ($rows.Count -lt 1) { throw 'endpoints.json has no endpoint' }
+              foreach ($row in $rows) {
+                  if ($row.PSObject.Properties.Name -notcontains 'PKEY_AudioEngine_DeviceFormat') { throw "endpoint $($row.endpoint) carries no device format field" }
+              }
+          }
+          $python = Get-Content -Raw (Join-Path $folder 'python.txt')
+          if ($python -notmatch '(?m)^numpy \d') { throw "python.txt does not name the installed numpy:`n$python" }
 
       - uses: actions/upload-artifact@v7
         if: always() && steps.install.outputs.loaded == 'true'

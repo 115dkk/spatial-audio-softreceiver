@@ -94,8 +94,12 @@ SAL이 없는 PC라면 M2 부분은 건너뜁니다. 둘 다 할 수 있으면 *
 4. Python 패키지를 설치합니다:
 
    ```powershell
-   py -m pip install -r requirements.txt soundcard==0.4.5
+   py -m pip install --only-binary :all: -r requirements.txt soundcard==0.4.5 2>&1 | Tee-Object pip-install.txt
    ```
+
+   마지막 줄이 `Successfully installed`로 시작해야 합니다(이미 설치돼 있으면 `Requirement already satisfied` 줄들만 나옵니다). 2단계부터의 검사는 모두 Python 스크립트이므로, 여기서 실패하면 뒤의 검사는 하나도 돌지 않습니다.
+
+   `requirements.txt`는 Python 판마다 맞는 numpy를 고릅니다(3.10부터 3.15까지는 CI가 판마다 설치해 확인합니다). `No matching distribution found for numpy`가 나오면 그 Python에 맞는 numpy 휠이 없는 것입니다. 이 묶음보다 뒤에 나온 Python이 여기에 해당합니다. 소스에서 빌드하려 하지 말고 Python 3.13을 함께 설치한 뒤 `py -3.13 -m pip install ...`로 다시 설치하고, 이 문서의 `py` 명령도 `py -3.13`으로 바꿔 실행하십시오. 화면 출력은 `pip-install.txt`에 남고 8단계의 수집에 들어갑니다.
 
 `kit.json`에 이 묶음의 버전, 커밋, 서명 인증서의 지문, 파일 해시가 있습니다.
 
@@ -796,7 +800,10 @@ M2의 결과(`play-*.json`, `sal-*.ssrdump`, `builder-*.wav`)는 묶음 폴더�
 - 관련 이벤트 로그와 Code Integrity 로그
 - `verifier /query`
 - 미니덤프
-- 이 폴더의 JSON과 덤프
+- Python 상태(`python.txt`). 런처가 찾은 Python, 그 판, 설치된 numpy와 soundcard, 패키지 목록이 들어갑니다. 패키지 설치의 출력(`pip-install.txt`)도 있으면 함께 들어갑니다
+- 이 폴더의 JSON(`*.json`, `*.jsonl`)과 덤프
+
+검사가 요약 파일을 남기지 못하고 끝났다면(Python 오류, 명령을 찾지 못함) 수집한 파일만으로는 원인을 알 수 없습니다. 그 명령과 화면 출력을 그대로 복사해 zip과 함께 보내 주십시오.
 
 보내는 방법:
 1. **공개 이슈**에는 아래 표만 채워 올립니다. 이슈 제목은 `[시험] v<버전> <날짜>`로 합니다.
